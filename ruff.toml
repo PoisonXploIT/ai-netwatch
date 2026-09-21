@@ -1,0 +1,4 @@
+[lint]
+# Baseline: only real bug-class errors (undefined names, invalid break/continue).
+# Widen `select` over time as the codebase is cleaned up.
+select = ["E9", "F82"]

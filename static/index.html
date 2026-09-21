@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>AI NetWatch — salidas a nube IA</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header>
+  <h1>AI NetWatch</h1>
+  <span class="sub">Monitor de conexiones de red hacia proveedores cloud IA (Jev incluido). Solo loopback.</span>
+</header>
+<main>
+  <section class="card" id="cfg-card">
+    <h2>Configuración (solo memoria)</h2>
+    <div class="row">
+      <label>Jev (TypeSafe)</label>
+      <input id="jev-key" type="password" placeholder="API key">
+      <button id="btn-save-jev">Guardar</button>
+      <button id="btn-test-jev">Probar</button>
+    </div>
+    <div class="row">
+      <label>LLM local (técnico)</label>
+      <input id="llm-url" placeholder="http://127.0.0.1:8099" style="width:200px">
+      <input id="llm-model" placeholder="modelo" style="width:200px">
+      <button id="btn-save-llm">Guardar</button>
+      <button id="btn-test-llm">Probar</button>
+    </div>
+    <div class="row">
+      <label>Hosts extra (IP o dominio, coma)</label>
+      <input id="extra-hosts" placeholder="ej. 10.0.0.5, mi-servidor.local" style="width:340px">
+      <button id="btn-save-extra">Guardar</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Eventos (conexiones a destinos IA)</h2>
+    <p class="hint">v1: ve proceso + destino IP/puerto + periodicidad. Sin bytes ni dominio real (v2: Sysmon).</p>
+    <div id="events-wrap" class="table-wrap"></div>
+  </section>
+
+  <section class="card">
+    <h2>Triaje con Jev</h2>
+    <button id="btn-triage" class="primary">Triar eventos con Jev</button>
+    <span id="triage-status" class="hint"></span>
+    <div id="triage-results"></div>
+  </section>
+</main>
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
