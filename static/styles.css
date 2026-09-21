@@ -11,6 +11,9 @@ main { padding:18px 24px; display:flex; flex-direction:column; gap:18px; max-wid
 input { background:#0b0e13; border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:6px; width:220px; }
 button { background:#22304a; color:var(--text); border:1px solid var(--border); border-radius:6px; padding:6px 12px; cursor:pointer; }
 button.primary { background:#2b5fb8; border-color:#3a6fd0; }
+button.danger { background:#7a2e24; border-color:#9d3a2c; }
+.bar { background:#0b0e13; border:1px solid var(--border); border-radius:4px; height:10px; }
+.bar > div { background:#3f9d6b; height:100%; border-radius:4px; }
 button:disabled { opacity:.5; cursor:default; }
 table { width:100%; border-collapse:collapse; margin-top:8px; }
 th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); font-size:13px; }

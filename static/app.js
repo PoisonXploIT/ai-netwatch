@@ -26,15 +26,32 @@ function eventsTableHtml(events) {
   const rows = events.map((e) => `<tr>
     <td>${esc(e.process)}</td>
     <td class="mono">${esc(e.dest_host || e.dest_ip)}:${e.dest_port}</td>
+    <td>${esc(e.protocol || "tcp")}</td>
     <td>${esc(e.catalog_domain || "")}</td>
     <td class="num">${e.seen_count}</td>
     <td class="mono small">${esc(e.first_seen)}</td>
     <td class="mono small">${esc(e.last_seen)}</td>
   </tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Destino</th><th>Catálogo</th><th>Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Catálogo</th><th>Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
+}
+
+async function refreshStats() {
+  try {
+    const d = await api("/api/stats?days=7");
+    const max = Math.max(1, ...d.daily.map((x) => x.events));
+    const rows = d.daily.map((x) => `<tr>
+      <td class="mono">${esc(x.date)}</td>
+      <td class="num">${x.events}</td>
+      <td class="num">${x.triages}</td>
+      <td><div class="bar"><div style="width:${Math.round((x.events / max) * 100)}%"></div></div></td>
+    </tr>`).join("");
+    document.getElementById("stats-wrap").innerHTML = `<table>
+      <thead><tr><th>Día</th><th>Eventos</th><th>Triajes</th><th width="40%"></th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  } catch (e) { /* sin stats */ }
 }
 
 function triageHtml(data) {
@@ -135,6 +152,15 @@ function bind() {
       toast("Hosts extra guardados.", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
+  $("btn-reset").addEventListener("click", async () => {
+    if (!confirm("Borrar todos los eventos y triajes vivos? El histórico diario (7+ días) se conserva.")) return;
+    try {
+      const r = await api("/api/reset", { method: "POST", body: JSON.stringify({ confirm: true }) });
+      toast(`Reset: ${r.events_removed} eventos y ${r.triages_removed} triajes borrados. Histórico conservado.`, "ok");
+      refreshEvents();
+      refreshStats();
+    } catch (e) { toast(e.message, "err"); }
+  });
   $("btn-triage").addEventListener("click", async () => {
     const btn = $("btn-triage");
     btn.disabled = true;
@@ -155,7 +181,9 @@ function bind() {
   loadConfig();
   loadLatestTriage();
   refreshEvents();
+  refreshStats();
   setInterval(refreshEvents, 5000);
+  setInterval(refreshStats, 60000);
 }
 
 document.addEventListener("DOMContentLoaded", bind);

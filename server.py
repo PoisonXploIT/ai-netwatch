@@ -85,6 +85,10 @@ class TestRequest(BaseModel):
     target: str  # jev | llm
 
 
+class ResetRequest(BaseModel):
+    confirm: bool = False
+
+
 @app.get("/api/config")
 def get_config():
     return _mask(_cfg)
@@ -191,6 +195,28 @@ def latest_triage():
     return t
 
 
+@app.get("/api/stats")
+def stats(days: int = 7):
+    days = max(1, min(int(days), 365))
+    live = store.list_events(limit=1000)
+    return {
+        "daily": store.stats(days=days),
+        "live": {
+            "events": len(live),
+            "processes": len({e["process"] for e in live}),
+            "destinations": len({f"{e['dest_ip']}:{e['dest_port']}" for e in live}),
+        },
+    }
+
+
+@app.post("/api/reset")
+def reset(req: ResetRequest):
+    if not req.confirm:
+        raise HTTPException(400, "se requiere {\"confirm\": true}")
+    out = store.reset()
+    return {**out, "daily_stats_kept": True}
+
+
 @app.get("/api/export/json")
 def export_json():
     events = store.list_events(limit=1000)
@@ -206,12 +232,14 @@ def export_csv():
     events = store.list_events(limit=1000)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["ts", "process", "dest_ip", "dest_port", "dest_host",
-                "catalog_domain", "seen_count", "first_seen", "last_seen"])
+    w.writerow(["ts", "process", "protocol", "dest_ip", "dest_port",
+                "dest_host", "catalog_domain", "seen_count",
+                "first_seen", "last_seen"])
     for e in events:
-        w.writerow([e["ts"], e["process"], e["dest_ip"], e["dest_port"],
-                    e["dest_host"] or "", e["catalog_domain"] or "",
-                    e["seen_count"], e["first_seen"], e["last_seen"]])
+        w.writerow([e["ts"], e["process"], e.get("protocol", "tcp"),
+                    e["dest_ip"], e["dest_port"], e["dest_host"] or "",
+                    e["catalog_domain"] or "", e["seen_count"],
+                    e["first_seen"], e["last_seen"]])
     return Response(buf.getvalue(), media_type="text/csv")
 
 

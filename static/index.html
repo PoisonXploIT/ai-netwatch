@@ -40,6 +40,16 @@
   </section>
 
   <section class="card">
+    <h2>Estadísticas (últimos 7 días)</h2>
+    <p class="hint">El reset borra los eventos y triajes vivos, pero el histórico diario se conserva para la estadística.</p>
+    <div id="stats-wrap"></div>
+    <div class="row">
+      <button id="btn-reset" class="danger">Empezar de cero (reset)</button>
+      <span class="hint">No borra el histórico diario (7+ días).</span>
+    </div>
+  </section>
+
+  <section class="card">
     <h2>Triaje con Jev</h2>
     <button id="btn-triage" class="primary">Triar eventos con Jev</button>
     <span id="triage-status" class="hint"></span>

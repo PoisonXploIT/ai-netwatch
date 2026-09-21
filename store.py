@@ -16,11 +16,19 @@ CREATE TABLE IF NOT EXISTS events (
     dest_port INTEGER NOT NULL,
     dest_host TEXT,
     catalog_domain TEXT,
+    protocol TEXT NOT NULL DEFAULT 'tcp',
     seen_count INTEGER NOT NULL DEFAULT 1,
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+CREATE TABLE IF NOT EXISTS daily_stats (
+    date TEXT PRIMARY KEY,
+    events INTEGER NOT NULL DEFAULT 0,
+    triages INTEGER NOT NULL DEFAULT 0,
+    first_ts TEXT,
+    last_ts TEXT
+);
 CREATE TABLE IF NOT EXISTS triages (
     id INTEGER PRIMARY KEY,
     ts TEXT NOT NULL,
@@ -44,11 +52,32 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         with self._lock:
             self.conn.executescript(_SCHEMA)
+            # Migracion: bases antiguas sin columna protocol.
+            cols = {r[1] for r in self.conn.execute("PRAGMA table_info(events)")}
+            if "protocol" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE events ADD COLUMN protocol TEXT NOT NULL DEFAULT 'tcp'"
+                )
             self.conn.commit()
+
+    def _today(self) -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    def _bump_daily(self, kind: str) -> None:
+        day = self._today()
+        ev, tr = (1, 0) if kind == "events" else (0, 1)
+        self.conn.execute(
+            "INSERT INTO daily_stats (date, events, triages, first_ts, last_ts)"
+            " VALUES (?,?,?,?,?)"
+            " ON CONFLICT(date) DO UPDATE SET"
+            f" {kind}=daily_stats.{kind}+1, last_ts=excluded.last_ts",
+            (day, ev, tr, _now(), _now()),
+        )
 
     def observe_connection(
         self, process: str, dest_ip: str, dest_port: int,
         catalog_domain: str | None, dest_host: str | None,
+        protocol: str = "tcp",
     ) -> dict:
         """Registra una conexion establecida a un destino AI.
 
@@ -71,11 +100,13 @@ class Store:
             else:
                 cur = self.conn.execute(
                     "INSERT INTO events (ts, process, dest_ip, dest_port, dest_host,"
-                    " catalog_domain, seen_count, first_seen, last_seen)"
-                    " VALUES (?,?,?,?,?,?,1,?,?)",
-                    (ts, process, dest_ip, dest_port, dest_host, catalog_domain, ts, ts),
+                    " catalog_domain, protocol, seen_count, first_seen, last_seen)"
+                    " VALUES (?,?,?,?,?,?,?,1,?,?)",
+                    (ts, process, dest_ip, dest_port, dest_host, catalog_domain,
+                     protocol, ts, ts),
                 )
                 event_id = cur.lastrowid
+            self._bump_daily("events")
             self.conn.commit()
         return self.get_event(event_id) or {}
 
@@ -110,8 +141,38 @@ class Store:
                 "INSERT INTO triages (ts, status, model, payload) VALUES (?,?,?,?)",
                 (_now(), status, model, json.dumps(payload, ensure_ascii=False)),
             )
+            self._bump_daily("triages")
             self.conn.commit()
             return cur.lastrowid
+
+    def stats(self, days: int = 7) -> list[dict]:
+        """Rollup diario de los ultimos `days` dias (incluye dias sin actividad)."""
+        from datetime import timedelta
+        today = datetime.now(timezone.utc)
+        want = [(today - timedelta(days=i)).strftime("%Y-%m-%d")
+                for i in range(max(1, days) - 1, -1, -1)]
+        have = {r["date"]: dict(r) for r in self.conn.execute(
+            "SELECT * FROM daily_stats WHERE date >= ? ORDER BY date",
+            ((today - timedelta(days=max(1, days) - 1)).strftime("%Y-%m-%d"),))}
+        out = []
+        for d in want:
+            row = have.get(d)
+            out.append({
+                "date": d,
+                "events": row["events"] if row else 0,
+                "triages": row["triages"] if row else 0,
+            })
+        return out
+
+    def reset(self) -> dict:
+        """Borra eventos y triajes vivos; daily_stats NO se toca (historico)."""
+        with self._lock:
+            ev = self.conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            tr = self.conn.execute("SELECT COUNT(*) FROM triages").fetchone()[0]
+            self.conn.execute("DELETE FROM events")
+            self.conn.execute("DELETE FROM triages")
+            self.conn.commit()
+        return {"events_removed": ev, "triages_removed": tr}
 
     def latest_triage(self) -> dict | None:
         row = self.conn.execute(

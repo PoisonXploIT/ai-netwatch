@@ -31,13 +31,7 @@ def _run_ps(script: str, timeout: int = 20) -> str:
     return proc.stdout
 
 
-def poll_connections() -> list[dict]:
-    """Conexiones establecidas: [{remote_ip, remote_port, pid}]."""
-    out = _run_ps(
-        "Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue"
-        " | Select-Object -Property RemoteAddress,RemotePort,OwningProcess"
-        " | ConvertTo-Json -Compress"
-    )
+def _parse_conns(out: str, protocol: str) -> list[dict]:
     rows = json.loads(out or "[]")
     if isinstance(rows, dict):
         rows = [rows]
@@ -47,8 +41,33 @@ def poll_connections() -> list[dict]:
         port = int(r.get("RemotePort") or 0)
         pid = int(r.get("OwningProcess") or 0)
         if ip and port:
-            conns.append({"remote_ip": ip, "remote_port": port, "pid": pid})
+            conns.append({"remote_ip": ip, "remote_port": port,
+                          "pid": pid, "protocol": protocol})
     return conns
+
+
+def poll_connections() -> list[dict]:
+    """Conexiones TCP establecidas: [{remote_ip, remote_port, pid, protocol}]."""
+    out = _run_ps(
+        "Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue"
+        " | Select-Object -Property RemoteAddress,RemotePort,OwningProcess"
+        " | ConvertTo-Json -Compress"
+    )
+    return _parse_conns(out, "tcp")
+
+
+def poll_udp_endpoints() -> list[dict]:
+    """Endpoints UDP con remoto (Get-NetUDPEndpoint): mismo shape, protocol=udp.
+
+    Menos relevante para nube IA (casi todo es TCP/TLS 443) pero barato de
+    mirar y descarta trafico oculto por UDP."""
+    out = _run_ps(
+        "Get-NetUDPEndpoint -ErrorAction SilentlyContinue |"
+        " Where-Object { $_.RemoteAddress } |"
+        " Select-Object -Property RemoteAddress,RemotePort,OwningProcess |"
+        " ConvertTo-Json -Compress"
+    )
+    return _parse_conns(out, "udp")
 
 
 def poll_pid_map() -> dict[int, str]:
@@ -151,13 +170,14 @@ class NetMonitor(threading.Thread):
 
     def __init__(self, store: Store, poll_fn=poll_connections,
                  pidmap_fn=poll_pid_map, dns_fn=poll_dns_cache,
-                 catalog_fn=poll_catalog_ips,
+                 udp_fn=poll_udp_endpoints, catalog_fn=poll_catalog_ips,
                  interval: float = _POLL_S, extra_hosts: list[str] | None = None):
         super().__init__(daemon=True, name="ai-netwatch-monitor")
         self.store = store
         self._poll = poll_fn
         self._pidmap = pidmap_fn
         self._dns = dns_fn
+        self._udp = udp_fn
         self._catalog_ips = catalog_fn
         self._catalog_ip_cache: dict[str, str] = {}
         self.interval = interval
@@ -174,10 +194,12 @@ class NetMonitor(threading.Thread):
                 return f"extra:{h}"
         return None
 
-    def _cycle(self) -> None:
+    def _cycle(self, conns: list[dict] | None = None) -> None:
         pidmap = getattr(self, "_pidmap_cache", {})
         dns = getattr(self, "_dns_cache", {})
-        for c in self._poll():
+        if conns is None:
+            conns = self._poll()
+        for c in conns:
             ip = c["remote_ip"]
             host = dns.get(ip)
             # Match por orden: nombre (caché DNS), IP activa del catalogo
@@ -190,6 +212,7 @@ class NetMonitor(threading.Thread):
             self.store.observe_connection(
                 process=proc, dest_ip=ip, dest_port=c["remote_port"],
                 catalog_domain=dom, dest_host=dns.get(ip),
+                protocol=c.get("protocol", "tcp"),
             )
 
     def run(self) -> None:
@@ -208,7 +231,8 @@ class NetMonitor(threading.Thread):
                 if now - last_catip >= _CATALOG_IP_REFRESH_S:
                     self._catalog_ip_cache = self._catalog_ips(self.extra_hosts)
                     last_catip = now
-                self._cycle()
+                conns = self._poll() + self._udp()
+                self._cycle(conns)
             except Exception as e:  # fail-safe: el monitor nunca rompe el server
                 self.errors.append(f"{time.strftime('%H:%M:%S')} {type(e).__name__}: {e}")
                 self.errors = self.errors[-10:]

@@ -6,6 +6,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -61,6 +62,37 @@ class TestStore(unittest.TestCase):
         self.assertEqual(t["status"], "ok")
         self.assertEqual(t["payload"], {"a": 1})
 
+    def test_protocol_stored(self):
+        a = self.store.observe_connection("a.exe", "1.1.1.1", 443, "openai.com",
+                                          None, protocol="udp")
+        b = self.store.observe_connection("b.exe", "2.2.2.2", 8443, "groq.com",
+                                          None)  # default tcp
+        self.assertEqual(self.store.get_event(a["id"])["protocol"], "udp")
+        self.assertEqual(self.store.get_event(b["id"])["protocol"], "tcp")
+
+    def test_daily_stats_survive_reset(self):
+        for _ in range(3):
+            self.store.observe_connection("a.exe", "1.1.1.1", 443, "openai.com",
+                                          None)
+        self.store.save_triage("ok", "jev-1.13.0", {})
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        s = {r["date"]: r for r in self.store.stats(days=7)}
+        self.assertEqual(s[day]["events"], 3)
+        self.assertEqual(s[day]["triages"], 1)
+        # Reset borra vivos, conserva el rollup
+        ev = self.store.list_events()[0]
+        self.assertEqual(ev["seen_count"], 3)  # dedupe: misma conexion
+        out = self.store.reset()
+        self.assertEqual(out["events_removed"], 1)
+        self.assertEqual(len(self.store.list_events()), 0)
+        s2 = {r["date"]: r for r in self.store.stats(days=7)}
+        self.assertEqual(s2[day]["events"], 3)
+
+    def test_stats_fills_missing_days(self):
+        rows = self.store.stats(days=7)
+        self.assertEqual(len(rows), 7)
+        self.assertTrue(all(r["events"] == 0 and r["triages"] == 0 for r in rows))
+
 
 class TestMonitor(unittest.TestCase):
     def _mk(self, conns):
@@ -92,6 +124,22 @@ class TestMonitor(unittest.TestCase):
         events = store.list_events()
         self.assertEqual(len(events), 1)
         self.assertTrue(events[0]["catalog_domain"].startswith("extra:"))
+        self._cleanup(tmp, store)
+
+    def test_udp_endpoints_parsed_and_stored(self):
+        tmp = tempfile.TemporaryDirectory()
+        store = Store(Path(tmp.name) / "t.db")
+        m = mon.NetMonitor(store, poll_fn=lambda: [], pidmap_fn=lambda: {},
+                           dns_fn=lambda: {})
+        with mock.patch.object(mon, "_run_ps",
+                               return_value='{"RemoteAddress":"10.0.0.9",'
+                                           '"RemotePort":443,"OwningProcess":3}'):
+            conns = mon.poll_udp_endpoints()
+        self.assertEqual(conns[0]["protocol"], "udp")
+        m._catalog_ip_cache = {"10.0.0.9": "deepseek.com"}
+        m._cycle(conns)
+        ev = store.list_events()[0]
+        self.assertEqual(ev["protocol"], "udp")
         self._cleanup(tmp, store)
 
     def test_pidmap_used_when_present(self):
