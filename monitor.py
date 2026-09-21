@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import subprocess
 import threading
 import time
 from pathlib import Path
 
-from ai_catalog import match_domain
+from ai_catalog import KNOWN_AI_DOMAINS, match_domain
 from store import Store
 
 _POLL_S = 5.0
@@ -74,14 +75,21 @@ def poll_pid_map() -> dict[int, str]:
 
 # Formato Win7/XP: "Name is : x" / "Address: y"
 # Formato Win10/11: "DNS Address . . . . : x" / "Addresses: y"
-_DNS_IP_RE = re.compile(r"(?i)^\s*Address(?:es)?\s*:?.*?([0-9a-fA-F.:]{7,})\s*$")
+_DNS_IP_PATTERNS = [
+    # Win en-US: "Addresses: 1.2.3.4" / "Address        : 9.9.9.9"
+    re.compile(r"(?i)^\s*Address(?:es)?\s*:?.*?([0-9a-fA-F.:]{7,})\s*$"),
+    # Win en-es: "Un registro (host). . : 3.173.21.63"
+    re.compile(r"(?i)^\s*Un registro \(host\)[.\s]*:?\s*([0-9a-fA-F.:]+)\s*$"),
+]
 _DNS_NAME_PATTERNS = [
     # Win7/XP:  "Name is        : api.groq.com"
     re.compile(r"(?i)^\s*Name\s+is\s*:?\s*(\S+)"),
     # ipconfig antiguo: "Host Name . . . . : x"
-    re.compile(r"(?i)^\s*Host Name(?:\s*\.\s*)*:?\s*(\S+)"),
-    # Win10/11: "DNS Address . . . . . . . : api.openai.com"
-    re.compile(r"(?i)^\s*DNS Address(?:\s*\.\s*)*:?\s*(\S+)"),
+    re.compile(r"(?i)^\s*Host Name(?:\s*\.\s*)*:?:?\s*(\S+)"),
+    # Win10/11 en-US: "DNS Address . . . . . . . : api.openai.com"
+    re.compile(r"(?i)^\s*DNS Address(?:\s*\.\s*)*:?:?\s*(\S+)"),
+    # Win10/11 en-es: "Nombre de registro  . : api.deepseek.com"
+    re.compile(r"(?i)^\s*Nombre de registro[.\s]*:?\s*(\S+)"),
 ]
 
 
@@ -96,13 +104,43 @@ def poll_dns_cache() -> dict[str, str]:
         if m:
             current_name = m.group(1).lower().rstrip(".")
             continue
-        m = _DNS_IP_RE.match(line)
+        m = next((p.match(line) for p in _DNS_IP_PATTERNS if p.match(line)), None)
         if m and current_name:
             ip = m.group(1)
             if ":" not in ip:  # solo IPv4 en v1
                 result.setdefault(ip, current_name)
             current_name = None
     return result
+
+
+_CATALOG_IP_REFRESH_S = 300.0
+
+
+def poll_catalog_ips(extra_hosts: list[str] | None = None) -> dict[str, str]:
+    """Resuelve activamente dominios del catalogo + extra -> IP -> dominio.
+
+    Indispensable: muchos proveedores saltan por CNAME (DeepSeek ->
+    cloudfront.net) y la caché DNS solo guarda el nombre final, asi que el
+    match por nombre nunca llega al dominio real. Parallelizado (stdlib).
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    domains = list(KNOWN_AI_DOMAINS)
+    for h in (extra_hosts or []):
+        if "." in h and not re.match(r"^[0-9.]+$", h):
+            domains.append(h.lower())
+    out: dict[str, str] = {}
+
+    def _resolve(d: str) -> tuple[str, str | None]:
+        try:
+            return d, socket.gethostbyname(d)
+        except Exception:
+            return d, None
+
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        for dom, ip in ex.map(_resolve, domains):
+            if ip:
+                out.setdefault(ip, dom.lower())
+    return out
 
 
 class NetMonitor(threading.Thread):
@@ -113,12 +151,15 @@ class NetMonitor(threading.Thread):
 
     def __init__(self, store: Store, poll_fn=poll_connections,
                  pidmap_fn=poll_pid_map, dns_fn=poll_dns_cache,
+                 catalog_fn=poll_catalog_ips,
                  interval: float = _POLL_S, extra_hosts: list[str] | None = None):
         super().__init__(daemon=True, name="ai-netwatch-monitor")
         self.store = store
         self._poll = poll_fn
         self._pidmap = pidmap_fn
         self._dns = dns_fn
+        self._catalog_ips = catalog_fn
+        self._catalog_ip_cache: dict[str, str] = {}
         self.interval = interval
         self.extra_hosts: list[str] = [h.lower() for h in (extra_hosts or [])]
         self._stop = threading.Event()
@@ -139,9 +180,10 @@ class NetMonitor(threading.Thread):
         for c in self._poll():
             ip = c["remote_ip"]
             host = dns.get(ip)
-            # El catalogo son dominios; Get-NetTCPConnection da IPs -> el match
-            # real va por la caché DNS (best effort) o por hosts extra.
-            dom = match_domain(host or ip) or self._match_extra(ip, host)
+            # Match por orden: nombre (caché DNS), IP activa del catalogo
+            # (cubre CNAME/CDN), y hosts extra.
+            dom = (match_domain(host or ip) or self._catalog_ip_cache.get(ip)
+                   or self._match_extra(ip, host))
             if not dom:
                 continue
             proc = pidmap.get(c["pid"], f"pid:{c['pid']}")
@@ -153,6 +195,7 @@ class NetMonitor(threading.Thread):
     def run(self) -> None:
         last_pidmap = 0.0
         last_dns = 0.0
+        last_catip = 0.0
         while not self._stop.is_set():
             now = time.monotonic()
             try:
@@ -162,6 +205,9 @@ class NetMonitor(threading.Thread):
                 if now - last_dns >= _DNS_REFRESH_S:
                     self._dns_cache = self._dns()
                     last_dns = now
+                if now - last_catip >= _CATALOG_IP_REFRESH_S:
+                    self._catalog_ip_cache = self._catalog_ips(self.extra_hosts)
+                    last_catip = now
                 self._cycle()
             except Exception as e:  # fail-safe: el monitor nunca rompe el server
                 self.errors.append(f"{time.strftime('%H:%M:%S')} {type(e).__name__}: {e}")

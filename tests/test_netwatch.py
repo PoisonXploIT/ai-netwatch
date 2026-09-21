@@ -125,6 +125,37 @@ class TestDnsCacheAndCatalogViaDns(unittest.TestCase):
             dns = mon.poll_dns_cache()
         self.assertEqual(dns.get("9.9.9.9"), "api.groq.com")
 
+    def test_parse_spanish_format(self):
+        out = (
+            "    api.deepseek.com\n"
+            "    ----------------------------------------\n"
+            "    Nombre de registro  . : d3bbv8sr76az5s.cloudfront.net\n"
+            "    Tipo de registro  . . : 1\n"
+            "    Longitud de datos . . : 4\n"
+            "    Un registro (host). . : 3.173.21.63\n"
+        )
+        with mock.patch.object(mon, "_run_ps", return_value=out):
+            dns = mon.poll_dns_cache()
+        self.assertEqual(dns.get("3.173.21.63"), "d3bbv8sr76az5s.cloudfront.net")
+
+    def test_catalog_match_via_active_ip_map_cname(self):
+        """Caso real: api.deepseek.com -> CNAME cloudfront; la caché DNS no
+        ayuda, pero el mapa IP activo del catalogo si."""
+        tmp = tempfile.TemporaryDirectory()
+        store = Store(Path(tmp.name) / "t.db")
+        m = mon.NetMonitor(store, poll_fn=lambda: [
+            {"remote_ip": "3.173.21.63", "remote_port": 443, "pid": 1}],
+            pidmap_fn=lambda: {}, dns_fn=lambda: {})
+        m._dns_cache = {"3.173.21.63": "d3bbv8sr76az5s.cloudfront.net"}
+        m._catalog_ip_cache = {"3.173.21.63": "deepseek.com"}
+        m._cycle()
+        events = store.list_events()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["catalog_domain"], "deepseek.com")
+        self.assertEqual(events[0]["dest_host"], "d3bbv8sr76az5s.cloudfront.net")
+        store.close()
+        tmp.cleanup()
+
     def test_catalog_match_via_dns(self):
         tmp = tempfile.TemporaryDirectory()
         store = Store(Path(tmp.name) / "t.db")
