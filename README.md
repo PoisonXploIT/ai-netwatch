@@ -42,7 +42,7 @@ Sysmon64.exe -accepteula -i
 
 Notas v15: servicio `Sysmon64`, canal de eventos `Microsoft-Windows-Sysmon/Operational` (en v14 era `...-Operational`), campos `DestinationIp`/`DestinationHostname` (antes `DestinationAddress`). Sin config XML: Sysmon loguea todo y AI NetWatch filtra por catalogo.
 
-## LLM Inspector (R3, v1.3)
+## LLM Inspector (R3, v1.3-v1.4)
 
 Reverse proxy **solo stdlib** en loopback para inspeccionar las llamadas HTTP de un cliente a un LLM local OpenAI-compatible (p. ej. `llama-server`):
 
