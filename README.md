@@ -1,6 +1,6 @@
-# AI NetWatch
+# AI NetWatch (v1.0)
 
-Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso + destino IP/puerto + periodicidad** de cada conexion establecida a un destino IA.
+Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
 
 - Solo loopback (`127.0.0.1`), puerto 8790.
 - **Jev (TypeSafe)** como juez de criticidad, a demanda (boton *Triar eventos con Jev*): clasificacion `expected_ai_use / background_exfil_suspect / telemetry_noise / unrelated`, criticidad 0-3, accion inmediata y **probabilidad de falso positivo** derivada.
@@ -41,7 +41,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn server:app --host 127.0.0.1 --port 8790
 ```
 
-Abrir `http://127.0.0.1:8790`. Config (solo memoria, se pierde al reiniciar): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar).
+Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar) y toggle Sysmon sobreviven al reinicio.
 
 ## Endpoints
 
@@ -62,10 +62,19 @@ Modelo pin `jev-1.13.0`, una llamada batch por triaje (cap 50 eventos). State po
 
 Derivado: `prob_false_positive` = 1−confianza si `expected_ai_use`, confianza en el resto. Coste por triaje ~$0.001-0.002.
 
+## Seguridad
+
+- **Solo loopback**: el servidor solo escucha `127.0.0.1:8790`; no hay auth porque no hay superficie externa.
+- **SSRF en `llm_base_url`** (el unico punto de HTTP saliente a destino elegido por el usuario): se exige URL absoluta `http(s)` cuyo host resuelva a loopback. Publico, metadata cloud (`169.254.169.254`), `file://`, `gopher://` y rutas relativas -> 400. Al cargar la config desde disco el mismo check se revalida (un archivo editado a mano no activa una URL peligrosa).
+- **Endpoint Jev pinado**: `jev_base_url`/`jev_model` NO son configurables por la API; siempre TypeSafe oficial + modelo pin.
+- **Reset protegido**: `POST /api/reset` exige `{"confirm": true}` (400 si no).
+- **Exports sin path traversal**: el contenido se genera en memoria; ningun endpoint toma nombres de archivo del usuario.
+- Suite dedicada: `tests/test_security.py` (SSRF, persistencia + revalidacion, reset, inputs, fail-safe).
+
 ## Tests
 
 ```powershell
 .\.venv\Scripts\python -m unittest discover tests -v
 ```
 
-(sin red; HTTP mockeado)
+(sin red; HTTP mockeado; incluye la suite de seguridad)

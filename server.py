@@ -27,6 +27,8 @@ from sysmon_source import poll_sysmon_events, sysmon_available
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+CONFIG_PATH = DATA_DIR / "config.json"
+VERSION = "1.0"
 
 app = FastAPI(title="AI NetWatch")
 
@@ -41,6 +43,33 @@ _cfg: dict = {
     "extra_hosts": [],
     "sysmon_enabled": True,
 }
+
+
+def _load_config() -> None:
+    """Config persistente (data/config.json). Si el LLM URL persistido no es
+    loopback absoluto, se descarta (SSRF): la seguridad no la hereda un
+    archivo editado a mano."""
+    if not CONFIG_PATH.exists():
+        return
+    try:
+        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    for k in ("jev_enabled", "jev_api_key", "llm_enabled", "llm_base_url",
+              "llm_model", "extra_hosts", "sysmon_enabled"):
+        if k in data:
+            _cfg[k] = data[k]
+    url = str(_cfg.get("llm_base_url") or "")
+    if url and not is_loopback_url(url):
+        _cfg["llm_base_url"] = ""
+
+
+def _save_config() -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(_cfg, indent=2), encoding="utf-8")
+
+
+_load_config()
 
 store: Store | None = None
 monitor: NetMonitor | None = None
@@ -108,9 +137,17 @@ def set_config(req: ConfigRequest):
     if req.llm_enabled is not None:
         _cfg["llm_enabled"] = req.llm_enabled
     if req.llm_base_url is not None:
+        # SSRF: solo http(s) absoluto cuyo host resuelva a loopback.
+        from urllib import parse as urlparse
         url = (req.llm_base_url or "").strip()
-        if url and not is_loopback_url(url):
-            raise HTTPException(400, "LLM base_url debe ser loopback")
+        parsed = urlparse.urlparse(url)
+        if url and (
+            parsed.scheme not in ("http", "https") or not parsed.netloc
+            or not is_loopback_url(url)
+        ):
+            raise HTTPException(
+                400, "LLM base_url: solo http(s) loopback (p. ej. http://127.0.0.1:8099)"
+            )
         _cfg["llm_base_url"] = url
     if req.llm_model is not None:
         _cfg["llm_model"] = (req.llm_model or "").strip()
@@ -125,6 +162,7 @@ def set_config(req: ConfigRequest):
             monitor._sysmon = (poll_sysmon_events
                               if req.sysmon_enabled and sysmon_available()
                               else None)
+    _save_config()
     return _mask(_cfg)
 
 
@@ -241,7 +279,7 @@ def export_json():
     events = store.list_events(limit=1000)
     triage = store.latest_triage()
     return JSONResponse({
-        "tool": "ai_net_monitor", "events": events,
+        "tool": "ai_net_monitor", "version": VERSION, "events": events,
         "latest_triage": triage["payload"] if triage else None,
     })
 

@@ -3,6 +3,39 @@ function esc(v) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+function themeToggle() {
+  const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", cur);
+  try { localStorage.setItem("anw-theme", cur); } catch (e) { /* private mode */ }
+}
+
+const VERDICT_META = {
+  expected_ai_use: { cls: "v-expected", label: "Uso IA esperado" },
+  background_exfil_suspect: { cls: "v-exfil", label: "Exfiltración sospechosa" },
+  telemetry_noise: { cls: "v-telemetry", label: "Telemetría / ruido" },
+  unrelated: { cls: "v-unrelated", label: "No relacionado" },
+};
+
+function verdictBadge(v) {
+  const m = VERDICT_META[v] || { cls: "v-none", label: v || "—" };
+  return `<span class="vbadge ${m.cls}">${esc(m.label)}</span>`;
+}
+
+// Celda numerica: valor arriba, barra debajo (alineado a la derecha).
+function numCell(value, pct) {
+  if (value == null) return `<td class="num">—</td>`;
+  const bar = pct == null ? "" : `<div class="bar"><div style="width:${Math.max(2, Math.min(100, Math.round(pct * 100)))}%"></div></div>`;
+  return `<td class="num"><div class="cellnum"><span class="val">${esc(String(value))}</span>${bar}</div></td>`;
+}
+
+function sevCell(score) {
+  if (score == null) return `<td class="num">—</td>`;
+  const s = Math.max(0, Math.min(3, Math.round(Number(score) || 0)));
+  let bars = "";
+  for (let i = 1; i <= 3; i++) bars += `<i class="${i <= s ? `on-${i}` : ""}"></i>`;
+  return `<td class="num"><div class="cellnum"><span class="val">${Number(score).toFixed(2)} / 3</span><span class="sevbar">${bars}</span></div></td>`;
+}
+
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
   if (!res.ok) {
@@ -33,7 +66,7 @@ function eventsTableHtml(events) {
     <td class="mono small">${esc(e.last_seen)}</td>
   </tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Catálogo</th><th>Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Catálogo</th><th class="num">Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -61,19 +94,18 @@ function triageHtml(data) {
   if (jev.status === "ok") {
     const rows = (data.events || []).map((e, i) => {
       const v = (jev.verdicts || {})[String(i)] || {};
-      const fp = v.prob_false_positive == null ? "—" : Math.round(v.prob_false_positive * 100) + "%";
       return `<tr>
         <td>${esc(e.process)}</td>
         <td class="mono">${esc(e.dest)}</td>
-        <td class="mono">${esc(v.verdict || "—")}</td>
-        <td class="num">${v.confidence == null ? "—" : esc(String(v.confidence))}</td>
-        <td class="num"><b>${fp}</b></td>
-        <td class="num">${v.severity_score == null ? "—" : esc(String(v.severity_score))} / 3</td>
-        <td class="num">${v.immediate_action == null ? "—" : esc(String(v.immediate_action))}</td>
+        <td>${verdictBadge(v.verdict)}</td>
+        ${numCell(v.confidence, v.confidence)}
+        ${numCell(v.prob_false_positive == null ? null : Math.round(v.prob_false_positive * 100) + "%", v.prob_false_positive)}
+        ${sevCell(v.severity_score)}
+        ${numCell(v.immediate_action, v.immediate_action)}
       </tr>`;
     }).join("");
     parts.push(`<h3>Veredictos Jev</h3><table>
-      <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificación</th><th>Confianza</th><th>Prob. falso positivo</th><th>Criticidad</th><th>Acción inmediata</th></tr></thead>
+      <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificación</th><th class="num">Confianza</th><th class="num">Prob. falso positivo</th><th class="num">Criticidad</th><th class="num">Acción inmediata</th></tr></thead>
       <tbody>${rows}</tbody></table>`);
   } else if (jev.status === "skipped") {
     parts.push(`<div class="hint">Jev no disponible (${esc(jev.reason || "")}). Vista clásica intacta.</div>`);
@@ -121,10 +153,11 @@ async function loadLatestTriage() {
 function bind() {
   const $ = (id) => document.getElementById(id);
 
+  $("btn-theme").addEventListener("click", themeToggle);
   $("btn-save-jev").addEventListener("click", async () => {
     try {
       await api("/api/config", { method: "POST", body: JSON.stringify({ jev_api_key: $("jev-key").value.trim() }) });
-      toast("Config Jev guardada (solo memoria).", "ok");
+      toast("Config Jev guardada (persistente).", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-test-jev").addEventListener("click", async () => {
@@ -137,7 +170,7 @@ function bind() {
     try {
       await api("/api/config", { method: "POST", body: JSON.stringify({
         llm_enabled: true, llm_base_url: $("llm-url").value.trim(), llm_model: $("llm-model").value.trim() }) });
-      toast("Config LLM local guardada (solo memoria).", "ok");
+      toast("Config LLM local guardada (persistente).", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-test-llm").addEventListener("click", async () => {

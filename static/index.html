@@ -2,17 +2,33 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
+<script>
+// Tema antes del primer paint (evita flash): localStorage > prefers-color-scheme.
+(function () {
+  var t = null;
+  try { t = localStorage.getItem("anw-theme"); } catch (e) {}
+  if (t !== "dark" && t !== "light") {
+    t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  document.documentElement.setAttribute("data-theme", t);
+})();
+</script>
 <title>AI NetWatch — salidas a nube IA</title>
+<link rel="icon" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
 <header>
   <h1>AI NetWatch</h1>
+  <span class="badge-ver">v1.0</span>
   <span class="sub">Monitor de conexiones de red hacia proveedores cloud IA (Jev incluido). Solo loopback.</span>
+  <div class="header-right">
+    <button id="btn-theme" class="icon" title="Cambiar tema claro/oscuro">tema</button>
+  </div>
 </header>
 <main>
   <section class="card" id="cfg-card">
-    <h2>Configuración (solo memoria)</h2>
+    <h2>Configuración (persistente)</h2>
     <div class="row">
       <label>Jev (TypeSafe)</label>
       <input id="jev-key" type="password" placeholder="API key">
@@ -38,7 +54,7 @@
 
   <section class="card">
     <h2>Eventos (conexiones a destinos IA)</h2>
-    <p class="hint">v1: ve proceso + destino IP/puerto + periodicidad. Sin bytes ni dominio real (v2: Sysmon).</p>
+    <p class="hint">v1.0: proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo + periodicidad. El dominio del catálogo se resuelve activamente (inmune a CNAME/CDN).</p>
     <div id="events-wrap" class="table-wrap"></div>
   </section>
 
@@ -59,6 +75,11 @@
     <div id="triage-results"></div>
   </section>
 </main>
+<footer>
+  <span>AI NetWatch v1.0</span>
+  <span>Solo loopback (127.0.0.1:8790)</span>
+  <span>LLM local: solo loopback, sin API key</span>
+</footer>
 <div id="toast"></div>
 <script src="/static/app.js"></script>
 </body>
