@@ -249,6 +249,62 @@ class TestJevTriage(unittest.TestCase):
             r = jev_triage.triage_events([{"process": "a"}], "k")
         self.assertEqual(r["status"], "error")
 
+    @staticmethod
+    def _answers_for(qids):
+        answers = {}
+        for qid in qids:
+            if qid.endswith("_class"):
+                answers[qid] = {"choice": "expected_ai_use", "confidence": 0.9}
+            elif qid.endswith("_sev"):
+                answers[qid] = {"score": 1}
+            else:
+                answers[qid] = {"noul": 0.2}
+        return answers
+
+    def test_chunked_fallback_merges(self):
+        def fake(url, body, key, timeout=30):
+            qs = list(body["questions"].keys())
+            if len(qs) > 30:  # llamada completa (25 eventos) -> falla
+                raise RuntimeError("HTTP 422: detail")
+            return {"model": "jev-1.13.0",
+                    "answers": self._answers_for(qs)}
+        with mock.patch.object(jev_triage, "_http_post_json", side_effect=fake):
+            r = jev_triage.triage_events(
+                [{"process": f"p{i}"} for i in range(25)], "k")
+        self.assertEqual(r["status"], "ok")
+        self.assertFalse(r["partial"])
+        self.assertEqual(len(r["verdicts"]), 25)
+
+    def test_partial_when_chunk_fails(self):
+        def fake(url, body, key, timeout=30):
+            qs = list(body["questions"].keys())
+            if len(qs) > 30:
+                raise RuntimeError("HTTP 422")
+            first = int(list(qs)[0][1:].split("_")[0])
+            if first >= 10:  # segundo chunk muere
+                raise RuntimeError("HTTP 500")
+            return {"model": "jev-1.13.0",
+                    "answers": self._answers_for(qs)}
+        with mock.patch.object(jev_triage, "_http_post_json", side_effect=fake):
+            r = jev_triage.triage_events(
+                [{"process": f"p{i}"} for i in range(20)], "k")
+        self.assertEqual(r["status"], "ok")
+        self.assertTrue(r["partial"])
+        self.assertIsNone(r["verdicts"]["15"]["verdict"])
+
+    def test_http_error_body_captured(self):
+        import io
+        import urllib.error
+        detail = b'{"detail":[{"msg":"Input should be a valid dictionary"}]}'
+        err = urllib.error.HTTPError("u", 422, "Unprocessable Entity",
+                                     {}, io.BytesIO(detail))
+        with mock.patch.object(jev_triage.urllib.request, "urlopen",
+                               side_effect=err):
+            with self.assertRaises(RuntimeError) as ctx:
+                jev_triage._http_post_json("https://x", {"a": 1}, "k")
+        self.assertIn("422", str(ctx.exception))
+        self.assertIn("valid dictionary", str(ctx.exception))
+
     def test_cap(self):
         calls = {}
         def fake(url, body, key, timeout=30):

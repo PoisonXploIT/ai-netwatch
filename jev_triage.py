@@ -14,6 +14,7 @@ Preguntas EXACTAS (las parametrisan los eventos, no la prosa):
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 
 PINNED_MODEL = "jev-1.13.0"
@@ -71,8 +72,46 @@ def _http_post_json(url: str, body: dict, api_key: str, timeout: int = 30):
             "Authorization": f"Bearer {api_key}",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        # El cuerpo del 4xx/5xx de TypeSafe lleva el detalle exacto; no tirarlo.
+        detail = ""
+        try:
+            detail = e.read().decode()[:300]
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {e.code}: {detail}".strip()) from None
+
+
+def _questions_for(global_i: int, local_i: int | None = None) -> dict[str, dict]:
+    """Las 3 preguntas de un evento. ID por indice GLOBAL; la instruccion
+    referencia state[local] (en llamada completa local == global)."""
+    li = global_i if local_i is None else local_i
+    base = f"About event {global_i} (state[{li}]): "
+    return {
+        f"f{global_i}_class": {
+            "type": "choice",
+            "instructions": (
+                base + "which classification applies to this cloud-AI "
+                          "network event observed on a Windows host?"
+            ),
+            "criteria": _CLASS_CRITERIA,
+        },
+        f"f{global_i}_sev": {
+            "type": "score",
+            "instructions": (
+                base + "how critical is the exfiltration risk if this pattern"
+                " continues?"
+            ),
+            "criteria": _SEVERITY_LEVELS,
+        },
+        f"f{global_i}_act": {
+            "type": "noul",
+            "instructions": base + "does this event require IMMEDIATE action right now?",
+        },
+    }
 
 
 def _state_for(event: dict) -> dict:
@@ -102,6 +141,21 @@ def _prob_false_positive(verdict, confidence):
     return round(conf, 4)
 
 
+_CHUNK = 10  # tamano del reintent por trozos si la llamada completa falla
+
+
+def _ask(states: list[dict], idxs: list[int], api_key: str, base_url: str,
+         model: str, timeout: int) -> dict:
+    """Una llamada TypeSafe para los eventos idxs (state local 0..n-1)."""
+    questions: dict[str, dict] = {}
+    for pos, gi in enumerate(idxs):
+        questions.update(_questions_for(gi, pos))
+    data = _http_post_json(base_url, {
+        "model": model, "state": states, "questions": questions,
+    }, api_key, timeout)
+    return data.get("answers") if isinstance(data, dict) else None
+
+
 def triage_events(events: list[dict], api_key: str, base_url: str = DEFAULT_BASE_URL,
                    model: str = PINNED_MODEL, timeout: int = 30) -> dict:
     """Triaje batch. Devuelve {status, model, count, verdicts{idx: {...}}}."""
@@ -111,36 +165,26 @@ def triage_events(events: list[dict], api_key: str, base_url: str = DEFAULT_BASE
         return {"status": "skipped", "reason": "no_api_key"}
     events = events[:TRIAGE_CAP]
     state = [_state_for(e) for e in events]
-    questions: dict[str, dict] = {}
-    for i in range(len(events)):
-        base = f"About event {i} (state[{i}]): "
-        questions[f"f{i}_class"] = {
-            "type": "choice",
-            "instructions": (
-                base + "which classification applies to this cloud-AI "
-                          "network event observed on a Windows host?"
-            ),
-            "criteria": _CLASS_CRITERIA,
-        }
-        questions[f"f{i}_sev"] = {
-            "type": "score",
-            "instructions": (
-                base + "how critical is the exfiltration risk if this pattern"
-                " continues?"
-            ),
-            "criteria": _SEVERITY_LEVELS,
-        }
-        questions[f"f{i}_act"] = {
-            "type": "noul",
-            "instructions": base + "does this event require IMMEDIATE action right now?",
-        }
+    answers: dict | None = None
     try:
-        data = _http_post_json(base_url, {
-            "model": model, "state": state, "questions": questions,
-        }, api_key, timeout)
+        answers = _ask(state, list(range(len(state))), api_key, base_url,
+                       model, timeout)
     except Exception as e:
-        return {"status": "error", "reason": f"{type(e).__name__}: {e}"}
-    answers = data.get("answers") if isinstance(data, dict) else None
+        # Fallback por trozos de 10: tolera limites/errores transitorios del API.
+        answers = {}
+        errors: list[str] = []
+        for start in range(0, len(state), _CHUNK):
+            idxs = list(range(start, min(start + _CHUNK, len(state))))
+            try:
+                a = _ask([state[i] for i in idxs], idxs, api_key, base_url,
+                         model, timeout)
+                if isinstance(a, dict):
+                    answers.update(a)
+            except Exception as e2:
+                errors.append(f"chunk {idxs[0]}-{idxs[-1]}: {e2}")
+        if not answers:
+            return {"status": "error",
+                    "reason": "; ".join(errors) or f"{type(e).__name__}: {e}"}
     if not isinstance(answers, dict):
         return {"status": "error", "reason": "bad_response_shape"}
     verdicts: dict[str, dict] = {}
@@ -159,5 +203,6 @@ def triage_events(events: list[dict], api_key: str, base_url: str = DEFAULT_BASE
             "immediate_action": noul,
             "prob_false_positive": _prob_false_positive(choice, conf),
         }
-    return {"status": "ok", "model": data.get("model") or model,
-            "count": len(events), "verdicts": verdicts}
+    missing = [i for i in range(len(events)) if f"f{i}_class" not in answers]
+    return {"status": "ok", "model": model, "count": len(events),
+            "partial": bool(missing), "verdicts": verdicts}
