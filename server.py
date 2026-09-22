@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
@@ -21,9 +22,10 @@ from pydantic import BaseModel
 
 from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
 from llm_local import explain_events, is_loopback_url
+from llm_proxy import LlmProxy
 from pdf_export import build_report_pdf
 from monitor import NetMonitor
-from store import Store
+from store import LlmCallStore, Store
 from sysmon_source import poll_sysmon_events, sysmon_available
 from tshark_source import (SniCapture, find_active_interface, sni_available,
                           tshark_path)
@@ -31,7 +33,7 @@ from tshark_source import (SniCapture, find_active_interface, sni_available,
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONFIG_PATH = DATA_DIR / "config.json"
-VERSION = "1.2"
+VERSION = "1.3"
 
 app = FastAPI(title="AI NetWatch")
 
@@ -43,10 +45,30 @@ _cfg: dict = {
     "llm_enabled": False,
     "llm_base_url": "",
     "llm_model": "",
+    "llm_proxy_enabled": False,
+    "llm_proxy_port": 8098,
+    "llm_proxy_target": "127.0.0.1:8099",
     "extra_hosts": [],
     "sysmon_enabled": True,
     "tshark_enabled": True,
 }
+
+
+def _valid_proxy_target(target: str) -> bool:
+    """Target del proxy inspector: host:port cuyo host resuelve a loopback.
+    Mismo criterio SSRF que llm_base_url: el proxy es un punto HTTP saliente
+    a destino elegido por el usuario."""
+    host_port = (target or "").strip()
+    if ":" not in host_port:
+        return False
+    host, _, port_s = host_port.rpartition(":")
+    try:
+        port = int(port_s)
+    except ValueError:
+        return False
+    if not (1 <= port <= 65535):
+        return False
+    return is_loopback_url(f"http://{host}:{port}")
 
 
 def _load_config() -> None:
@@ -60,12 +82,21 @@ def _load_config() -> None:
     except (json.JSONDecodeError, OSError):
         return
     for k in ("jev_enabled", "jev_api_key", "llm_enabled", "llm_base_url",
-              "llm_model", "extra_hosts", "sysmon_enabled", "tshark_enabled"):
+              "llm_model", "llm_proxy_enabled", "llm_proxy_port",
+              "llm_proxy_target", "extra_hosts", "sysmon_enabled",
+              "tshark_enabled"):
         if k in data:
             _cfg[k] = data[k]
     url = str(_cfg.get("llm_base_url") or "")
     if url and not is_loopback_url(url):
         _cfg["llm_base_url"] = ""
+    # Revalidar proxy: un archivo editado a mano no apunta el proxy fuera.
+    port = _cfg.get("llm_proxy_port")
+    if not isinstance(port, int) or isinstance(port, bool) \
+            or not (1 <= port <= 65535):
+        _cfg["llm_proxy_port"] = 8098
+    if not _valid_proxy_target(str(_cfg.get("llm_proxy_target") or "")):
+        _cfg["llm_proxy_target"] = "127.0.0.1:8099"
 
 
 def _save_config() -> None:
@@ -76,8 +107,10 @@ def _save_config() -> None:
 _load_config()
 
 store: Store | None = None
+llm_calls: LlmCallStore | None = None
 monitor: NetMonitor | None = None
 sni_capture: SniCapture | None = None
+llm_proxy: LlmProxy | None = None
 
 
 def _set_sni_capture(enabled: bool) -> None:
@@ -103,10 +136,38 @@ def _set_sni_capture(enabled: bool) -> None:
         monitor._sni_poll = sni_capture.poll_records
 
 
+def _set_llm_proxy(enabled: bool) -> bool:
+    """Arranque/paro en vivo del proxy inspector (R3). Devuelve True si queda
+    activo. Fail-safe: puerto ocupado o target invalido lo deja inerte."""
+    global llm_proxy
+    if not enabled:
+        if llm_proxy:
+            llm_proxy.stop()
+            llm_proxy = None
+        return False
+    if llm_proxy is not None:
+        return True
+    host, _, port_s = str(_cfg["llm_proxy_target"]).rpartition(":")
+    proxy = LlmProxy(bind_host="127.0.0.1",
+                     bind_port=int(_cfg["llm_proxy_port"]),
+                     target=(host or "127.0.0.1", int(port_s or 8099)),
+                     on_call=llm_calls.record if llm_calls else None)
+    try:
+        proxy.bind()
+    except OSError:
+        return False
+    proxy.start()
+    llm_proxy = proxy
+    return True
+
+
 @app.on_event("startup")
 def _start() -> None:
     global store, monitor, sni_capture
     store = Store(DATA_DIR / "events.db")
+    llm_calls = LlmCallStore(DATA_DIR / "llm_calls.db")
+    if _cfg["llm_proxy_enabled"]:
+        _set_llm_proxy(True)
     sm = poll_sysmon_events if (_cfg["sysmon_enabled"] and sysmon_available()) else None
     sni_fn = None
     if _cfg["tshark_enabled"]:
@@ -123,6 +184,8 @@ def _start() -> None:
 
 @app.on_event("shutdown")
 def _stop() -> None:
+    if llm_proxy:
+        llm_proxy.stop()
     if sni_capture:
         sni_capture.stop()
     if monitor:
@@ -130,6 +193,8 @@ def _stop() -> None:
         monitor.join(timeout=3)
     if store:
         store.close()
+    if llm_calls:
+        llm_calls.close()
 
 
 def _mask(cfg: dict) -> dict:
@@ -145,6 +210,9 @@ class ConfigRequest(BaseModel):
     llm_enabled: bool | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
+    llm_proxy_enabled: bool | None = None
+    llm_proxy_port: int | None = None
+    llm_proxy_target: str | None = None
     extra_hosts: list[str] | None = None
     sysmon_enabled: bool | None = None
     tshark_enabled: bool | None = None
@@ -166,6 +234,7 @@ class ResetRequest(BaseModel):
 def get_config():
     out = _mask(_cfg)
     out["tshark_available"] = sni_available()
+    out["llm_proxy_running"] = llm_proxy is not None
     return out
 
 
@@ -192,6 +261,27 @@ def set_config(req: ConfigRequest):
         _cfg["llm_base_url"] = url
     if req.llm_model is not None:
         _cfg["llm_model"] = (req.llm_model or "").strip()
+    if req.llm_proxy_port is not None:
+        if not (1 <= int(req.llm_proxy_port) <= 65535):
+            raise HTTPException(400, "llm_proxy_port: entre 1 y 65535")
+        _cfg["llm_proxy_port"] = int(req.llm_proxy_port)
+    if req.llm_proxy_target is not None:
+        target = (req.llm_proxy_target or "").strip()
+        if not _valid_proxy_target(target):
+            raise HTTPException(
+                400,
+                "llm_proxy_target: solo host:port loopback"
+                " (p. ej. 127.0.0.1:8099)")
+        _cfg["llm_proxy_target"] = target
+    if req.llm_proxy_enabled is not None:
+        _cfg["llm_proxy_enabled"] = req.llm_proxy_enabled
+        if llm_calls is not None:
+            if req.llm_proxy_enabled:
+                if not _set_llm_proxy(True):
+                    raise HTTPException(
+                        409, "proxy LLM no arrancado (¿puerto en uso?)")
+            else:
+                _set_llm_proxy(False)
     if req.extra_hosts is not None:
         hosts = [h.strip().lower() for h in req.extra_hosts if h and h.strip()]
         _cfg["extra_hosts"] = hosts
@@ -294,6 +384,92 @@ def latest_triage():
     if not t:
         raise HTTPException(404, "sin triajes")
     return t
+
+
+def _pid_by_local_ports(ports: set[int]) -> dict[int, int]:
+    """Mapa puerto local (IPv4) -> PID propietario via iphlpapi (stdlib
+    ctypes). Solo Windows; si falla, devuelve lo que haya logrado."""
+    out: dict[int, int] = {}
+    if not ports or os.name != "nt":
+        return out
+    try:
+        import ctypes
+
+        class MIB_TCPROW_EX(ctypes.Structure):
+            _fields_ = [
+                ("dwState", ctypes.c_uint32),
+                ("dwLocalAddr", ctypes.c_uint32),
+                ("dwLocalPort", ctypes.c_uint32),
+                ("dwRemoteAddr", ctypes.c_uint32),
+                ("dwRemotePort", ctypes.c_uint32),
+                ("dwOwningPid", ctypes.c_uint32),
+            ]
+
+        iphlpapi = ctypes.WinDLL("iphlpapi.dll")
+        size = ctypes.c_uint32()
+        proto, table_class = 2, 1  # AF_INET, TABLE_OWNER_PID
+        err = iphlpapi.GetExtendedTcpTable(
+            None, ctypes.byref(size), False, proto, table_class, 0)
+        if err not in (0, 120):  # 120 = ERROR_INSUFFICIENT_BUFFER
+            return out
+        buf = ctypes.create_string_buffer(size.value)
+        err = iphlpapi.GetExtendedTcpTable(
+            buf, ctypes.byref(size), False, proto, table_class, 0)
+        if err != 0:
+            return out
+        n = ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint32)).contents[0]
+        rows = (MIB_TCPROW_EX * n).from_buffer_copy(buf[4:])
+        for r in rows:
+            port = ((r.dwLocalPort >> 8) & 0xFF) * 256 + (r.dwLocalPort & 0xFF)
+            if port in ports and r.dwOwningPid:
+                out[port] = r.dwOwningPid
+    except Exception:
+        pass
+    return out
+
+
+def _port_of(addr: str | None) -> int | None:
+    if not addr or ":" not in addr:
+        return None
+    try:
+        return int(addr.rsplit(":", 1)[1])
+    except ValueError:
+        return None
+
+
+def _calls_payload(calls: list[dict]) -> list[dict]:
+    pids = _pid_by_local_ports({p for p in (_port_of(c.get("client_addr"))
+                                            for c in calls) if p})
+    out = []
+    for c in calls:
+        c = dict(c)
+        port = _port_of(c.get("client_addr"))
+        c["client_pid"] = pids.get(port) if port else None
+        out.append(c)
+    return out
+
+
+@app.get("/api/llm/calls")
+def list_llm_calls(limit: int = 100):
+    limit = max(1, min(int(limit), 1000))
+    calls = llm_calls.list_calls(limit=limit) if llm_calls else []
+    return {"calls": _calls_payload(calls)}
+
+
+@app.get("/api/llm/calls/{call_id}")
+def get_llm_call(call_id: int):
+    c = llm_calls.get_call(call_id) if llm_calls else None
+    if not c:
+        raise HTTPException(404, "llamada no encontrada")
+    return _calls_payload([c])[0]
+
+
+@app.post("/api/llm/calls/reset")
+def reset_llm_calls(req: ResetRequest):
+    if not req.confirm:
+        raise HTTPException(400, 'se requiere {"confirm": true}')
+    n = llm_calls.clear() if llm_calls else 0
+    return {"calls_removed": n}
 
 
 @app.get("/api/stats")

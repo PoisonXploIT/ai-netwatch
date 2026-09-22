@@ -1,4 +1,6 @@
-"""Almacenamiento SQLite (stdlib) de eventos y triajes de AI NetWatch."""
+"""Almacenamiento SQLite (stdlib) de eventos, triajes y llamadas LLM de
+AI NetWatch. Los LLM calls viven en su propia base (llm_calls.db) para no
+mezclar retenciones con los eventos de red."""
 from __future__ import annotations
 
 import json
@@ -43,6 +45,84 @@ CREATE TABLE IF NOT EXISTS triages (
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+
+
+_LLM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS llm_calls (
+    id INTEGER PRIMARY KEY,
+    ts TEXT NOT NULL,
+    method TEXT,
+    path TEXT,
+    status INTEGER,
+    model TEXT,
+    streaming INTEGER NOT NULL DEFAULT 0,
+    prompt_chars INTEGER,
+    response_chars INTEGER,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    latency_ms REAL,
+    client_addr TEXT,
+    prompt TEXT,
+    response TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_llm_calls_ts ON llm_calls(ts);
+"""
+
+
+class LlmCallStore:
+    """SQLite de llamadas LLM capturadas por el proxy inspector (R3)."""
+
+    def __init__(self, path: Path | str):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self.conn = sqlite3.connect(str(self.path), check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        with self._lock:
+            self.conn.executescript(_LLM_SCHEMA)
+            self.conn.commit()
+
+    def record(self, call: dict) -> int:
+        with self._lock:
+            cur = self.conn.execute(
+                "INSERT INTO llm_calls (ts, method, path, status, model,"
+                " streaming, prompt_chars, response_chars, prompt_tokens,"
+                " completion_tokens, latency_ms, client_addr, prompt, response)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (call["ts"], call.get("method"), call.get("path"),
+                 call.get("status"), call.get("model"),
+                 int(call.get("streaming") or 0),
+                 call.get("prompt_chars"), call.get("response_chars"),
+                 call.get("prompt_tokens"), call.get("completion_tokens"),
+                 call.get("latency_ms"), call.get("client_addr"),
+                 call.get("prompt"), call.get("response")),
+            )
+            self.conn.commit()
+            return cur.lastrowid
+
+    def list_calls(self, limit: int = 100) -> list[dict]:
+        limit = max(1, min(int(limit), 1000))
+        rows = self.conn.execute(
+            "SELECT * FROM llm_calls ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_call(self, call_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM llm_calls WHERE id=?", (call_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def clear(self) -> int:
+        with self._lock:
+            n = self.conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0]
+            self.conn.execute("DELETE FROM llm_calls")
+            self.conn.commit()
+        return n
+
+    def close(self) -> None:
+        with self._lock:
+            self.conn.close()
 
 
 class Store:

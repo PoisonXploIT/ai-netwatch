@@ -184,3 +184,12 @@ footer {
   padding: 0 24px 26px; color: var(--muted); font-size: 12px;
   display: flex; gap: 14px; flex-wrap: wrap;
 }
+
+/* LLM Inspector: prompt/respuesta en claro */
+pre {
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 320px; overflow: auto; margin: 6px 0;
+  padding: 8px 10px; border-radius: 6px; font-size: 12px;
+  background: rgba(127, 127, 127, .14);
+}
+details h4 { margin: 8px 0 2px; font-size: 12px; }

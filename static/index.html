@@ -20,7 +20,7 @@
 <body>
 <header>
   <h1>AI NetWatch</h1>
-  <span class="badge-ver">v1.2</span>
+  <span class="badge-ver">v1.3</span>
   <span class="sub">Monitor de conexiones de red hacia proveedores cloud IA (Jev incluido). Solo loopback.</span>
   <div class="header-right">
     <button id="btn-guide" class="linkbtn" title="Ir a la guía de uso">Guía de uso</button>
@@ -91,6 +91,24 @@
     <span id="triage-status" class="hint"></span>
     <div id="triage-results"></div>
   </section>
+
+  <section class="card" id="llm-inspector-card">
+    <h2>LLM Inspector (R3)</h2>
+    <p class="hint">Reverse proxy local frente al LLM local: registra cada llamada HTTP en claro — prompt, respuesta, modelo, tokens y latencia. Solo sirve para un LLM de loopback (HTTP plano); los proveedores remotos viajan cifrados y su contenido no se ve aquí.</p>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="llm-proxy-toggle"> Inspector activo</label>
+      <label>Puerto proxy</label>
+      <input id="llm-proxy-port" style="width:90px">
+      <label>Target (LLM)</label>
+      <input id="llm-proxy-target" placeholder="127.0.0.1:8099" style="width:160px">
+      <button id="btn-save-proxy">Guardar</button>
+    </div>
+    <p class="hint">Para inspeccionar, apunta el cliente al puerto del proxy (p. ej. SDK/cliente → <span class="mono">http://127.0.0.1:8098</span>). Las llamadas se guardan en <span class="mono">data/llm_calls.db</span> con prompts y respuestas completos: no expongas ese fichero.</p>
+    <div id="llm-calls-wrap"></div>
+    <div class="row">
+      <button id="btn-reset-llmcalls" class="danger">Borrar llamadas registradas</button>
+    </div>
+  </section>
   <section class="card" id="guide-card">
     <h2>Guía de uso</h2>
 
@@ -129,8 +147,18 @@
     </details>
 
     <details>
-      <summary>Explicaciones técnicas (LLM local)</summary>
-      <p>Si el LLM local está configurado, los eventos marcados (criticidad ≥2 o no-<span class="mono">expected</span>) reciben una explicación en español: qué es, por qué importa y sugerencia. El LLM <b>solo loopback, sin API key</b> y <b>nunca re-scorea</b> el veredicto de Jev.</p>
+      <summary>Explicaciones técnicas (LLM local) — qué hace y qué NO hace</summary>
+      <p>Si el LLM local está configurado, los eventos marcados (criticidad ≥2 o no-<span class="mono">expected</span>) reciben una explicación en español: qué es, por qué importa y sugerencia. El LLM <b>solo loopback, sin API key</b> y <b>nunca re-scorea</b> el veredicto de Jev: es un <b>explicador, no un detector ni un juez</b>. Solo se llama tras Jev, solo sobre eventos ya marcados, y si falla todo sigue funcionando.</p>
+    </details>
+
+    <details>
+      <summary>LLM Inspector (R3)</summary>
+      <p>Un reverse proxy stdlib en <span class="mono">127.0.0.1</span> (puerto configurable, por defecto 8098) reenvía al LLM local (target configurable, solo loopback). Como ambos extremos son loopback y HTTP plano, el inspector ve <b>toda la llamada en claro</b>: prompt completo, respuesta, modelo, tokens (si el servidor los reporta), latencia y si era streaming.</p>
+      <ul>
+        <li><b>Cómo usarlo</b>: activa el toggle y apunta el cliente al puerto del proxy (p. ej. <span class="mono">http://127.0.0.1:8098</span> en vez de <span class="mono">:8099</span>).</li>
+        <li><b>Límite honesto</b>: solo cubre el LLM local. Un proveedor remoto (TLS) no se puede descifrar pasivamente; de él se ve la conexión (eventos de red) pero no el contenido.</li>
+        <li><b>Privacidad</b>: prompts y respuestas quedan en claro en <span class="mono">data/llm_calls.db</span>. Si un prompt lleva una API key o datos sensibles, esa información queda en ese fichero: borra las llamadas cuando termines (botón de la tarjeta).</li>
+      </ul>
     </details>
 
     <details>
@@ -172,7 +200,7 @@
   </section>
 </main>
 <footer>
-  <span>AI NetWatch v1.2</span>
+  <span>AI NetWatch v1.3</span>
   <span>Solo loopback (127.0.0.1:8790)</span>
   <span>LLM local: solo loopback, sin API key</span>
 </footer>

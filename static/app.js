@@ -134,12 +134,33 @@ async function refreshEvents() {
   } catch (e) { /* server caído */ }
 }
 
+function llmCallsHtml(calls) {
+  if (!calls.length) return `<div class="hint">Sin llamadas registradas. Con el inspector activo, apunta el cliente al puerto del proxy.</div>`;
+  return calls.map((c) => `<details>
+    <summary class="mono">${esc(c.ts)} · ${esc(c.method || "")} ${esc(c.path || "")} · ${esc(c.model || "—")} · HTTP ${esc(String(c.status == null ? "?" : c.status))}${c.streaming ? " · stream" : ""}${c.latency_ms != null ? ` · ${c.latency_ms} ms` : ""}</summary>
+    <div class="small mono">PID cliente: ${c.client_pid != null ? esc(String(c.client_pid)) : "—"} · ${esc(c.client_addr || "")} · prompt ${esc(String(c.prompt_chars == null ? 0 : c.prompt_chars))} chars${c.prompt_tokens != null ? ` (${esc(String(c.prompt_tokens))} tokens)` : ""} · respuesta ${esc(String(c.response_chars == null ? 0 : c.response_chars))} chars${c.completion_tokens != null ? ` (${esc(String(c.completion_tokens))} tokens)` : ""}</div>
+    <h4>Prompt</h4><pre class="small">${esc(c.prompt || "")}</pre>
+    <h4>Respuesta</h4><pre class="small">${esc(c.response || "")}</pre>
+  </details>`).join("");
+}
+
+async function refreshLlmCalls() {
+  try {
+    const d = await api("/api/llm/calls?limit=100");
+    document.getElementById("llm-calls-wrap").innerHTML = llmCallsHtml(d.calls);
+  } catch (e) { /* server caído */ }
+}
+
 async function loadConfig() {
   try {
     const c = await api("/api/config");
     document.getElementById("jev-key").value = c.jev_api_key || "";
     document.getElementById("llm-url").value = c.llm_base_url || "";
     document.getElementById("llm-model").value = c.llm_model || "";
+    document.getElementById("llm-proxy-port").value = c.llm_proxy_port || 8098;
+    document.getElementById("llm-proxy-target").value = c.llm_proxy_target || "127.0.0.1:8099";
+    const pt = document.getElementById("llm-proxy-toggle");
+    pt.checked = !!c.llm_proxy_enabled;
     document.getElementById("sysmon-toggle").checked = !!c.sysmon_enabled;
     const t = document.getElementById("tshark-toggle");
     t.checked = !!c.tshark_enabled;
@@ -221,6 +242,28 @@ function bind() {
         : "Captura SNI (tshark) desactivada.", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
+  $("llm-proxy-toggle").addEventListener("change", async (ev) => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({ llm_proxy_enabled: ev.target.checked }) });
+      toast(ev.target.checked ? "Inspector LLM activo (proxy en loopback)." : "Inspector LLM desactivado.", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("btn-save-proxy").addEventListener("click", async () => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({
+        llm_proxy_port: parseInt($("llm-proxy-port").value, 10),
+        llm_proxy_target: $("llm-proxy-target").value.trim() }) });
+      toast("Config del proxy inspector guardada (persistente).", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("btn-reset-llmcalls").addEventListener("click", async () => {
+    if (!confirm("Borrar todas las llamadas LLM registradas?")) return;
+    try {
+      const r = await api("/api/llm/calls/reset", { method: "POST", body: JSON.stringify({ confirm: true }) });
+      toast(`Borradas ${r.calls_removed} llamadas.`, "ok");
+      refreshLlmCalls();
+    } catch (e) { toast(e.message, "err"); }
+  });
   $("btn-reset").addEventListener("click", async () => {
     if (!confirm("Borrar todos los eventos y triajes vivos? El histórico diario (7+ días) se conserva.")) return;
     try {
@@ -251,8 +294,10 @@ function bind() {
   loadLatestTriage();
   refreshEvents();
   refreshStats();
+  refreshLlmCalls();
   setInterval(refreshEvents, 5000);
   setInterval(refreshStats, 60000);
+  setInterval(refreshLlmCalls, 10000);
 }
 
 document.addEventListener("DOMContentLoaded", bind);

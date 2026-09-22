@@ -1,4 +1,4 @@
-# AI NetWatch (v1.2)
+# AI NetWatch (v1.3)
 
 Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad + dominio real por SNI** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
 
@@ -42,13 +42,36 @@ Sysmon64.exe -accepteula -i
 
 Notas v15: servicio `Sysmon64`, canal de eventos `Microsoft-Windows-Sysmon/Operational` (en v14 era `...-Operational`), campos `DestinationIp`/`DestinationHostname` (antes `DestinationAddress`). Sin config XML: Sysmon loguea todo y AI NetWatch filtra por catalogo.
 
+## LLM Inspector (R3, v1.3)
+
+Reverse proxy **solo stdlib** en loopback para inspeccionar las llamadas HTTP de un cliente a un LLM local OpenAI-compatible (p. ej. `llama-server`):
+
+- Escucha `127.0.0.1:<puerto>` (por defecto 8098) y reenvia al target configurado (por defecto `127.0.0.1:8099`, **solo loopback**; misma validacion SSRF que `llm_base_url`).
+- Registra por llamada en `data/llm_calls.db` (SQLite aparte de `events.db`): path, modelo, **prompt y respuesta completos** (truncados a 64 KB con tamano real), tokens (`usage` si el servidor los reporta), latencia, streaming o no, y PID del cliente (via `iphlpapi`, Windows).
+- Streaming SSE: se reenvia byte a byte tal cual; el contenido se acumula para el registro sin tocar el framing.
+- Toggle en vivo en la UI (tarjeta *LLM Inspector*); para inspeccionar, apunta el cliente al puerto del proxy.
+- **Limite honesto**: solo cubre el LLM local (HTTP plano en loopback). Un proveedor remoto viaja cifrado y su contenido no se ve; de el se ve la conexion (eventos de red), no el prompt.
+- **Privacidad**: prompts/respuestas quedan en claro en `llm_calls.db`. `POST /api/llm/calls/reset` (`{"confirm": true}`) los borra.
+
 ## Arranque
+
+El venv ya existe (`C:\Users\Sammi\ai-netwatch\.venv`, creado con `uv`, Python 3.12 +
+fastapi 0.141.1 + uvicorn 0.53.0). Arranque unificado con los demas servicios locales
+(puerto 8790):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Sammi\scripts\services-up.ps1 -Service ai-netwatch -Wait
+# -Status estado, -Stop parar; log en C:\Users\Sammi\logs\servicios\services-up.log
+```
+
+Arranque automatico al iniciar sesion (y tras un reinicio): `services-up.ps1` servicio
+`ai-netwatch` (8790), lanzado por `...\Startup\servicios-locales.vbs` con watchdog cada 120 s.
+Recrear el entorno desde cero si hace falta:
 
 ```powershell
 cd C:\Users\Sammi\ai-netwatch
-python -m venv .venv
-.\.venv\Scripts\pip install fastapi uvicorn
-.\.venv\Scripts\python -m uvicorn server:app --host 127.0.0.1 --port 8790
+uv venv --python 3.12
+uv pip install fastapi uvicorn
 ```
 
 Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar), toggle Sysmon y toggle tshark sobreviven al reinicio.
@@ -58,8 +81,9 @@ Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`)
 - `GET /api/events?limit=&process=&dest=`
 - `POST /api/triage` (`{"event_ids": [...]}` opcional; sin ids = todos)
 - `GET /api/triages/latest`
-- `GET/POST /api/config` (key Jev maskeda en lecturas)
+- `GET/POST /api/config` (key Jev maskeda en lecturas; incluye `llm_proxy_enabled/port/target`)
 - `POST /api/test` (`{"target": "jev"|"llm"}`)
+- `GET /api/llm/calls?limit=`, `GET /api/llm/calls/{id}`, `POST /api/llm/calls/reset`
 - `GET /api/export/json`, `GET /api/export/csv`, `GET /api/export/pdf`
 
 Los tres exports se descargan (`Content-Disposition: attachment`) y se generan en memoria solo con datos del store: **ninguno incluye la config ni API keys** (verificado por tests). El PDF (writer stdlib, sin dependencias) lleva cabecera, eventos, ultimo triaje Jev y estadisticas de 7 dias.
@@ -82,11 +106,12 @@ Derivado: `prob_false_positive` = 1−confianza si `expected_ai_use`, confianza 
 - **Reset protegido**: `POST /api/reset` exige `{"confirm": true}` (400 si no).
 - **Exports sin path traversal**: el contenido se genera en memoria; ningun endpoint toma nombres de archivo del usuario.
 - **tshark pasivo y gestionado**: la captura solo emite SNIs (sin payload); no hay forma de apuntarla a otra interfaz desde la API (la interfaz la elige el arranque localmente).
-- Suite dedicada: `tests/test_security.py` (SSRF, persistencia + revalidacion, reset, inputs, fail-safe).
+- **Proxy inspector en loopback**: `llm_proxy_target` exige `host:port` cuyo host resuelve a loopback (400 si no; revalidado al cargar config). El proxy solo escucha `127.0.0.1`; los logs de llamada son por diseño el contenido de las llamadas (inspeccion local, no exfiltracion).
+- Suite dedicada: `tests/test_security.py` (SSRF, persistencia + revalidacion, reset, inputs, fail-safe) y `tests/test_llm_proxy.py` (reenvio, streaming SSE, target loopback, toggle en vivo, reset).
 
 ## Guia de uso
 
-Dentro de la propia interfaz (tarjeta *Guia de uso*, enlace en el header): que ve y que no ve, fuentes de datos (polling/Sysmon/tshark), lectura de veredictos Jev, LLM local, estadisticas/reset, exportacion, configuracion y el modelo de seguridad/privacidad. Contenido estatico: ninguna entrada del usuario se renderiza (sin superficie XSS).
+Dentro de la propia interfaz (tarjeta *Guia de uso*, enlace en el header): que ve y que no ve, fuentes de datos (polling/Sysmon/tshark), lectura de veredictos Jev, LLM local (explicador, no juez), LLM Inspector (R3), estadisticas/reset, exportacion, configuracion y el modelo de seguridad/privacidad. Contenido estatico: ninguna entrada del usuario se renderiza (sin superficie XSS).
 
 ## Tests
 
