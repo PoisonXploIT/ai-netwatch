@@ -38,8 +38,28 @@ class _Upstream(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
-        d = json.loads(self.rfile.read(n) or b"{}")
-        if d.get("stream"):
+        raw = self.rfile.read(n) or b"{}"
+        try:
+            d = json.loads(raw)
+        except json.JSONDecodeError:
+            d = {}
+        if self.path == "/v1/embeddings":
+            resp = {"model": "emb", "data": [{"embedding": [0.123456789, 0.2, 0.3]}],
+                    "usage": {"prompt_tokens": 2}}
+        elif self.path == "/v1/images/generations":
+            resp = {"model": "img", "data": [{"b64_json": "aGVsbG8="}]}
+        elif "/audio/" in self.path:
+            resp = {"text": "transcrito"}
+        else:
+            resp = None
+        if resp is not None:
+            data = json.dumps(resp).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif d.get("stream"):
             chunks = [
                 {"model": "test-model",
                  "choices": [{"delta": {"content": "hola "}}]},
@@ -204,6 +224,156 @@ class ConfigBase(unittest.TestCase):
         server.llm_proxy = None
         self.store.close()
         self.tmp.cleanup()
+
+
+class TestEndpointCoverage(ProxyBase):
+
+    def test_embeddings_metadata_only(self):
+        status, body = _post(self.proxy.bound_port, "/v1/embeddings",
+                             {"model": "emb", "input": "hola mundo"})
+        self.assertEqual(status, 200)
+        calls = _wait_calls(self.store)
+        c = calls[0]
+        self.assertIn("vector", c["response"])
+        self.assertNotIn("0.123456789", c["response"])  # sin float crudo
+        self.assertEqual(c["prompt"], "hola mundo")
+
+    def test_images_b64_marker(self):
+        status, body = _post(self.proxy.bound_port, "/v1/images/generations",
+                             {"model": "img", "prompt": "un gato", "n": 1})
+        self.assertEqual(status, 200)
+        calls = _wait_calls(self.store)
+        c = calls[0]
+        self.assertIn("imagen b64", c["response"])
+        self.assertNotIn("aGVsbG8=", c["response"])
+        self.assertIn("un gato", c["prompt"])
+
+    def test_audio_multipart_metadata(self):
+        body = (b'--X\r\nContent-Disposition: form-data; name="file"; '
+               b'filename="a.wav"\r\nContent-Type: audio/wav\r\n\r\nFAKEDATA'
+               b'\r\n--X--\r\n')
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.proxy.bound_port}/v1/audio/transcriptions",
+            data=body, method="POST",
+            headers={"Content-Type": "multipart/form-data; boundary=X"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            d = json.loads(r.read())
+        self.assertEqual(d["text"], "transcrito")
+        calls = _wait_calls(self.store)
+        c = calls[0]
+        self.assertIn("a.wav", c["prompt"])
+        self.assertNotIn("FAKEDATA", c["prompt"])
+        self.assertEqual(c["response"], "transcrito")
+
+
+class TestUpstreamDown(unittest.TestCase):
+    """Un intento que no conecta al upstream queda registrado (status 0)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = LlmCallStore(Path(self.tmp.name) / "llm.db")
+        # Puerto 1: nada lo escucha en loopback -> ECONNREFUSED inmediato.
+        self.proxy = LlmProxy(bind_host="127.0.0.1", bind_port=0,
+                              target=("127.0.0.1", 1),
+                              on_call=self.store.record)
+        self.proxy.bind()
+        self.proxy.start()
+
+    def tearDown(self) -> None:
+        self.proxy.stop()
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_failed_upstream_recorded(self):
+        import socket as _s
+        c = _s.create_connection(("127.0.0.1", self.proxy.bound_port),
+                                timeout=5)
+        req = json.dumps({"model": "m",
+                          "messages": [{"role": "user", "content": "x"}]}).encode()
+        c.sendall(b"POST /v1/chat/completions HTTP/1.1\r\nHost: h\r\n"
+                  b"Content-Type: application/json\r\n"
+                  b"Content-Length: %d\r\n\r\n%s" % (len(req), req))
+        data = b""
+        while True:
+            ch = c.recv(65536)
+            if not ch:
+                break
+            data += ch
+        self.assertEqual(data, b"")  # el cliente no recibe respuesta
+        calls = _wait_calls(self.store)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["status"], 0)
+        self.assertIn("sin respuesta", calls[0]["response"])
+        self.assertIn("x", calls[0]["prompt"])  # el prompt si se ve
+
+
+class TestLinkCalls(unittest.TestCase):
+    """Enlace local: llamada -> evento de red (destino+proceso+ventana)."""
+
+    def _events(self):
+        return [
+            {"id": 1, "dest_ip": "127.0.0.1", "dest_port": 8099,
+             "process": "myclient.exe",
+             "last_seen": "2026-01-01 00:00:30Z"},
+            {"id": 2, "dest_ip": "127.0.0.1", "dest_port": 8099,
+             "process": "other.exe",
+             "last_seen": "2026-01-01 00:00:30Z"},
+            {"id": 3, "dest_ip": "10.0.0.1", "dest_port": 443,
+             "process": "myclient.exe",
+             "last_seen": "2026-01-01 00:00:30Z"},
+            {"id": 4, "dest_ip": "127.0.0.1", "dest_port": 8099,
+             "process": "myclient.exe",
+             "last_seen": "2026-01-01 00:10:00Z"},  # fuera de ventana
+        ]
+
+    def test_link_matches_dest_process_window(self):
+        calls = [{"ts": "2026-01-01 00:00:00Z", "client_pid": 4242}]
+        server._link_calls(calls, self._events(), "127.0.0.1", 8099,
+                          {4242: "myclient.exe"})
+        self.assertEqual(calls[0]["related_event_ids"], [1])
+        self.assertEqual(calls[0]["client_process"], "myclient.exe")
+
+    def test_link_empty_when_no_match(self):
+        calls = [{"ts": "2026-01-01 00:00:00Z", "client_pid": 9999}]
+        server._link_calls(calls, self._events(), "127.0.0.1", 8099,
+                          {9999: "unknown.exe"})
+        self.assertEqual(calls[0]["related_event_ids"], [])
+
+
+class TestEffectiveLlmBase(ConfigBase):
+    """Auto-observacion: las llamadas propias pasan por el proxy."""
+
+    def test_rewrite_when_proxy_matches_target(self):
+        class FakeProxy:
+            target = ("127.0.0.1", 8099)
+            bind_host = "127.0.0.1"
+            bound_port = 18099
+
+        server._cfg["llm_base_url"] = "http://127.0.0.1:8099"
+        server.llm_proxy = FakeProxy()
+        try:
+            self.assertEqual(server._effective_llm_base(),
+                             "http://127.0.0.1:18099")
+        finally:
+            server.llm_proxy = None
+
+    def test_no_rewrite_when_proxy_off_or_different(self):
+        server._cfg["llm_base_url"] = "http://127.0.0.1:8099"
+        self.assertEqual(server._effective_llm_base(),
+                         "http://127.0.0.1:8099")  # proxy apagado
+
+        class FakeProxy:
+            target = ("127.0.0.1", 8099)
+            bind_host = "127.0.0.1"
+            bound_port = 18099
+
+        server._cfg["llm_base_url"] = "http://127.0.0.1:9999"  # distinto upstream
+        server.llm_proxy = FakeProxy()
+        try:
+            self.assertEqual(server._effective_llm_base(),
+                             "http://127.0.0.1:9999")
+        finally:
+            server.llm_proxy = None
 
 
 class TestProxyConfig(ConfigBase):

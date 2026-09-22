@@ -1,4 +1,4 @@
-# AI NetWatch (v1.3)
+# AI NetWatch (v1.4)
 
 Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad + dominio real por SNI** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
 
@@ -48,7 +48,10 @@ Reverse proxy **solo stdlib** en loopback para inspeccionar las llamadas HTTP de
 
 - Escucha `127.0.0.1:<puerto>` (por defecto 8098) y reenvia al target configurado (por defecto `127.0.0.1:8099`, **solo loopback**; misma validacion SSRF que `llm_base_url`).
 - Registra por llamada en `data/llm_calls.db` (SQLite aparte de `events.db`): path, modelo, **prompt y respuesta completos** (truncados a 64 KB con tamano real), tokens (`usage` si el servidor los reporta), latencia, streaming o no, y PID del cliente (via `iphlpapi`, Windows).
+- Cobertura por endpoint: chat/completions (incluido tool-calling), completions legacy, embeddings, audio e imagenes. Embeddings e imagenes no persisten el dato crudo (vectores/b64): solo metadatos. Un intento que no conecta al upstream queda registrado como fallo (`status 0`).
 - Streaming SSE: se reenvia byte a byte tal cual; el contenido se acumula para el registro sin tocar el framing.
+- **Auto-observacion**: si `llm_base_url` apunta al mismo upstream que el target del proxy, las llamadas propias de NetWatch (explicador y test) tambien pasan por el proxy y quedan registradas. La config no se reescribe; el proxy nunca apunta a si mismo (sin bucle).
+- **Enlace local**: cada llamada intenta enlazarse con el evento de red del mismo destino, proceso y ventana temporal (120 s), si ese destino esta siendo vigilado.
 - Toggle en vivo en la UI (tarjeta *LLM Inspector*); para inspeccionar, apunta el cliente al puerto del proxy.
 - **Limite honesto**: solo cubre el LLM local (HTTP plano en loopback). Un proveedor remoto viaja cifrado y su contenido no se ve; de el se ve la conexion (eventos de red), no el prompt.
 - **Privacidad**: prompts/respuestas quedan en claro en `llm_calls.db`. `POST /api/llm/calls/reset` (`{"confirm": true}`) los borra.

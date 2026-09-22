@@ -13,6 +13,8 @@ import csv
 import io
 import json
 import os
+import re
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
@@ -33,7 +35,7 @@ from tshark_source import (SniCapture, find_active_interface, sni_available,
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONFIG_PATH = DATA_DIR / "config.json"
-VERSION = "1.3"
+VERSION = "1.4"
 
 app = FastAPI(title="AI NetWatch")
 
@@ -52,6 +54,27 @@ _cfg: dict = {
     "sysmon_enabled": True,
     "tshark_enabled": True,
 }
+
+
+def _effective_llm_base() -> str:
+    """URL real para llamar al LLM.
+
+    Auto-observacion: si el inspector esta activo y la config apunta al mismo
+    upstream que el target del proxy, las llamadas propias (explicador, test)
+    se enrutan por el proxy. La config NO se reescribe; el proxy sigue
+    apuntando al LLM real, no a si mismo (sin bucle).
+    """
+    url = _cfg.get("llm_base_url", "") or ""
+    if not llm_proxy or not url:
+        return url
+    m = re.match(r"https?://([^:/]+):(\d+)", url)
+    if not m:
+        return url
+    host, port = m.group(1).lower(), m.group(2)
+    thost, tport = llm_proxy.target[0].lower(), str(llm_proxy.target[1])
+    if host == thost and port == tport:
+        return f"http://{llm_proxy.bind_host}:{llm_proxy.bound_port}"
+    return url
 
 
 def _valid_proxy_target(target: str) -> bool:
@@ -163,7 +186,7 @@ def _set_llm_proxy(enabled: bool) -> bool:
 
 @app.on_event("startup")
 def _start() -> None:
-    global store, monitor, sni_capture
+    global store, monitor, sni_capture, llm_calls
     store = Store(DATA_DIR / "events.db")
     llm_calls = LlmCallStore(DATA_DIR / "llm_calls.db")
     if _cfg["llm_proxy_enabled"]:
@@ -324,7 +347,7 @@ def test_ai(req: TestRequest):
                 "answer": cls.get("choice") if isinstance(cls, dict) else None}
     if req.target == "llm":
         from llm_local import _chat, is_loopback_url
-        base = (_cfg.get("llm_base_url") or "").strip()
+        base = _effective_llm_base().strip()
         model = (_cfg.get("llm_model") or "").strip()
         if not base or not model:
             return {"status": "error",
@@ -367,7 +390,7 @@ def triage(req: TriageRequest):
                             or result["verdicts"][str(i)]["verdict"] != "expected_ai_use"))]
         if flagged:
             explanations = explain_events(
-                _cfg["llm_base_url"], _cfg["llm_model"], events, result.get("verdicts"))
+                _effective_llm_base(), _cfg["llm_model"], events, result.get("verdicts"))
     payload = {"events": [
         {"id": e["id"], "process": e["process"],
          "dest": f"{e['dest_host'] or e['dest_ip']}:{e['dest_port']}",
@@ -437,6 +460,36 @@ def _port_of(addr: str | None) -> int | None:
         return None
 
 
+def _link_calls(out: list[dict], events: list[dict], target_host: str,
+                target_port: int, pidmap: dict[int, str]) -> None:
+    """Enlace local (in-place): llamada -> eventos de red con mismo destino,
+    proceso y ventana temporal (120 s). Vacio es legitimo: el destino solo
+    genera evento si esta siendo vigilado (catalogo/extra hosts)."""
+
+    def _ts(s):
+        try:
+            return datetime.strptime(s, "%Y-%m-%d %H:%M:%SZ")
+        except (ValueError, TypeError):
+            return None
+
+    cands = []
+    for e in events:
+        if (e.get("dest_ip") == target_host
+                and e.get("dest_port") == target_port):
+            t = _ts(e.get("last_seen", ""))
+            if t:
+                cands.append((e.get("process"), t, e["id"]))
+    for c in out:
+        proc = pidmap.get(c.get("client_pid") or 0)
+        rel = []
+        t = _ts(c.get("ts", ""))
+        if t and proc:
+            rel = [eid for (p, et, eid) in cands
+                   if p == proc and abs((et - t).total_seconds()) <= 120]
+        c["client_process"] = proc or ""
+        c["related_event_ids"] = sorted(set(rel))[:5]
+
+
 def _calls_payload(calls: list[dict]) -> list[dict]:
     pids = _pid_by_local_ports({p for p in (_port_of(c.get("client_addr"))
                                             for c in calls) if p})
@@ -446,6 +499,11 @@ def _calls_payload(calls: list[dict]) -> list[dict]:
         port = _port_of(c.get("client_addr"))
         c["client_pid"] = pids.get(port) if port else None
         out.append(c)
+    target_host, target_port = (llm_proxy.target if llm_proxy else ("", 0))
+    pidmap = getattr(monitor, "_pidmap_cache", {}) or {}
+    events = (store.list_events(limit=2000)
+              if (target_host and store) else [])
+    _link_calls(out, events, target_host, target_port, pidmap)
     return out
 
 

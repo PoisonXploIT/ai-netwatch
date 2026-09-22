@@ -104,6 +104,7 @@
       <button id="btn-save-proxy">Guardar</button>
     </div>
     <p class="hint">Para inspeccionar, apunta el cliente al puerto del proxy (p. ej. SDK/cliente → <span class="mono">http://127.0.0.1:8098</span>). Las llamadas se guardan en <span class="mono">data/llm_calls.db</span> con prompts y respuestas completos: no expongas ese fichero.</p>
+    <p class="hint">Cobertura: chat/completions (incluido tool-calling), embeddings, audio e imágenes; un intento que no conecta queda registrado como fallo. Si la URL del LLM local apunta al mismo upstream que el target, las llamadas propias de NetWatch (explicador y test) también pasan por el proxy: el inspector se auto-observa.</p>
     <div id="llm-calls-wrap"></div>
     <div class="row">
       <button id="btn-reset-llmcalls" class="danger">Borrar llamadas registradas</button>
@@ -156,6 +157,9 @@
       <p>Un reverse proxy stdlib en <span class="mono">127.0.0.1</span> (puerto configurable, por defecto 8098) reenvía al LLM local (target configurable, solo loopback). Como ambos extremos son loopback y HTTP plano, el inspector ve <b>toda la llamada en claro</b>: prompt completo, respuesta, modelo, tokens (si el servidor los reporta), latencia y si era streaming.</p>
       <ul>
         <li><b>Cómo usarlo</b>: activa el toggle y apunta el cliente al puerto del proxy (p. ej. <span class="mono">http://127.0.0.1:8098</span> en vez de <span class="mono">:8099</span>).</li>
+        <li><b>Cobertura</b>: chat/completions (incluido tool-calling), embeddings, audio e imágenes. Un intento que no conecta al upstream queda registrado como fallo (HTTP sin respuesta). Embeddings e imágenes no persisten el dato crudo: solo metadatos.</li>
+        <li><b>Auto-observación</b>: si la URL del LLM local apunta al mismo upstream que el target del proxy, las llamadas propias de NetWatch (explicador y test) también pasan por el proxy y quedan registradas. La config no se reescribe; el proxy nunca apunta a sí mismo.</li>
+        <li><b>Enlace local</b>: cada llamada intenta enlazarse con el evento de red del mismo destino, proceso y ventana temporal (120 s), si ese destino está siendo vigilado.</li>
         <li><b>Límite honesto</b>: solo cubre el LLM local. Un proveedor remoto (TLS) no se puede descifrar pasivamente; de él se ve la conexión (eventos de red) pero no el contenido.</li>
         <li><b>Privacidad</b>: prompts y respuestas quedan en claro en <span class="mono">data/llm_calls.db</span>. Si un prompt lleva una API key o datos sensibles, esa información queda en ese fichero: borra las llamadas cuando termines (botón de la tarjeta).</li>
       </ul>

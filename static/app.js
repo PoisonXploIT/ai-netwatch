@@ -136,12 +136,19 @@ async function refreshEvents() {
 
 function llmCallsHtml(calls) {
   if (!calls.length) return `<div class="hint">Sin llamadas registradas. Con el inspector activo, apunta el cliente al puerto del proxy.</div>`;
-  return calls.map((c) => `<details>
-    <summary class="mono">${esc(c.ts)} · ${esc(c.method || "")} ${esc(c.path || "")} · ${esc(c.model || "—")} · HTTP ${esc(String(c.status == null ? "?" : c.status))}${c.streaming ? " · stream" : ""}${c.latency_ms != null ? ` · ${c.latency_ms} ms` : ""}</summary>
-    <div class="small mono">PID cliente: ${c.client_pid != null ? esc(String(c.client_pid)) : "—"} · ${esc(c.client_addr || "")} · prompt ${esc(String(c.prompt_chars == null ? 0 : c.prompt_chars))} chars${c.prompt_tokens != null ? ` (${esc(String(c.prompt_tokens))} tokens)` : ""} · respuesta ${esc(String(c.response_chars == null ? 0 : c.response_chars))} chars${c.completion_tokens != null ? ` (${esc(String(c.completion_tokens))} tokens)` : ""}</div>
+  return calls.map((c) => {
+    const status = c.status == null ? "?" : (c.status === 0 ? "sin respuesta" : `HTTP ${c.status}`);
+    const proc = c.client_process ? ` · proceso: ${esc(c.client_process)}` : "";
+    const rel = (c.related_event_ids && c.related_event_ids.length)
+      ? ` · eventos relacionados: ${c.related_event_ids.map((id) => esc(String(id))).join(", ")}`
+      : "";
+    return `<details>
+    <summary class="mono">${esc(c.ts)} · ${esc(c.method || "")} ${esc(c.path || "")} · ${esc(c.model || "—")} · ${status}${c.streaming ? " · stream" : ""}${c.latency_ms != null ? ` · ${c.latency_ms} ms` : ""}</summary>
+    <div class="small mono">PID cliente: ${c.client_pid != null ? esc(String(c.client_pid)) : "—"}${proc} · ${esc(c.client_addr || "")}${rel} · prompt ${esc(String(c.prompt_chars == null ? 0 : c.prompt_chars))} chars${c.prompt_tokens != null ? ` (${esc(String(c.prompt_tokens))} tokens)` : ""} · respuesta ${esc(String(c.response_chars == null ? 0 : c.response_chars))} chars${c.completion_tokens != null ? ` (${esc(String(c.completion_tokens))} tokens)` : ""}</div>
     <h4>Prompt</h4><pre class="small">${esc(c.prompt || "")}</pre>
     <h4>Respuesta</h4><pre class="small">${esc(c.response || "")}</pre>
-  </details>`).join("");
+  </details>`;
+  }).join("");
 }
 
 async function refreshLlmCalls() {

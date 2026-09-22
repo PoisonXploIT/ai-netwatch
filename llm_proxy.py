@@ -12,6 +12,7 @@ cliente. El proxy solo ve HTTP plano porque ambos extremos son loopback.
 from __future__ import annotations
 
 import json
+import re
 import socket
 import threading
 import time
@@ -112,44 +113,110 @@ def _parse_sse(text: str):
     return model, "".join(parts), usage
 
 
-def _extract_record(method: str, path: str, status: int, req_body: bytes,
-                    resp_raw: bytes, streaming: bool, latency_ms: float,
-                    client_addr: str) -> dict:
-    """Construye el registro de una llamada (prompt/respuesta truncados)."""
-    prompt_text = ""
-    model = None
-    if req_body:
-        try:
-            body = json.loads(req_body)
-            if isinstance(body, dict):
-                model = body.get("model")
-                msgs = body.get("messages") or []
-                prompt_text = "\n\n".join(
-                    f"{m.get('role', '?')}: {m.get('content', '')}"
-                    for m in msgs if isinstance(m, dict))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            prompt_text = req_body[:2000].decode("utf-8", "replace")
+def _tool_call_names(msg: dict) -> str:
+    tcs = msg.get("tool_calls") or []
+    names = [ (tc.get("function") or {}).get("name", "?")
+              for tc in tcs if isinstance(tc, dict) ]
+    return f" tool_calls=[{', '.join(names)}]" if names else ""
 
-    resp_text = ""
-    usage = None
+
+def _extract_prompt(path: str, body: bytes) -> tuple[str, str | None]:
+    """(prompt_text, model) segun el endpoint (chat, completions, embeddings,
+    audio multipart, images). Nunca volca binario crudo."""
+    if not body:
+        return "", None
+    try:
+        data = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        if "/audio/" in path:  # multipart: solo metadatos
+            m = re.search(rb'filename="([^"]*)"', body)
+            name = m.group(1).decode("latin-1") if m else "?"
+            return f"[multipart audio] {name}", None
+        return "", None
+    if not isinstance(data, dict):
+        return "", None
+    model = data.get("model")
+    msgs = data.get("messages") or []
+    if msgs:
+        parts = []
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            content = m.get("content") or ""
+            parts.append(f"{m.get('role', '?')}: {content}"
+                         f"{_tool_call_names(m)}")
+        return "\n\n".join(parts), model
+    inp = data.get("input")  # /v1/embeddings
+    if isinstance(inp, str):
+        return inp, model
+    if isinstance(inp, list):
+        return "\n".join(str(x) for x in inp), model
+    prompt = data.get("prompt")  # completions legacy y /v1/images/*
+    if isinstance(prompt, str):
+        extra = ""
+        if "/images/" in path:
+            extra = f" [n={data.get('n', 1)} size={data.get('size', '?')}]"
+        return prompt + extra, model
+    return "", model
+
+
+def _extract_response(path: str, resp_raw: bytes, streaming: bool,
+                      model: str | None) -> tuple[str, str | None, dict | None]:
+    """(resp_text, model, usage). Embeddings e imagenes no persisten el dato."""
     try:
         head, _, body_b = resp_raw.partition(b"\r\n\r\n")
         text = body_b.decode("utf-8", "replace")
         if streaming:
             m2, content, usage = _parse_sse(text)
-            model = model or m2
-            resp_text = content
-        else:
-            d = json.loads(body_b)
-            if isinstance(d, dict):
-                model = model or d.get("model")
-                usage = d.get("usage")
-                choices = d.get("choices") or []
-                if choices and isinstance(choices[0], dict):
-                    resp_text = (choices[0].get("message") or {}).get(
-                        "content", "") or ""
+            return content, model or m2, usage
+        d = json.loads(body_b)
     except (json.JSONDecodeError, UnicodeDecodeError, IndexError):
-        resp_text = resp_raw[:4096].decode("utf-8", "replace")
+        return resp_raw[:4096].decode("utf-8", "replace"), model, None
+    if not isinstance(d, dict):
+        return str(d)[:4096], model, None
+    usage = d.get("usage") if isinstance(d.get("usage"), dict) else None
+    model = model or d.get("model")
+    if "error" in d:
+        err = d["error"]
+        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        return f"[error] {msg}", model, usage
+    if "/embeddings" in path:
+        vecs = d.get("data") or []
+        if vecs and isinstance(vecs[0], dict):
+            dims = len((vecs[0].get("embedding")) or [])
+            return (f"{len(vecs)} vector(es) de {dims} dim "
+                    f"(contenido no persistido)"), model, usage
+        return str(d)[:4096], model, usage
+    if "/audio/" in path:
+        return str(d.get("text", "")), model, usage
+    if "/images/" in path:
+        parts = []
+        for it in d.get("data") or []:
+            b64 = (it or {}).get("b64_json")
+            url = (it or {}).get("url")
+            parts.append(f"[imagen b64, {len(b64)} chars]" if b64 else str(url))
+        return "; ".join(parts), model, usage
+    # /v1/chat/completions y /v1/completions
+    choices = d.get("choices") or []
+    content, extra = "", ""
+    if choices and isinstance(choices[0], dict):
+        ch0 = choices[0]
+        msg = ch0.get("message") or {}
+        content = (msg.get("content") or "") + _tool_call_names(msg)
+        fr = ch0.get("finish_reason")
+        if fr and fr != "stop":
+            extra = f" [finish={fr}]"
+    return content + extra, model, usage
+
+
+def _extract_record(method: str, path: str, status: int, req_body: bytes,
+                    resp_raw: bytes, streaming: bool, latency_ms: float,
+                    client_addr: str) -> dict:
+    """Construye el registro de una llamada (prompt/respuesta truncados)."""
+    prompt_text, model = _extract_prompt(path, req_body)
+    resp_text, model, usage = _extract_response(path, resp_raw, streaming, model)
+    if status == 0:
+        resp_text = "sin respuesta del upstream (fallo de conexion o timeout)"
 
     pt = ct = None
     if isinstance(usage, dict):
@@ -252,6 +319,16 @@ class LlmProxy(threading.Thread):
         try:
             upstream = socket.create_connection(self.target, timeout=15)
         except OSError:
+            # Un intento fallido tambien es senal (sobre todo si es periodico).
+            if self.on_call:
+                try:
+                    self.on_call(_extract_record(
+                        method, path, 0, body, b"", False,
+                        (time.monotonic() - t0) * 1000.0,
+                        f"{addr[0]}:{addr[1]}" if isinstance(addr, tuple)
+                        else str(addr)))
+                except Exception:
+                    pass
             client.close()
             return
 
