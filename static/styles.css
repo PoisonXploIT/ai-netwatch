@@ -120,7 +120,11 @@ button:disabled { opacity: .55; cursor: default; }
 button.primary { background: var(--accent); color: #06222a; border-color: transparent; font-weight: 600; }
 html[data-theme="dark"] button.primary { color: #04121a; }
 button.danger { border-color: var(--v-bad); color: var(--v-bad); }
-button.icon { padding: 5px 9px; font-size: 15px; line-height: 1; }
+button.icon { padding: 4px 7px; display: inline-flex; align-items: center; justify-content: center; }
+button.icon .ic { display: none; }
+html[data-theme="light"] button.icon .ic-moon { display: block; }
+html[data-theme="dark"] button.icon .ic-sun { display: block; }
+button.linkbtn { font-size: 13px; }
 
 .table-wrap { overflow-x: auto; }
 
@@ -163,6 +167,8 @@ td .cellnum .bar { width: 90px; }
 details { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 6px 0; background: var(--card); }
 details summary { cursor: pointer; font-weight: 600; font-size: 13px; }
 details p { margin: 6px 0; font-size: 13px; }
+#guide-card ul { margin: 6px 0 6px 20px; font-size: 13px; }
+#guide-card li { margin: 3px 0; }
 
 #toast {
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);

@@ -20,10 +20,14 @@
 <body>
 <header>
   <h1>AI NetWatch</h1>
-  <span class="badge-ver">v1.1</span>
+  <span class="badge-ver">v1.2</span>
   <span class="sub">Monitor de conexiones de red hacia proveedores cloud IA (Jev incluido). Solo loopback.</span>
   <div class="header-right">
-    <button id="btn-theme" class="icon" title="Cambiar tema claro/oscuro">tema</button>
+    <button id="btn-guide" class="linkbtn" title="Ir a la guía de uso">Guía de uso</button>
+    <button id="btn-theme" class="icon" title="Cambiar tema claro/oscuro">
+      <svg class="ic ic-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      <svg class="ic ic-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+    </button>
   </div>
 </header>
 <main>
@@ -72,14 +76,103 @@
   </section>
 
   <section class="card">
+    <h2>Exportar</h2>
+    <p class="hint">Generado en memoria desde los datos vivos (eventos + último triaje). Sin secretos: ninguna API key aparece en ningún export.</p>
+    <div class="row">
+      <button id="btn-exp-json" class="primary">JSON</button>
+      <button id="btn-exp-csv" class="primary">CSV</button>
+      <button id="btn-exp-pdf" class="primary">PDF (informe)</button>
+    </div>
+  </section>
+
+  <section class="card">
     <h2>Triaje con Jev</h2>
     <button id="btn-triage" class="primary">Triar eventos con Jev</button>
     <span id="triage-status" class="hint"></span>
     <div id="triage-results"></div>
   </section>
+  <section class="card" id="guide-card">
+    <h2>Guía de uso</h2>
+
+    <details open>
+      <summary>Qué es y qué ve (y qué NO ve)</summary>
+      <p>AI NetWatch monitoriza las <b>conexiones salientes hacia proveedores cloud IA</b> (catálogo de ~20 dominios: OpenAI, Anthropic, Google, TypeSafe/Jev, Groq, DeepSeek, Hugging Face...). De cada conexión ve:</p>
+      <ul>
+        <li><b>Proceso</b> que abre la conexión (+ruta completa con Sysmon).</li>
+        <li><b>Destino</b> IP:puerto y <b>protocolo</b> (TCP/UDP).</li>
+        <li><b>Dominio real por SNI</b> (tshark): el dominio declarado en el handshake TLS, inmune a CNAME/CDN.</li>
+        <li><b>Catálogo</b>: match contra dominios IA conocidos (resolución activa cada 5 min).</li>
+        <li><b>Periodicidad</b> (veces observado) y primera/última vez.</li>
+      </ul>
+      <p class="hint"><b>No ve bytes ni payload</b>: el contenido viaja cifrado (TLS). Para ver contenido haría falta MITM con CA propia, fuera de scope por privacidad/legal.</p>
+    </details>
+
+    <details>
+      <summary>Fuentes de datos</summary>
+      <ul>
+        <li><b>Polling (5 s)</b>: conexiones TCP establecidas + endpoints UDP. Puede perder conexiones muy breves (&lt;5 s).</li>
+        <li><b>Sysmon (EventID 3)</b>: cada conexión es un evento, ninguna se pierde; aporta la ruta completa del proceso (detecta masquerading: p. ej. <span class="mono">svchost.exe</span> fuera de System32). Recomendado.</li>
+        <li><b>tshark (SNI)</b>: dominio real por handshake TLS. Solo lo ve en sesiones TLS nuevas; una keep-alive establecida antes del arranque no repite SNI.</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Veredictos Jev (triage)</summary>
+      <p>El botón <b>Triar eventos con Jev</b> envía los eventos vivos a Jev (TypeSafe, modelo pin) y obtiene por cada uno:</p>
+      <ul>
+        <li><b>Uso IA esperado</b> (<span class="mono">expected_ai_use</span>): uso legítimo de un servicio IA.</li>
+        <li><b>Exfiltración sospechosa</b> (<span class="mono">background_exfil_suspect</span>): salida sin acción de usuario, horario extraño o periodicidad tipo telemetría. Revisar primero.</li>
+        <li><b>Telemetría / ruido</b> (<span class="mono">telemetry_noise</span>): pings pequeños de baja sensibilidad.</li>
+        <li><b>No relacionado</b> (<span class="mono">unrelated</span>): falso positivo del catálogo (p. ej. IP compartida de CDN).</li>
+      </ul>
+      <p>Métricas: <b>confianza</b> (0-1), <b>prob. falso positivo</b> (derivada), <b>criticidad</b> 0-3 y <b>acción inmediata</b> (0-1). Coste ~$0.001-0.002 por triaje (batch de hasta 50 eventos).</p>
+    </details>
+
+    <details>
+      <summary>Explicaciones técnicas (LLM local)</summary>
+      <p>Si el LLM local está configurado, los eventos marcados (criticidad ≥2 o no-<span class="mono">expected</span>) reciben una explicación en español: qué es, por qué importa y sugerencia. El LLM <b>solo loopback, sin API key</b> y <b>nunca re-scorea</b> el veredicto de Jev.</p>
+    </details>
+
+    <details>
+      <summary>Estadísticas y reset</summary>
+      <p>El histórico diario (eventos/triajes por día) se conserva <b>incluso tras el reset</b>: <span class="mono">Empezar de cero</span> borra solo los eventos y triajes vivos. La vista de 7 días (o hasta 365 en la API) lee de ese histórico.</p>
+    </details>
+
+    <details>
+      <summary>Exportación (JSON / CSV / PDF)</summary>
+      <ul>
+        <li><b>JSON</b>: eventos completos + último triaje (estado, veredictos, explicaciones LLM).</li>
+        <li><b>CSV</b>: una fila por evento (proceso, ruta, protocolo, IP:puerto, SNI, catálogo, veces, fechas).</li>
+        <li><b>PDF</b>: informe con cabecera, eventos, último triaje Jev y estadísticas de 7 días.</li>
+      </ul>
+      <p class="hint">Los tres se generan en memoria; ningún endpoint toma nombres de archivo del usuario (sin path traversal).</p>
+    </details>
+
+    <details>
+      <summary>Configuración</summary>
+      <ul>
+        <li><b>Jev (TypeSafe)</b>: API key para el triaje. El endpoint y el modelo están <b>fijados</b> (no configurables por la API).</li>
+        <li><b>LLM local</b>: URL + modelo de un servidor OpenAI-compatible. Solo se aceptan URLs loopback absolutas; sin API key.</li>
+        <li><b>Hosts extra</b>: IPs o dominios propios que quieras vigilar además del catálogo IA.</li>
+        <li><b>Sysmon / tshark</b>: toggles en vivo (sin reiniciar).</li>
+      </ul>
+      <p class="hint">La configuración es persistente (<span class="mono">data/config.json</span>) y se revalida al cargar: un archivo editado a mano no puede activar una URL peligrosa.</p>
+    </details>
+
+    <details>
+      <summary>Seguridad y privacidad</summary>
+      <ul>
+        <li><b>Solo loopback</b>: el servidor escucha únicamente en <span class="mono">127.0.0.1:8790</span>; no hay superficie externa ni auth.</li>
+        <li><b>SSRF</b>: la única salida HTTP a destino elegido por el usuario es <span class="mono">llm_base_url</span>, que debe ser http(s) absoluto resolviendo a loopback. Público, metadata cloud (<span class="mono">169.254.169.254</span>), <span class="mono">file://</span>, <span class="mono">gopher://</span> y rutas relativas → 400.</li>
+        <li><b>Sin payload</b>: la captura SNI es pasiva (solo el dominio del handshake); no se guarda contenido de ninguna conexión.</li>
+        <li><b>Reset protegido</b>: exige <span class="mono">{"confirm": true}</span>.</li>
+        <li><b>Exports sin secretos</b>: JSON/CSV/PDF nunca incluyen la API key ni la config.</li>
+      </ul>
+    </details>
+  </section>
 </main>
 <footer>
-  <span>AI NetWatch v1.1</span>
+  <span>AI NetWatch v1.2</span>
   <span>Solo loopback (127.0.0.1:8790)</span>
   <span>LLM local: solo loopback, sin API key</span>
 </footer>

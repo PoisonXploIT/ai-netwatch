@@ -1,4 +1,4 @@
-# AI NetWatch (v1.1)
+# AI NetWatch (v1.2)
 
 Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad + dominio real por SNI** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
 
@@ -60,7 +60,9 @@ Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`)
 - `GET /api/triages/latest`
 - `GET/POST /api/config` (key Jev maskeda en lecturas)
 - `POST /api/test` (`{"target": "jev"|"llm"}`)
-- `GET /api/export/json`, `GET /api/export/csv`
+- `GET /api/export/json`, `GET /api/export/csv`, `GET /api/export/pdf`
+
+Los tres exports se descargan (`Content-Disposition: attachment`) y se generan en memoria solo con datos del store: **ninguno incluye la config ni API keys** (verificado por tests). El PDF (writer stdlib, sin dependencias) lleva cabecera, eventos, ultimo triaje Jev y estadisticas de 7 dias.
 
 ## Contrato Jev (exacto)
 
@@ -81,6 +83,10 @@ Derivado: `prob_false_positive` = 1−confianza si `expected_ai_use`, confianza 
 - **Exports sin path traversal**: el contenido se genera en memoria; ningun endpoint toma nombres de archivo del usuario.
 - **tshark pasivo y gestionado**: la captura solo emite SNIs (sin payload); no hay forma de apuntarla a otra interfaz desde la API (la interfaz la elige el arranque localmente).
 - Suite dedicada: `tests/test_security.py` (SSRF, persistencia + revalidacion, reset, inputs, fail-safe).
+
+## Guia de uso
+
+Dentro de la propia interfaz (tarjeta *Guia de uso*, enlace en el header): que ve y que no ve, fuentes de datos (polling/Sysmon/tshark), lectura de veredictos Jev, LLM local, estadisticas/reset, exportacion, configuracion y el modelo de seguridad/privacidad. Contenido estatico: ninguna entrada del usuario se renderiza (sin superficie XSS).
 
 ## Tests
 

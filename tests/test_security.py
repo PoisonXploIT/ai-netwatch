@@ -186,6 +186,26 @@ class TestExportsStatic(SecurityBase):
         data = json.loads(resp.body)
         self.assertEqual(data["version"], server.VERSION)
 
+    def test_pdf_export_valid_and_no_secrets(self):
+        # El PDF se construye solo con datos del store: la API key (aunque
+        # este configurada) NUNCA debe aparecer en el export.
+        self.store.observe_connection("a.exe", "1.1.1.1", 443,
+                                      "deepseek.com", "")
+        server._cfg["jev_api_key"] = "KEY-SECRETA-NO-PUEDE-SALIR"
+        resp = server.export_pdf()
+        self.assertEqual(resp.media_type, "application/pdf")
+        body = resp.body if isinstance(resp.body, bytes) else str(resp.body).encode()
+        self.assertTrue(body.startswith(b"%PDF-1.4"))
+        self.assertNotIn(b"KEY-SECRETA-NO-PUEDE-SALIR", body)
+
+    def test_exports_download_headers(self):
+        # Los tres exports se descargan (attachment), no se renderizan:
+        # evita que el navegador interprete contenido generado.
+        for fn in (server.export_json, server.export_csv, server.export_pdf):
+            resp = fn()
+            cd = resp.headers.get("content-disposition", "")
+            self.assertIn("attachment", cd)
+
 
 if __name__ == "__main__":
     unittest.main()

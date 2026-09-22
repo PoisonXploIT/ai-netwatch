@@ -161,6 +161,20 @@ function bind() {
   const $ = (id) => document.getElementById(id);
 
   $("btn-theme").addEventListener("click", themeToggle);
+  $("btn-guide").addEventListener("click", () => {
+    const g = document.getElementById("guide-card");
+    if (g) g.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  // Exports: rutas GET fijas; ninguna entrada del usuario viaja en la URL.
+  $("btn-exp-json").addEventListener("click", () => {
+    window.location.href = "/api/export/json";
+  });
+  $("btn-exp-csv").addEventListener("click", () => {
+    window.location.href = "/api/export/csv";
+  });
+  $("btn-exp-pdf").addEventListener("click", () => {
+    window.location.href = "/api/export/pdf";
+  });
   $("btn-save-jev").addEventListener("click", async () => {
     try {
       await api("/api/config", { method: "POST", body: JSON.stringify({ jev_api_key: $("jev-key").value.trim() }) });

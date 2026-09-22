@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
 from llm_local import explain_events, is_loopback_url
+from pdf_export import build_report_pdf
 from monitor import NetMonitor
 from store import Store
 from sysmon_source import poll_sysmon_events, sysmon_available
@@ -30,7 +31,7 @@ from tshark_source import (SniCapture, find_active_interface, sni_available,
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONFIG_PATH = DATA_DIR / "config.json"
-VERSION = "1.1"
+VERSION = "1.2"
 
 app = FastAPI(title="AI NetWatch")
 
@@ -321,10 +322,24 @@ def reset(req: ResetRequest):
 def export_json():
     events = store.list_events(limit=1000)
     triage = store.latest_triage()
-    return JSONResponse({
-        "tool": "ai_net_monitor", "version": VERSION, "events": events,
-        "latest_triage": triage["payload"] if triage else None,
-    })
+    return JSONResponse(
+        {"tool": "ai_net_monitor", "version": VERSION, "events": events,
+         "latest_triage": triage["payload"] if triage else None},
+        headers={"Content-Disposition":
+                 'attachment; filename="ai-netwatch.json"'})
+
+
+@app.get("/api/export/pdf")
+def export_pdf():
+    # Solo datos del store; nunca config/keys (ver tests de seguridad).
+    events = store.list_events(limit=1000)
+    triage = store.latest_triage()
+    daily = store.stats(days=7)
+    pdf = build_report_pdf(VERSION, events,
+                           triage["payload"] if triage else None, daily)
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition":
+                             'attachment; filename="ai-netwatch.pdf"'})
 
 
 @app.get("/api/export/csv")
@@ -341,7 +356,9 @@ def export_csv():
                     e["dest_host"] or "", e.get("sni_domain") or "",
                     e["catalog_domain"] or "",
                     e["seen_count"], e["first_seen"], e["last_seen"]])
-    return Response(buf.getvalue(), media_type="text/csv")
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition":
+                             'attachment; filename="ai-netwatch.csv"'})
 
 
 @app.get("/", response_class=HTMLResponse)
