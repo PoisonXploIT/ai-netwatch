@@ -137,7 +137,9 @@ class TestProxyForwarding(ProxyBase):
         self.assertIn("di hola", c["prompt"])
         self.assertIn("user:", c["prompt"])
         self.assertEqual(c["response_chars"], len("respuesta de prueba"))
-        self.assertGreater(c["latency_ms"], 0)
+        # Latencia informativa: en loopback in-process puede redondear a 0.0.
+        self.assertIsInstance(c["latency_ms"], (int, float))
+        self.assertGreaterEqual(c["latency_ms"], 0)
         self.assertTrue(c["client_addr"].startswith("127.0.0.1:"))
 
     def test_streaming_passthrough_and_recorded(self):
