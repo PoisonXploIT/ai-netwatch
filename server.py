@@ -133,27 +133,35 @@ def test_ai(req: TestRequest):
     if req.target == "jev":
         if not _cfg.get("jev_api_key"):
             return {"ok": False, "error": "sin api key"}
-        from jev_triage import _http_post_json
+        # Mismo shape que el triaje real (dicts con type/instructions/criteria);
+        # una pregunta string -> 422 de TypeSafe.
+        from jev_triage import _http_post_json, _questions_for
         try:
             data = _http_post_json(
                 _cfg["jev_base_url"],
                 {"model": _cfg["jev_model"],
                  "state": [{"title": "selftest", "process": "netwatch-selftest"}],
-                 "questions": {"f0_act": "Does this require immediate action now?"}},
-                _cfg["jev_api_key"], 15,
+                 "questions": _questions_for(0)},
+                _cfg["jev_api_key"], 30,
             )
         except Exception as e:
             return {"ok": False, "error": f"{type(e).__name__}: {e}"}
         answers = data.get("answers") or {}
-        act = answers.get("f0_act") or {}
+        cls = answers.get("f0_class") or {}
         return {"ok": True, "model": data.get("model"),
-                "answer": act.get("noul") if isinstance(act, dict) else None}
+                "answer": cls.get("choice") if isinstance(cls, dict) else None}
     if req.target == "llm":
-        from llm_local import _chat
+        from llm_local import _chat, is_loopback_url
+        base = (_cfg.get("llm_base_url") or "").strip()
+        model = (_cfg.get("llm_model") or "").strip()
+        if not base or not model:
+            return {"status": "error",
+                    "reason": "configura URL y modelo del LLM local primero"}
+        if not is_loopback_url(base):
+            return {"status": "error", "reason": "solo se permite loopback"}
         try:
-            content = _chat(_cfg["llm_base_url"], _cfg["llm_model"],
-                            "Responde solo 'ok'.", "di ok", 20)
-            return {"status": "ok", "model": _cfg["llm_model"],
+            content = _chat(base, model, "Responde solo 'ok'.", "di ok", 60)
+            return {"status": "ok", "model": model,
                     "reply": content[:80]}
         except Exception as e:
             return {"status": "error", "reason": f"{type(e).__name__}: {e}"}

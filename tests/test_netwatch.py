@@ -342,6 +342,11 @@ class TestLlmLocal(unittest.TestCase):
                                        [{"process": "a"}])
         self.assertEqual(out[0]["status"], "unavailable")
 
+    def test_chat_rejects_relative_or_empty_url(self):
+        for bad in ("", "/v1", "localhost:8099"):
+            with self.assertRaises(ValueError):
+                llm_local._chat(bad, "dirk", "s", "u")
+
 
 _XML1 = (
 

@@ -26,6 +26,11 @@ def is_loopback_url(url: str) -> bool:
 
 
 def _chat(base_url: str, model: str, system: str, user: str, timeout: int = 120) -> str:
+    parsed = parse.urlparse(base_url or "")
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError(
+            "llm_base_url no es una URL absoluta; usa p. ej. http://127.0.0.1:8099"
+        )
     url = base_url.rstrip("/") + "/v1/chat/completions"
     body = {
         "model": model,
