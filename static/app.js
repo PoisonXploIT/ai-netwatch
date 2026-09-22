@@ -24,7 +24,7 @@ function toast(msg, type = "") {
 function eventsTableHtml(events) {
   if (!events.length) return `<div class="hint">Sin eventos todavía (monitor activo).</div>`;
   const rows = events.map((e) => `<tr>
-    <td>${esc(e.process)}</td>
+    <td>${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}</td>
     <td class="mono">${esc(e.dest_host || e.dest_ip)}:${e.dest_port}</td>
     <td>${esc(e.protocol || "tcp")}</td>
     <td>${esc(e.catalog_domain || "")}</td>
@@ -107,6 +107,7 @@ async function loadConfig() {
     document.getElementById("jev-key").value = c.jev_api_key || "";
     document.getElementById("llm-url").value = c.llm_base_url || "";
     document.getElementById("llm-model").value = c.llm_model || "";
+    document.getElementById("sysmon-toggle").checked = !!c.sysmon_enabled;
   } catch (e) { /* sin config */ }
 }
 
@@ -150,6 +151,12 @@ function bind() {
     try {
       await api("/api/config", { method: "POST", body: JSON.stringify({ extra_hosts: hosts }) });
       toast("Hosts extra guardados.", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("sysmon-toggle").addEventListener("change", async (ev) => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({ sysmon_enabled: ev.target.checked }) });
+      toast(ev.target.checked ? "Sysmon fuente activada." : "Sysmon fuente desactivada.", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-reset").addEventListener("click", async () => {

@@ -17,6 +17,7 @@ import ai_catalog  # noqa: E402
 import jev_triage  # noqa: E402
 import llm_local  # noqa: E402
 import monitor as mon  # noqa: E402
+import sysmon_source  # noqa: E402
 from store import Store  # noqa: E402
 
 
@@ -284,6 +285,120 @@ class TestLlmLocal(unittest.TestCase):
         out = llm_local.explain_events("http://example.com", "dirk",
                                        [{"process": "a"}])
         self.assertEqual(out[0]["status"], "unavailable")
+
+
+_XML1 = (
+
+        "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>"
+        "<System><EventID>3</EventID></System>"
+        "<EventData>"
+        "<Data Name='RuleName'>Usermode</Data>"
+        "<Data Name='UtcTime'>2026-09-22 07:34:55.655</Data>"
+        "<Data Name='ProcessId'>17312</Data>"
+        "<Data Name='Image'>C:\\Users\\Sammi\\AppData\\Local\\python.exe</Data>"
+        "<Data Name='Protocol'>udp</Data>"
+        "<Data Name='DestinationIp'>192.168.5.255</Data>"
+        "<Data Name='DestinationPort'>21027</Data>"
+        "</EventData></Event>"
+)
+_XML2 = (
+        "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>"
+        "<System><EventID>3</EventID></System>"
+        "<EventData>"
+        "<Data Name='UtcTime'>2026-09-22 07:34:56.000</Data>"
+        "<Data Name='ProcessId'>21240</Data>"
+        "<Data Name='Image'>C:\\Program Files\\Python312\\python.exe</Data>"
+        "<Data Name='Protocol'>TCP</Data>"
+        "<Data Name='DestinationIp'>3.173.21.63</Data>"
+        "<Data Name='DestinationPort'>443</Data>"
+        "</EventData></Event>"
+)
+_SAMPLE_STR = json.dumps([
+    {"RecordId": "100", "Xml": _XML1},
+    {"RecordId": "101", "Xml": _XML2},
+])
+
+
+class TestSysmonSource(unittest.TestCase):
+    SAMPLE = _SAMPLE_STR
+
+    def test_parse_v15_fields(self):
+        with mock.patch.object(sysmon_source, "_run_ps", return_value=self.SAMPLE):
+            evs = sysmon_source.poll_sysmon_events()
+        self.assertEqual(len(evs), 2)
+        self.assertEqual(evs[0]["record_id"], 100)
+        self.assertEqual(evs[0]["protocol"], "udp")
+        self.assertEqual(evs[1]["dest_ip"], "3.173.21.63")
+        self.assertTrue(evs[1]["image"].endswith("python.exe"))
+
+    def test_single_object_quirk(self):
+        one = json.loads(self.SAMPLE)[0]
+        with mock.patch.object(sysmon_source, "_run_ps",
+                               return_value=json.dumps(one)):
+            evs = sysmon_source.poll_sysmon_events()
+        self.assertEqual(len(evs), 1)
+
+    def test_xml_fields_parsed(self):
+        f = sysmon_source._xml_fields(_XML2)
+        self.assertEqual(f["DestinationIp"], "3.173.21.63")
+        self.assertEqual(f["Protocol"], "TCP")
+        self.assertTrue(f["Image"].endswith("python.exe"))
+        self.assertEqual(sysmon_source._xml_fields("no-xml"), {})
+        self.assertEqual(sysmon_source._xml_fields(""), {})
+
+    def test_empty_and_garbage(self):
+        with mock.patch.object(sysmon_source, "_run_ps", return_value=""):
+            self.assertEqual(sysmon_source.poll_sysmon_events(), [])
+        with mock.patch.object(sysmon_source, "_run_ps", return_value="no-json"):
+            self.assertEqual(sysmon_source.poll_sysmon_events(), [])
+
+    def test_available(self):
+        with mock.patch.object(sysmon_source, "_run_ps", return_value="1\n"):
+            self.assertTrue(sysmon_source.sysmon_available())
+        with mock.patch.object(sysmon_source, "_run_ps", return_value="0\n"):
+            self.assertFalse(sysmon_source.sysmon_available())
+
+
+class TestMonitorSysmon(unittest.TestCase):
+    def _mk(self, tmp, events_by_call):
+        store = Store(Path(tmp.name) / "t.db")
+        m = mon.NetMonitor(store, poll_fn=lambda: [], pidmap_fn=lambda: {},
+                           dns_fn=lambda: {},
+                           sysmon_fn=lambda: events_by_call.pop(0))
+        return store, m
+
+    def test_watermark_no_backfill_then_store(self):
+        tmp = tempfile.TemporaryDirectory()
+        ev1 = [{"record_id": 50, "ts": "t", "image": r"C:\x\python.exe",
+                "protocol": "tcp", "dest_ip": "3.173.21.63",
+                "dest_port": 443, "pid": 1}]
+        ev2 = [{"record_id": 50, "ts": "t", "image": r"C:\x\python.exe",
+                "protocol": "tcp", "dest_ip": "3.173.21.63",
+                "dest_port": 443, "pid": 1}]
+        ev3 = [{"record_id": 50, "ts": "t", "image": r"C:\x\python.exe",
+                "protocol": "tcp", "dest_ip": "3.173.21.63",
+                "dest_port": 443, "pid": 1},
+               {"record_id": 51, "ts": "t", "image": r"C:\y\curl.exe",
+                "protocol": "tcp", "dest_ip": "3.173.21.63",
+                "dest_port": 443, "pid": 2}]
+        store, m = self._mk(tmp, [ev1, ev2, ev3])
+        m._catalog_ip_cache = {"3.173.21.63": "deepseek.com"}
+        m._sysmon_cycle()  # primera: fija watermark, sin backfill
+        self.assertEqual(len(store.list_events()), 0)
+        m._sysmon_cycle()  # mismo max -> nada nuevo
+        self.assertEqual(len(store.list_events()), 0)
+        m._sysmon_cycle()  # llega el 51
+        events = store.list_events()
+        self.assertEqual(len(events), 1)
+        e = events[0]
+        self.assertEqual(e["process"], "curl.exe")  # basename de Image
+        self.assertEqual(e["image"], r"C:\y\curl.exe")
+        self.assertEqual(e["catalog_domain"], "deepseek.com")
+        self._cleanup(tmp, store)
+
+    def _cleanup(self, tmp, store):
+        store.close()
+        tmp.cleanup()
 
 
 if __name__ == "__main__":

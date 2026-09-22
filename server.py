@@ -23,6 +23,7 @@ from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
 from llm_local import explain_events, is_loopback_url
 from monitor import NetMonitor
 from store import Store
+from sysmon_source import poll_sysmon_events, sysmon_available
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -38,6 +39,7 @@ _cfg: dict = {
     "llm_base_url": "",
     "llm_model": "",
     "extra_hosts": [],
+    "sysmon_enabled": True,
 }
 
 store: Store | None = None
@@ -48,7 +50,9 @@ monitor: NetMonitor | None = None
 def _start() -> None:
     global store, monitor
     store = Store(DATA_DIR / "events.db")
-    monitor = NetMonitor(store, extra_hosts=list(_cfg["extra_hosts"]))
+    sm = poll_sysmon_events if (_cfg["sysmon_enabled"] and sysmon_available()) else None
+    monitor = NetMonitor(store, extra_hosts=list(_cfg["extra_hosts"]),
+                         sysmon_fn=sm)
     monitor.start()
 
 
@@ -75,6 +79,7 @@ class ConfigRequest(BaseModel):
     llm_base_url: str | None = None
     llm_model: str | None = None
     extra_hosts: list[str] | None = None
+    sysmon_enabled: bool | None = None
 
 
 class TriageRequest(BaseModel):
@@ -114,6 +119,12 @@ def set_config(req: ConfigRequest):
         _cfg["extra_hosts"] = hosts
         if monitor:
             monitor.extra_hosts = hosts
+    if req.sysmon_enabled is not None:
+        _cfg["sysmon_enabled"] = req.sysmon_enabled
+        if monitor:  # toggle en vivo, sin reiniciar
+            monitor._sysmon = (poll_sysmon_events
+                              if req.sysmon_enabled and sysmon_available()
+                              else None)
     return _mask(_cfg)
 
 
@@ -232,14 +243,14 @@ def export_csv():
     events = store.list_events(limit=1000)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["ts", "process", "protocol", "dest_ip", "dest_port",
+    w.writerow(["ts", "process", "image", "protocol", "dest_ip", "dest_port",
                 "dest_host", "catalog_domain", "seen_count",
                 "first_seen", "last_seen"])
     for e in events:
-        w.writerow([e["ts"], e["process"], e.get("protocol", "tcp"),
-                    e["dest_ip"], e["dest_port"], e["dest_host"] or "",
-                    e["catalog_domain"] or "", e["seen_count"],
-                    e["first_seen"], e["last_seen"]])
+        w.writerow([e["ts"], e["process"], e.get("image") or "",
+                    e.get("protocol", "tcp"), e["dest_ip"], e["dest_port"],
+                    e["dest_host"] or "", e["catalog_domain"] or "",
+                    e["seen_count"], e["first_seen"], e["last_seen"]])
     return Response(buf.getvalue(), media_type="text/csv")
 
 

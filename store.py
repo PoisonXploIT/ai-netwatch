@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS events (
     dest_host TEXT,
     catalog_domain TEXT,
     protocol TEXT NOT NULL DEFAULT 'tcp',
+    image TEXT,
     seen_count INTEGER NOT NULL DEFAULT 1,
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL
@@ -58,6 +59,8 @@ class Store:
                 self.conn.execute(
                     "ALTER TABLE events ADD COLUMN protocol TEXT NOT NULL DEFAULT 'tcp'"
                 )
+            if "image" not in cols:
+                self.conn.execute("ALTER TABLE events ADD COLUMN image TEXT")
             self.conn.commit()
 
     def _today(self) -> str:
@@ -77,7 +80,7 @@ class Store:
     def observe_connection(
         self, process: str, dest_ip: str, dest_port: int,
         catalog_domain: str | None, dest_host: str | None,
-        protocol: str = "tcp",
+        protocol: str = "tcp", image: str | None = None,
     ) -> dict:
         """Registra una conexion establecida a un destino AI.
 
@@ -92,18 +95,18 @@ class Store:
             ).fetchone()
             if row:
                 self.conn.execute(
-                    "UPDATE events SET seen_count=seen_count+1, last_seen=?, ts=? "
-                    "WHERE id=?",
-                    (ts, ts, row["id"]),
+                    "UPDATE events SET seen_count=seen_count+1, last_seen=?, ts=?,"
+                    " image=COALESCE(?, image) WHERE id=?",
+                    (ts, ts, image, row["id"]),
                 )
                 event_id = row["id"]
             else:
                 cur = self.conn.execute(
                     "INSERT INTO events (ts, process, dest_ip, dest_port, dest_host,"
-                    " catalog_domain, protocol, seen_count, first_seen, last_seen)"
-                    " VALUES (?,?,?,?,?,?,?,1,?,?)",
+                    " catalog_domain, protocol, image, seen_count, first_seen, last_seen)"
+                    " VALUES (?,?,?,?,?,?,?,?,1,?,?)",
                     (ts, process, dest_ip, dest_port, dest_host, catalog_domain,
-                     protocol, ts, ts),
+                     protocol, image, ts, ts),
                 )
                 event_id = cur.lastrowid
             self._bump_daily("events")

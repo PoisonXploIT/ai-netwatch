@@ -171,6 +171,7 @@ class NetMonitor(threading.Thread):
     def __init__(self, store: Store, poll_fn=poll_connections,
                  pidmap_fn=poll_pid_map, dns_fn=poll_dns_cache,
                  udp_fn=poll_udp_endpoints, catalog_fn=poll_catalog_ips,
+                 sysmon_fn=None,
                  interval: float = _POLL_S, extra_hosts: list[str] | None = None):
         super().__init__(daemon=True, name="ai-netwatch-monitor")
         self.store = store
@@ -179,6 +180,8 @@ class NetMonitor(threading.Thread):
         self._dns = dns_fn
         self._udp = udp_fn
         self._catalog_ips = catalog_fn
+        self._sysmon = sysmon_fn
+        self._sm_last_recid = 0
         self._catalog_ip_cache: dict[str, str] = {}
         self.interval = interval
         self.extra_hosts: list[str] = [h.lower() for h in (extra_hosts or [])]
@@ -194,26 +197,54 @@ class NetMonitor(threading.Thread):
                 return f"extra:{h}"
         return None
 
-    def _cycle(self, conns: list[dict] | None = None) -> None:
+    def _process_conn(self, ip: str, port: int, pid: int,
+                      protocol: str, image: str | None) -> None:
         pidmap = getattr(self, "_pidmap_cache", {})
         dns = getattr(self, "_dns_cache", {})
+        host = dns.get(ip)
+        # Match por orden: nombre (caché DNS), IP activa del catalogo
+        # (cubre CNAME/CDN), y hosts extra.
+        dom = (match_domain(host or ip) or self._catalog_ip_cache.get(ip)
+               or self._match_extra(ip, host))
+        if not dom:
+            return
+        name = image.rsplit("\\", 1)[-1].rsplit("/", 1)[-1] if image else None
+        proc = name or pidmap.get(pid, f"pid:{pid}")
+        self.store.observe_connection(
+            process=proc, dest_ip=ip, dest_port=port,
+            catalog_domain=dom, dest_host=dns.get(ip),
+            protocol=protocol, image=image,
+        )
+
+    def _cycle(self, conns: list[dict] | None = None) -> None:
         if conns is None:
             conns = self._poll()
         for c in conns:
-            ip = c["remote_ip"]
-            host = dns.get(ip)
-            # Match por orden: nombre (caché DNS), IP activa del catalogo
-            # (cubre CNAME/CDN), y hosts extra.
-            dom = (match_domain(host or ip) or self._catalog_ip_cache.get(ip)
-                   or self._match_extra(ip, host))
-            if not dom:
-                continue
-            proc = pidmap.get(c["pid"], f"pid:{c['pid']}")
-            self.store.observe_connection(
-                process=proc, dest_ip=ip, dest_port=c["remote_port"],
-                catalog_domain=dom, dest_host=dns.get(ip),
-                protocol=c.get("protocol", "tcp"),
-            )
+            self._process_conn(c["remote_ip"], c["remote_port"], c["pid"],
+                               c.get("protocol", "tcp"), None)
+
+    def _sysmon_cycle(self) -> None:
+        """Eventos EventID 3 de Sysmon desde el ultimo RecordId visto.
+
+        Primera llamada: fija el watermark SIN backfill (no inunda con
+        historico). A partir de ahi, cada evento nuevo pasa por el mismo
+        pipeline que el polling (match catalogo + store).
+        """
+        if self._sysmon is None:
+            return
+        events = self._sysmon()
+        if not events:
+            return
+        if self._sm_last_recid == 0:
+            self._sm_last_recid = max(e["record_id"] for e in events)
+            return
+        new = [e for e in events if e["record_id"] > self._sm_last_recid]
+        if not new:
+            return
+        self._sm_last_recid = max(e["record_id"] for e in new)
+        for e in new:
+            self._process_conn(e["dest_ip"], e["dest_port"], e["pid"],
+                               e.get("protocol", "tcp"), e.get("image") or None)
 
     def run(self) -> None:
         last_pidmap = 0.0
@@ -233,6 +264,7 @@ class NetMonitor(threading.Thread):
                     last_catip = now
                 conns = self._poll() + self._udp()
                 self._cycle(conns)
+                self._sysmon_cycle()
             except Exception as e:  # fail-safe: el monitor nunca rompe el server
                 self.errors.append(f"{time.strftime('%H:%M:%S')} {type(e).__name__}: {e}")
                 self.errors = self.errors[-10:]
