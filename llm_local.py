@@ -94,7 +94,7 @@ def explain_events(base_url: str, model: str, events: list[dict],
                 json.dumps({
                     "evento": {
                         "proceso": e.get("process"),
-                        "destino": f"{e.get('dest_host') or e.get('dest_ip')}:{e.get('dest_port')}",
+                        "destino": f"{e.get('sni_domain') or e.get('dest_host') or e.get('dest_ip')}:{e.get('dest_port')}",
                         "catalogo": e.get("catalog_domain"),
                         "veces_vistas": e.get("seen_count"),
                         "primera_vez": e.get("first_seen"),
@@ -119,7 +119,7 @@ def explain_events(base_url: str, model: str, events: list[dict],
             continue
         out.append({
             "process": e.get("process"),
-            "dest": f"{e.get('dest_host') or e.get('dest_ip')}:{e.get('dest_port')}",
+            "dest": f"{e.get('sni_domain') or e.get('dest_host') or e.get('dest_ip')}:{e.get('dest_port')}",
             "status": "ok",
             "resumen": str(d["resumen"])[:400],
             "porque": str(d["porque"])[:400],

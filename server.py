@@ -24,11 +24,13 @@ from llm_local import explain_events, is_loopback_url
 from monitor import NetMonitor
 from store import Store
 from sysmon_source import poll_sysmon_events, sysmon_available
+from tshark_source import (SniCapture, find_active_interface, sni_available,
+                          tshark_path)
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONFIG_PATH = DATA_DIR / "config.json"
-VERSION = "1.0"
+VERSION = "1.1"
 
 app = FastAPI(title="AI NetWatch")
 
@@ -42,6 +44,7 @@ _cfg: dict = {
     "llm_model": "",
     "extra_hosts": [],
     "sysmon_enabled": True,
+    "tshark_enabled": True,
 }
 
 
@@ -56,7 +59,7 @@ def _load_config() -> None:
     except (json.JSONDecodeError, OSError):
         return
     for k in ("jev_enabled", "jev_api_key", "llm_enabled", "llm_base_url",
-              "llm_model", "extra_hosts", "sysmon_enabled"):
+              "llm_model", "extra_hosts", "sysmon_enabled", "tshark_enabled"):
         if k in data:
             _cfg[k] = data[k]
     url = str(_cfg.get("llm_base_url") or "")
@@ -73,20 +76,54 @@ _load_config()
 
 store: Store | None = None
 monitor: NetMonitor | None = None
+sni_capture: SniCapture | None = None
+
+
+def _set_sni_capture(enabled: bool) -> None:
+    """Arranque/paro en vivo de la captura SNI (tshark). Fail-safe: sin
+    tshark o sin interfaz activa, queda inerte."""
+    global sni_capture
+    if not enabled:
+        if sni_capture:
+            sni_capture.stop()
+            sni_capture = None
+        if monitor:
+            monitor._sni_poll = None
+        return
+    path = tshark_path()
+    if not path or sni_capture is not None:
+        return
+    iface = find_active_interface(path)
+    if iface is None:
+        return
+    sni_capture = SniCapture(path, iface)
+    sni_capture.start()
+    if monitor:
+        monitor._sni_poll = sni_capture.poll_records
 
 
 @app.on_event("startup")
 def _start() -> None:
-    global store, monitor
+    global store, monitor, sni_capture
     store = Store(DATA_DIR / "events.db")
     sm = poll_sysmon_events if (_cfg["sysmon_enabled"] and sysmon_available()) else None
+    sni_fn = None
+    if _cfg["tshark_enabled"]:
+        path = tshark_path()
+        iface = find_active_interface(path) if path else None
+        if iface is not None:
+            sni_capture = SniCapture(path, iface)
+            sni_capture.start()
+            sni_fn = sni_capture.poll_records
     monitor = NetMonitor(store, extra_hosts=list(_cfg["extra_hosts"]),
-                         sysmon_fn=sm)
+                         sysmon_fn=sm, sni_fn=sni_fn)
     monitor.start()
 
 
 @app.on_event("shutdown")
 def _stop() -> None:
+    if sni_capture:
+        sni_capture.stop()
     if monitor:
         monitor.stop()
         monitor.join(timeout=3)
@@ -109,6 +146,7 @@ class ConfigRequest(BaseModel):
     llm_model: str | None = None
     extra_hosts: list[str] | None = None
     sysmon_enabled: bool | None = None
+    tshark_enabled: bool | None = None
 
 
 class TriageRequest(BaseModel):
@@ -125,7 +163,9 @@ class ResetRequest(BaseModel):
 
 @app.get("/api/config")
 def get_config():
-    return _mask(_cfg)
+    out = _mask(_cfg)
+    out["tshark_available"] = sni_available()
+    return out
 
 
 @app.post("/api/config")
@@ -162,6 +202,9 @@ def set_config(req: ConfigRequest):
             monitor._sysmon = (poll_sysmon_events
                               if req.sysmon_enabled and sysmon_available()
                               else None)
+    if req.tshark_enabled is not None:
+        _cfg["tshark_enabled"] = req.tshark_enabled
+        _set_sni_capture(req.tshark_enabled)
     _save_config()
     return _mask(_cfg)
 
@@ -290,12 +333,13 @@ def export_csv():
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["ts", "process", "image", "protocol", "dest_ip", "dest_port",
-                "dest_host", "catalog_domain", "seen_count",
+                "dest_host", "sni_domain", "catalog_domain", "seen_count",
                 "first_seen", "last_seen"])
     for e in events:
         w.writerow([e["ts"], e["process"], e.get("image") or "",
                     e.get("protocol", "tcp"), e["dest_ip"], e["dest_port"],
-                    e["dest_host"] or "", e["catalog_domain"] or "",
+                    e["dest_host"] or "", e.get("sni_domain") or "",
+                    e["catalog_domain"] or "",
                     e["seen_count"], e["first_seen"], e["last_seen"]])
     return Response(buf.getvalue(), media_type="text/csv")
 

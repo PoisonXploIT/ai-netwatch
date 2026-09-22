@@ -1,6 +1,6 @@
-# AI NetWatch (v1.0)
+# AI NetWatch (v1.1)
 
-Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
+Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad + dominio real por SNI** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
 
 - Solo loopback (`127.0.0.1`), puerto 8790.
 - **Jev (TypeSafe)** como juez de criticidad, a demanda (boton *Triar eventos con Jev*): clasificacion `expected_ai_use / background_exfil_suspect / telemetry_noise / unrelated`, criticidad 0-3, accion inmediata y **probabilidad de falso positivo** derivada.
@@ -11,8 +11,18 @@ Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, An
 ## Limitaciones honestas
 
 - No ve **bytes** ni **payload**: solo que un proceso abrio/mantiene conexion a un destino IA, con cuantas veces se repite. Bytes/payload requieren ETW/WFP o MITM (fuera de scope).
-- Dominio mostrado es best-effort (caché DNS del sistema + resolucion activa del catalogo cada 5 min, inmune a CNAME/CDN); el match va por IP contra dominios conocidos, o por hosts extra que anadas tu.
+- El dominio SNI es el declarado en el **handshake TLS** (tshark): definitivo e inmune a CNAME/CDN, pero solo lo ve en sesiones TLS nuevas; una keep-alive que ya estaba establecida cuando arranco la captura no vuelve a decir SNI. Sin tshark, cae al dominio best-effort (cache DNS + resolucion activa del catalogo cada 5 min).
 - Sin Sysmon, el polling (5 s) puede perder conexiones muy breves. Con Sysmon activo (recomendado), cada conexion es un evento: nada se pierde.
+
+## tshark: dominio real por SNI (v1.1)
+
+Con `tshark` instalado (Wireshark, `C:\Program Files\Wireshark\tshark.exe`), AI NetWatch arranca una captura continua en la interfaz activa y filtra **ClientHello** (`tls.handshake.type==1` sobre `tcp port 443`): por cada handshake extrae `ip.dst/ipv6.dst + tcp.dstport + SNI` y lo **anexa al evento ya registrado con ese IP:puerto** (columna *Dominio (SNI)*; si el evento no tenia catalogo, se completa con el dominio real).
+
+- Deteccion de interfaz automatica (probe en paralelo; descarta VMware/Bluetooth/VirtualBox en la primera pasada). IPv4 e IPv6.
+- Fail-safe: sin tshark o sin interfaz activa, el monitor funciona igual sin SNI. El checkbox *tshark* de la config se desactiva solo si no hay binario.
+- El proceso tshark hijo se gestiona siempre (muerto al parar; nunca queda huérfano: un huérfano interfiere con Npcap y con los probes).
+- Privacidad: es observacion pasiva del trafico local; los datos viven en el proceso tshark y en memoria, y solo se persiste el par (IP:puerto -> SNI) de destinos que ya son eventos. No se guarda payload ni contenido.
+- Nota tecnica: por pipe tshark emite ASCII (UTF-16LE solo al redirigir a fichero); el lector usa `readline()` porque `read(n)` se bloquea en pipes de Windows.
 
 ## Sysmon (fuente v2, opcional pero recomendada)
 
@@ -41,7 +51,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn server:app --host 127.0.0.1 --port 8790
 ```
 
-Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar) y toggle Sysmon sobreviven al reinicio.
+Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar), toggle Sysmon y toggle tshark sobreviven al reinicio.
 
 ## Endpoints
 
@@ -54,7 +64,7 @@ Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`)
 
 ## Contrato Jev (exacto)
 
-Modelo pin `jev-1.13.0`, una llamada batch por triaje (cap 50 eventos). State por evento: `process, dest_ip, dest_port, dest_host, catalog_domain, seen_count, first_seen, last_seen, user_active="unknown"`. Preguntas con criteria contrastivas:
+Modelo pin `jev-1.13.0`, una llamada batch por triaje (cap 50 eventos). State por evento: `process, dest_ip, dest_port, dest_host, sni_domain, catalog_domain, seen_count, first_seen, last_seen, user_active="unknown"` (el titulo usa el dominio SNI si existe, porque es el real). Preguntas con criteria contrastivas:
 
 1. **Choice** — `expected_ai_use` / `background_exfil_suspect` / `telemetry_noise` / `unrelated`
 2. **Score 0-3** — criticidad de exfiltracion (0 esperado/sin datos; 1 telemetry baja sensibilidad; 2 background a destino ambiguo; 3 probable exfiltracion activa)
@@ -69,6 +79,7 @@ Derivado: `prob_false_positive` = 1−confianza si `expected_ai_use`, confianza 
 - **Endpoint Jev pinado**: `jev_base_url`/`jev_model` NO son configurables por la API; siempre TypeSafe oficial + modelo pin.
 - **Reset protegido**: `POST /api/reset` exige `{"confirm": true}` (400 si no).
 - **Exports sin path traversal**: el contenido se genera en memoria; ningun endpoint toma nombres de archivo del usuario.
+- **tshark pasivo y gestionado**: la captura solo emite SNIs (sin payload); no hay forma de apuntarla a otra interfaz desde la API (la interfaz la elige el arranque localmente).
 - Suite dedicada: `tests/test_security.py` (SSRF, persistencia + revalidacion, reset, inputs, fail-safe).
 
 ## Tests

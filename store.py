@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS events (
     catalog_domain TEXT,
     protocol TEXT NOT NULL DEFAULT 'tcp',
     image TEXT,
+    sni_domain TEXT,
     seen_count INTEGER NOT NULL DEFAULT 1,
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL
@@ -61,6 +62,8 @@ class Store:
                 )
             if "image" not in cols:
                 self.conn.execute("ALTER TABLE events ADD COLUMN image TEXT")
+            if "sni_domain" not in cols:
+                self.conn.execute("ALTER TABLE events ADD COLUMN sni_domain TEXT")
             self.conn.commit()
 
     def _today(self) -> str:
@@ -113,6 +116,27 @@ class Store:
             self.conn.commit()
         return self.get_event(event_id) or {}
 
+    def attach_sni(
+        self, dst_ip: str, dst_port: int, sni: str,
+        catalog: str | None = None,
+    ) -> int:
+        """Asocia el SNI capturado a los eventos con ese (dst_ip, dst_port).
+
+        El SNI es definitivo sobre la caché DNS: se escribe siempre; el
+catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
+        Devuelve el numero de filas actualizadas.
+        """
+        with self._lock:
+            cur = self.conn.execute(
+                "UPDATE events SET sni_domain=?,"
+                " catalog_domain=CASE WHEN catalog_domain IS NULL OR"
+                " catalog_domain='' THEN ? ELSE catalog_domain END"
+                " WHERE dest_ip=? AND dest_port=?",
+                (sni, catalog or "", dst_ip, dst_port),
+            )
+            self.conn.commit()
+            return cur.rowcount
+
     def get_event(self, event_id: int) -> dict | None:
         row = self.conn.execute(
             "SELECT * FROM events WHERE id=?", (event_id,)
@@ -128,12 +152,14 @@ class Store:
             args.append(f"%{process}%")
         if dest:
             cols = (" AND (dest_ip LIKE ? OR COALESCE(dest_host,'') LIKE ?"
-                    " OR COALESCE(catalog_domain,'') LIKE ?)"
+                    " OR COALESCE(catalog_domain,'') LIKE ?"
+                    " OR COALESCE(sni_domain,'') LIKE ?)"
                     if process else
                     " WHERE dest_ip LIKE ? OR COALESCE(dest_host,'') LIKE ?"
-                    " OR COALESCE(catalog_domain,'') LIKE ?")
+                    " OR COALESCE(catalog_domain,'') LIKE ?"
+                    " OR COALESCE(sni_domain,'') LIKE ?")
             q += cols
-            args.extend([f"%{dest}%", f"%{dest}%", f"%{dest}%"])
+            args.extend([f"%{dest}%", f"%{dest}%", f"%{dest}%", f"%{dest}%"])
         q += " ORDER BY last_seen DESC LIMIT ?"
         args.append(limit)
         return [dict(r) for r in self.conn.execute(q, args).fetchall()]

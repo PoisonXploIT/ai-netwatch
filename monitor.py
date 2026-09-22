@@ -171,7 +171,7 @@ class NetMonitor(threading.Thread):
     def __init__(self, store: Store, poll_fn=poll_connections,
                  pidmap_fn=poll_pid_map, dns_fn=poll_dns_cache,
                  udp_fn=poll_udp_endpoints, catalog_fn=poll_catalog_ips,
-                 sysmon_fn=None,
+                 sysmon_fn=None, sni_fn=None,
                  interval: float = _POLL_S, extra_hosts: list[str] | None = None):
         super().__init__(daemon=True, name="ai-netwatch-monitor")
         self.store = store
@@ -181,6 +181,7 @@ class NetMonitor(threading.Thread):
         self._udp = udp_fn
         self._catalog_ips = catalog_fn
         self._sysmon = sysmon_fn
+        self._sni_poll = sni_fn
         self._sm_last_recid = 0
         self._catalog_ip_cache: dict[str, str] = {}
         self.interval = interval
@@ -246,6 +247,19 @@ class NetMonitor(threading.Thread):
             self._process_conn(e["dest_ip"], e["dest_port"], e["pid"],
                                e.get("protocol", "tcp"), e.get("image") or None)
 
+    def _sni_cycle(self) -> None:
+        """Drena los SNI capturados y los asocia a eventos por (ip, puerto).
+
+        El SNI es definitivo sobre la caché DNS: rellena sni_domain siempre;
+catalog_domain solo si estaba vacio.
+        """
+        if self._sni_poll is None:
+            return
+        for rec in self._sni_poll():
+            self.store.attach_sni(
+                rec["dst_ip"], rec["dst_port"], rec["sni"],
+                catalog=match_domain(rec["sni"]))
+
     def run(self) -> None:
         last_pidmap = 0.0
         last_dns = 0.0
@@ -265,6 +279,7 @@ class NetMonitor(threading.Thread):
                 conns = self._poll() + self._udp()
                 self._cycle(conns)
                 self._sysmon_cycle()
+                self._sni_cycle()
             except Exception as e:  # fail-safe: el monitor nunca rompe el server
                 self.errors.append(f"{time.strftime('%H:%M:%S')} {type(e).__name__}: {e}")
                 self.errors = self.errors[-10:]

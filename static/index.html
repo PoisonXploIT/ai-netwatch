@@ -20,7 +20,7 @@
 <body>
 <header>
   <h1>AI NetWatch</h1>
-  <span class="badge-ver">v1.0</span>
+  <span class="badge-ver">v1.1</span>
   <span class="sub">Monitor de conexiones de red hacia proveedores cloud IA (Jev incluido). Solo loopback.</span>
   <div class="header-right">
     <button id="btn-theme" class="icon" title="Cambiar tema claro/oscuro">tema</button>
@@ -50,11 +50,14 @@
     <div class="row">
       <label class="check"><input type="checkbox" id="sysmon-toggle"> Sysmon (EventID 3, conexiones breves + ruta del proceso)</label>
     </div>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="tshark-toggle"> tshark: dominio real por SNI (handshake TLS, inmune a CNAME/CDN)</label>
+    </div>
   </section>
 
   <section class="card">
     <h2>Eventos (conexiones a destinos IA)</h2>
-    <p class="hint">v1.0: proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo + periodicidad. El dominio del catálogo se resuelve activamente (inmune a CNAME/CDN).</p>
+    <p class="hint">v1.1: proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo + periodicidad. Columna SNI = dominio real declarado en el handshake TLS (tshark); Catálogo = match por resolución activa.</p>
     <div id="events-wrap" class="table-wrap"></div>
   </section>
 
@@ -76,7 +79,7 @@
   </section>
 </main>
 <footer>
-  <span>AI NetWatch v1.0</span>
+  <span>AI NetWatch v1.1</span>
   <span>Solo loopback (127.0.0.1:8790)</span>
   <span>LLM local: solo loopback, sin API key</span>
 </footer>

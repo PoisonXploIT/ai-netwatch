@@ -60,13 +60,14 @@ function eventsTableHtml(events) {
     <td>${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}</td>
     <td class="mono">${esc(e.dest_host || e.dest_ip)}:${e.dest_port}</td>
     <td>${esc(e.protocol || "tcp")}</td>
+    <td class="mono">${esc(e.sni_domain || "")}</td>
     <td>${esc(e.catalog_domain || "")}</td>
     <td class="num">${e.seen_count}</td>
     <td class="mono small">${esc(e.first_seen)}</td>
     <td class="mono small">${esc(e.last_seen)}</td>
   </tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Catálogo</th><th class="num">Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th class="num">Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -140,6 +141,12 @@ async function loadConfig() {
     document.getElementById("llm-url").value = c.llm_base_url || "";
     document.getElementById("llm-model").value = c.llm_model || "";
     document.getElementById("sysmon-toggle").checked = !!c.sysmon_enabled;
+    const t = document.getElementById("tshark-toggle");
+    t.checked = !!c.tshark_enabled;
+    if (!c.tshark_available) {
+      t.disabled = true;
+      t.title = "tshark no encontrado en el sistema";
+    }
   } catch (e) { /* sin config */ }
 }
 
@@ -190,6 +197,14 @@ function bind() {
     try {
       await api("/api/config", { method: "POST", body: JSON.stringify({ sysmon_enabled: ev.target.checked }) });
       toast(ev.target.checked ? "Sysmon fuente activada." : "Sysmon fuente desactivada.", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("tshark-toggle").addEventListener("change", async (ev) => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({ tshark_enabled: ev.target.checked }) });
+      toast(ev.target.checked
+        ? "Captura SNI (tshark) activada."
+        : "Captura SNI (tshark) desactivada.", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-reset").addEventListener("click", async () => {

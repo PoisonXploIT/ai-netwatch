@@ -115,12 +115,17 @@ def _questions_for(global_i: int, local_i: int | None = None) -> dict[str, dict]
 
 
 def _state_for(event: dict) -> dict:
+    # sni_domain = dominio real declarado en el handshake TLS (tshark):
+    # mas fiable que dest_host (cache DNS, puede ser nombre de CDN).
+    sni = str(event.get("sni_domain") or "")[:120]
+    host = sni or str(event.get("dest_host") or "")[:120]
     return {
-        "title": f"{event.get('process')} -> {event.get('dest_host') or event.get('dest_ip')}:{event.get('dest_port')}",
+        "title": f"{event.get('process')} -> {host or event.get('dest_ip')}:{event.get('dest_port')}",
         "process": str(event.get("process") or "")[:80],
         "dest_ip": str(event.get("dest_ip") or ""),
         "dest_port": int(event.get("dest_port") or 0),
         "dest_host": str(event.get("dest_host") or "")[:120],
+        "sni_domain": sni,
         "catalog_domain": str(event.get("catalog_domain") or ""),
         "seen_count": int(event.get("seen_count") or 1),
         "first_seen": str(event.get("first_seen") or ""),
