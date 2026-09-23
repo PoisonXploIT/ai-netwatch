@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from ai_catalog import KNOWN_AI_DOMAINS, match_domain
+from ai_classifier import classify_domain
 from store import Store
 
 _POLL_S = 5.0
@@ -171,7 +172,7 @@ class NetMonitor(threading.Thread):
     def __init__(self, store: Store, poll_fn=poll_connections,
                  pidmap_fn=poll_pid_map, dns_fn=poll_dns_cache,
                  udp_fn=poll_udp_endpoints, catalog_fn=poll_catalog_ips,
-                 sysmon_fn=None, sni_fn=None,
+                 sysmon_fn=None, sni_fn=None, eid22_fn=None,
                  interval: float = _POLL_S, extra_hosts: list[str] | None = None):
         super().__init__(daemon=True, name="ai-netwatch-monitor")
         self.store = store
@@ -182,6 +183,8 @@ class NetMonitor(threading.Thread):
         self._catalog_ips = catalog_fn
         self._sysmon = sysmon_fn
         self._sni_poll = sni_fn
+        self._eid22 = eid22_fn
+        self._eid22_cache: dict[str, str] = {}
         self._sm_last_recid = 0
         self._catalog_ip_cache: dict[str, str] = {}
         self.interval = interval
@@ -207,14 +210,22 @@ class NetMonitor(threading.Thread):
         # (cubre CNAME/CDN), y hosts extra.
         dom = (match_domain(host or ip) or self._catalog_ip_cache.get(ip)
                or self._match_extra(ip, host))
+        # 4) EID 22 (DnsQuery): dominio resuelto por el proceso aunque no este
+        #    en catalogo ni caché DNS. Solo si se clasifica como IA, para no
+        #    inundar con trafico no-IA de internet. Cobertura universal (R1).
+        if not dom:
+            cand = self._eid22_cache.get(ip)
+            if cand and classify_domain(cand).is_ai:
+                dom = cand
         if not dom:
             return
         name = image.rsplit("\\", 1)[-1].rsplit("/", 1)[-1] if image else None
         proc = name or pidmap.get(pid, f"pid:{pid}")
+        cls = classify_domain(dom[6:] if dom.startswith("extra:") else dom)
         self.store.observe_connection(
             process=proc, dest_ip=ip, dest_port=port,
             catalog_domain=dom, dest_host=dns.get(ip),
-            protocol=protocol, image=image,
+            protocol=protocol, image=image, ai_layer=cls.layer,
         )
 
     def _cycle(self, conns: list[dict] | None = None) -> None:
@@ -247,6 +258,29 @@ class NetMonitor(threading.Thread):
             self._process_conn(e["dest_ip"], e["dest_port"], e["pid"],
                                e.get("protocol", "tcp"), e.get("image") or None)
 
+    def _eid22_cycle(self) -> None:
+        """Refresca IP -> dominio desde Sysmon EID 22 (DnsQuery).
+
+        Usa QueryResults (los IPs resueltos): el join es proceso->dominio->IP
+        real, no heuristico. Persiste entre ciclos (una resolucion sigue
+        valiendo hasta que llegue una mas reciente). Sin datos -> conserva.
+        """
+        if self._eid22 is None:
+            return
+        evs = self._eid22()
+        if not evs:
+            return
+        m: dict[str, str] = {}
+        for e in evs:  # de antiguo a reciente: el ultimo gana
+            dom = e.get("query_name")
+            if not dom:
+                continue
+            for ip in e.get("ips", []):
+                if ip:
+                    m[ip] = dom
+        if m:
+            self._eid22_cache = m
+
     def _sni_cycle(self) -> None:
         """Drena los SNI capturados y los asocia a eventos por (ip, puerto).
 
@@ -277,6 +311,7 @@ catalog_domain solo si estaba vacio.
                     self._catalog_ip_cache = self._catalog_ips(self.extra_hosts)
                     last_catip = now
                 conns = self._poll() + self._udp()
+                self._eid22_cycle()
                 self._cycle(conns)
                 self._sysmon_cycle()
                 self._sni_cycle()

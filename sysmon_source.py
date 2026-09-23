@@ -76,6 +76,71 @@ def poll_sysmon_events(max_events: int = 300) -> list[dict]:
     return sorted(events, key=lambda e: e["record_id"])
 
 
+_PS_CMD_DNS = (
+    "$ev = Get-WinEvent -LogName 'Microsoft-Windows-Sysmon/Operational'"
+    " -MaxEvents 300 -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 22 };"
+    " $ev | ForEach-Object { @{ RecordId = [string]$_.RecordId; Xml = $_.ToXml() } }"
+    " | ConvertTo-Json -Compress"
+)
+
+
+def _parse_query_results(raw: str) -> list[str]:
+    """QueryResults de EID 22 ('a.b.c.d;::ffff:a.b.c.d;...') -> IPs limpias.
+
+    Convierte los v4 embebidos '::ffff:x.x.x.x' a su forma v4. Deduplica
+    preservando el orden (un mismo dominio puede dar varios A/AAAA).
+    """
+    out: list[str] = []
+    for tok in (raw or "").split(";"):
+        ip = tok.strip()
+        if not ip:
+            continue
+        if ip.startswith("::ffff:"):
+            ip = ip[len("::ffff:"):]
+        if ip and ip not in out:
+            out.append(ip)
+    return out
+
+
+def poll_sysmon_dns(max_events: int = 300) -> list[dict]:
+    """Eventos EventID 22 (DnsQuery) mas recientes, de antiguo a reciente.
+
+    Cada evento: {record_id, ts, image, pid, query_name, ips}.
+    `ips` son las direcciones resueltas en QueryResults (v4/v6). Fallo de
+    Sysmon/PS -> [] (fail-safe; el resto del monitor sigue vivo).
+    """
+    out = _run_ps(_PS_CMD_DNS, timeout=45)
+    text = (out or "").strip()
+    if not text:
+        return []
+    try:
+        rows = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(rows, dict):  # PS 5.1: un solo objeto, no array
+        rows = [rows]
+    events: list[dict] = []
+    for r in rows:
+        fields = _xml_fields(r.get("Xml") or "")
+        try:
+            rec = int(r.get("RecordId") or 0)
+            qname = str(fields.get("QueryName") or "").strip().lower()
+            pid = int(fields.get("ProcessId") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not (rec and qname):
+            continue
+        events.append({
+            "record_id": rec,
+            "ts": str(fields.get("UtcTime") or ""),
+            "image": str(fields.get("Image") or ""),
+            "pid": pid,
+            "query_name": qname,
+            "ips": _parse_query_results(str(fields.get("QueryResults") or "")),
+        })
+    return sorted(events, key=lambda e: e["record_id"])
+
+
 def _xml_fields(xml: str) -> dict[str, str]:
     """Data Name=... de un evento Sysmon -> {name: value} (tolerante)."""
     if not xml:

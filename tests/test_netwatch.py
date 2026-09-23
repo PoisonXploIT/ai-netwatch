@@ -17,6 +17,7 @@ import ai_catalog  # noqa: E402
 import jev_triage  # noqa: E402
 import llm_local  # noqa: E402
 import monitor as mon  # noqa: E402
+import ai_classifier  # noqa: E402
 import sysmon_source  # noqa: E402
 from store import Store  # noqa: E402
 
@@ -460,6 +461,150 @@ class TestMonitorSysmon(unittest.TestCase):
     def _cleanup(self, tmp, store):
         store.close()
         tmp.cleanup()
+
+
+class TestClassifier(unittest.TestCase):
+    def test_catalog_layer(self):
+        c = ai_classifier.classify_domain("eu.api.anthropic.com")
+        self.assertTrue(c.is_ai)
+        self.assertEqual(c.layer, "catalog")
+        self.assertEqual(c.provider, "anthropic.com")
+        self.assertEqual(c.confidence, 1.0)
+
+    def test_heuristic_tld_and_token(self):
+        c = ai_classifier.classify_domain("api.brandnew.ai")
+        self.assertTrue(c.is_ai)
+        self.assertEqual(c.layer, "heuristic")
+        self.assertEqual(c.confidence, 0.5)
+        c2 = ai_classifier.classify_domain("inference.internal-corp.com")
+        self.assertEqual(c2.layer, "heuristic")  # token 'inference'
+
+    def test_unlisted(self):
+        c = ai_classifier.classify_domain("example.com")
+        self.assertFalse(c.is_ai)
+        self.assertEqual(c.layer, "unlisted")
+
+    def test_llm_layer_with_cache(self):
+        calls = []
+
+        def llm(d):
+            calls.append(d)
+            return d == "internal-corp.example.net"
+
+        cache = {}
+        c1 = ai_classifier.classify_domain(
+            "internal-corp.example.net", llm_fn=llm, cache=cache)
+        self.assertEqual(c1.layer, "llm")
+        self.assertTrue(c1.is_ai)
+        n = len(calls)
+        c2 = ai_classifier.classify_domain(
+            "internal-corp.example.net", llm_fn=llm, cache=cache)
+        self.assertEqual(len(calls), n)  # cache: sin nueva llamada al LLM
+        self.assertEqual(c2.layer, "llm")
+
+    def test_llm_failsafe_on_exception(self):
+        def bad(d):
+            raise RuntimeError("boom")
+
+        c = ai_classifier.classify_domain(
+            "weird-corp.example.net", llm_fn=bad)
+        self.assertFalse(c.is_ai)  # el fallo no rompe ni afirma
+        self.assertEqual(c.layer, "unlisted")
+
+    def test_empty(self):
+        c = ai_classifier.classify_domain("")
+        self.assertFalse(c.is_ai)
+        self.assertEqual(c.layer, "unlisted")
+
+
+class TestEid22Join(unittest.TestCase):
+    def _mk(self):
+        tmp = tempfile.TemporaryDirectory()
+        store = Store(Path(tmp.name) / "t.db")
+        return tmp, store
+
+    def test_eid22_ai_domain_stored_when_unlisted_catalog(self):
+        tmp, store = self._mk()
+        m = mon.NetMonitor(store, poll_fn=lambda: [], pidmap_fn=lambda: {},
+                           dns_fn=lambda: {}, eid22_fn=lambda: [
+                               {"record_id": 1, "ts": "t",
+                                "image": r"C:\x\ollama.exe", "pid": 9,
+                                "query_name": "api.somenewprovider.ai",
+                                "ips": ["93.184.216.34"]}])
+        m._eid22_cycle()
+        # Conexion a esa IP sin catalogo/dns/extra: solo EID22 la clasifica.
+        m._cycle([{"remote_ip": "93.184.216.34", "remote_port": 443, "pid": 9}])
+        events = store.list_events()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["catalog_domain"], "api.somenewprovider.ai")
+        self.assertEqual(events[0]["ai_layer"], "heuristic")  # TLD .ai
+        store.close()
+        tmp.cleanup()
+
+    def test_eid22_non_ai_not_stored(self):
+        tmp, store = self._mk()
+        m = mon.NetMonitor(store, poll_fn=lambda: [], pidmap_fn=lambda: {},
+                           dns_fn=lambda: {}, eid22_fn=lambda: [
+                               {"record_id": 1, "ts": "t",
+                                "image": r"C:\x\chrome.exe", "pid": 3,
+                                "query_name": "github.com",
+                                "ips": ["140.82.112.6"]}])
+        m._eid22_cycle()
+        m._cycle([{"remote_ip": "140.82.112.6", "remote_port": 443, "pid": 3}])
+        self.assertEqual(len(store.list_events()), 0)  # no-IA: no inundar
+        store.close()
+        tmp.cleanup()
+
+    def test_eid22_cycle_builds_ip_map(self):
+        tmp, store = self._mk()
+        m = mon.NetMonitor(store, poll_fn=lambda: [], pidmap_fn=lambda: {},
+                           dns_fn=lambda: {}, eid22_fn=lambda: [
+                               {"record_id": 1, "ts": "t", "image": "",
+                                "pid": 1, "query_name": "a.ai",
+                                "ips": ["1.1.1.1"]},
+                               {"record_id": 2, "ts": "t", "image": "",
+                                "pid": 1, "query_name": "b.ai",
+                                "ips": ["2.2.2.2"]}])
+        m._eid22_cycle()
+        self.assertEqual(m._eid22_cache["1.1.1.1"], "a.ai")
+        self.assertEqual(m._eid22_cache["2.2.2.2"], "b.ai")
+        store.close()
+        tmp.cleanup()
+
+
+class TestPollSysmonDns(unittest.TestCase):
+    def test_parse_query_results(self):
+        ips = sysmon_source._parse_query_results(
+            "2606:50c0::1;::ffff:185.199.110.133;; 185.199.108.133")
+        self.assertEqual(ips, ["2606:50c0::1", "185.199.110.133",
+                               "185.199.108.133"])
+
+    def test_poll_dns_events(self):
+        xml = (
+            "<Event><EventData>"
+            "<Data Name='ProcessId'>18872</Data>"
+            "<Data Name='QueryName'>raw.githubusercontent.com</Data>"
+            "<Data Name='Image'>C:\\Obsidian\\Obsidian.exe</Data>"
+            "<Data Name='UtcTime'>2026-09-23 07:39:17.084</Data>"
+            "<Data Name='QueryResults'>::ffff:185.199.110.133;</Data>"
+            "</EventData></Event>")
+        sample = json.dumps([{"RecordId": "15962372", "Xml": xml}])
+        with mock.patch.object(sysmon_source, "_run_ps", return_value=sample):
+            evs = sysmon_source.poll_sysmon_dns()
+        self.assertEqual(len(evs), 1)
+        e = evs[0]
+        self.assertEqual(e["record_id"], 15962372)
+        self.assertEqual(e["query_name"], "raw.githubusercontent.com")
+        self.assertEqual(e["pid"], 18872)
+        self.assertTrue(e["image"].endswith("Obsidian.exe"))
+        self.assertEqual(e["ips"], ["185.199.110.133"])
+
+    def test_empty_and_garbage(self):
+        with mock.patch.object(sysmon_source, "_run_ps", return_value=""):
+            self.assertEqual(sysmon_source.poll_sysmon_dns(), [])
+        with mock.patch.object(sysmon_source, "_run_ps",
+                               return_value="no-json"):
+            self.assertEqual(sysmon_source.poll_sysmon_dns(), [])
 
 
 if __name__ == "__main__":

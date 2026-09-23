@@ -121,9 +121,10 @@
         <li><b>Destino</b> IP:puerto y <b>protocolo</b> (TCP/UDP).</li>
         <li><b>Dominio real por SNI</b> (tshark): el dominio declarado en el handshake TLS, inmune a CNAME/CDN.</li>
         <li><b>Catálogo</b>: match contra dominios IA conocidos (resolución activa cada 5 min).</li>
+        <li><b>IA (capa)</b>: cómo se clasificó el dominio — catálogo (evidencia), heurística (señal a revisar, TLD .ai/token IA), LLM local (bajo demanda) o sin clasificar. Cobertura universal: un proveedor no listado se ve si resolvio DNS (EID 22).</li>
         <li><b>Periodicidad</b> (veces observado) y primera/última vez.</li>
       </ul>
-      <p class="hint"><b>No ve bytes ni payload</b>: el contenido viaja cifrado (TLS). Para ver contenido haría falta MITM con CA propia, fuera de scope por privacidad/legal.</p>
+      <p class="hint"><b>Bytes remotos: no.</b> El trafico TLS remoto viaja cifrado; de el se ve la conexion y el dominio, no cuanto sale (bytes remotos requieren ETW/Npcap/MITM). <b>El egress en bytes SI se mide para el LLM local</b> (proxy inspector): bytes que salen hacia el LLM y que vuelven.</p>
     </details>
 
     <details>
@@ -132,6 +133,7 @@
         <li><b>Polling (5 s)</b>: conexiones TCP establecidas + endpoints UDP. Puede perder conexiones muy breves (&lt;5 s).</li>
         <li><b>Sysmon (EventID 3)</b>: cada conexión es un evento, ninguna se pierde; aporta la ruta completa del proceso (detecta masquerading: p. ej. <span class="mono">svchost.exe</span> fuera de System32). Recomendado.</li>
         <li><b>tshark (SNI)</b>: dominio real por handshake TLS. Solo lo ve en sesiones TLS nuevas; una keep-alive establecida antes del arranque no repite SNI.</li>
+        <li><b>Sysmon (EventID 22, DnsQuery)</b>: proceso + dominio consultado + IPs resueltas. Permite enlazar la conexion al dominio real aunque no este en el catalogo (cobertura universal R1).</li>
       </ul>
     </details>
 

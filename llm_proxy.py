@@ -234,6 +234,10 @@ def _extract_record(method: str, path: str, status: int, req_body: bytes,
         "response_chars": len(resp_text),
         "prompt_tokens": int(pt) if isinstance(pt, int) else None,
         "completion_tokens": int(ct) if isinstance(ct, int) else None,
+        # Egress real medido (no estimado): bytes del cuerpo que sale hacia el
+        # LLM y bytes totales que vuelven. Base del dashboard de egress.
+        "request_bytes": len(req_body),
+        "response_bytes": len(resp_raw),
         "latency_ms": round(latency_ms, 1),
         "client_addr": client_addr,
         "prompt": prompt_text[:MAX_STORED_TEXT],

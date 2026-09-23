@@ -25,6 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import server  # noqa: E402
+import llm_proxy  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 from llm_proxy import LlmProxy  # noqa: E402
 from store import LlmCallStore  # noqa: E402
@@ -444,6 +445,43 @@ class TestProxyConfig(ConfigBase):
             server.reset_llm_calls(server.ResetRequest(confirm=False))
         r = server.reset_llm_calls(server.ResetRequest(confirm=True))
         self.assertEqual(r["calls_removed"], 1)
+
+
+class TestEgressBytes(unittest.TestCase):
+    """Egress real medido (bytes del cuerpo que sale / bytes que vuelven)."""
+
+    def test_extract_record_bytes(self):
+        req = b'{"prompt":"hola mundo"}'
+        resp = b'{"choices":[{"message":{"content":"adios"}}]}'
+        rec = llm_proxy._extract_record(
+            "POST", "/v1/chat/completions", 200, req, resp,
+            False, 12.3, "127.0.0.1:1")
+        self.assertEqual(rec["request_bytes"], len(req))
+        self.assertEqual(rec["response_bytes"], len(resp))
+
+    def test_upstream_down_zero_response_bytes(self):
+        req = b'{"prompt":"x"}'
+        rec = llm_proxy._extract_record(
+            "POST", "/v1/chat/completions", 0, req, b"",
+            False, 5.0, "127.0.0.1:1")
+        self.assertEqual(rec["status"], 0)
+        self.assertEqual(rec["request_bytes"], len(req))
+        self.assertEqual(rec["response_bytes"], 0)
+
+    def test_bytes_persisted_to_store(self):
+        tmp = tempfile.TemporaryDirectory()
+        st = LlmCallStore(Path(tmp.name) / "c.db")
+        req = b'{"prompt":"abc"}'
+        resp = b'{"ok":true}'
+        rec = llm_proxy._extract_record(
+            "POST", "/v1/chat/completions", 200, req, resp,
+            False, 1.0, "127.0.0.1:1")
+        st.record(rec)
+        row = st.list_calls()[0]
+        self.assertEqual(row["request_bytes"], len(req))
+        self.assertEqual(row["response_bytes"], len(resp))
+        st.close()
+        tmp.cleanup()
 
 
 if __name__ == "__main__":

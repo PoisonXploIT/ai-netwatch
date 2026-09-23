@@ -54,6 +54,25 @@ function toast(msg, type = "") {
   el._t = setTimeout(() => (el.className = ""), 3600);
 }
 
+function aiLayerHtml(layer) {
+  const map = {
+    catalog: ["catálogo", "Capa 1: en el catálogo (evidencia directa)."],
+    heuristic: ["heurística", "Capa 2: señal por token/TLD .ai (revisar, no afirmado)."],
+    llm: ["LLM local", "Capa 3: clasificado por LLM local."],
+    unlisted: ["sin clasificar", "No cae en ninguna capa; visible para revisar."],
+  };
+  if (!layer) return "";
+  const pair = map[layer] || [layer, ""];
+  return `<span title="${esc(pair[1])}">${esc(pair[0])}</span>`;
+}
+
+function fmtBytes(n) {
+  if (n == null) return "?";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1024 / 1024).toFixed(2) + " MB";
+}
+
 function eventsTableHtml(events) {
   if (!events.length) return `<div class="hint">Sin eventos todavía (monitor activo).</div>`;
   const rows = events.map((e) => `<tr>
@@ -62,12 +81,13 @@ function eventsTableHtml(events) {
     <td>${esc(e.protocol || "tcp")}</td>
     <td class="mono">${esc(e.sni_domain || "")}</td>
     <td>${esc(e.catalog_domain || "")}</td>
+    <td>${aiLayerHtml(e.ai_layer)}</td>
     <td class="num">${e.seen_count}</td>
     <td class="mono small">${esc(e.first_seen)}</td>
     <td class="mono small">${esc(e.last_seen)}</td>
   </tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th class="num">Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th>IA (capa)</th><th class="num">Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -136,7 +156,10 @@ async function refreshEvents() {
 
 function llmCallsHtml(calls) {
   if (!calls.length) return `<div class="hint">Sin llamadas registradas. Con el inspector activo, apunta el cliente al puerto del proxy.</div>`;
-  return calls.map((c) => {
+  const totReq = calls.reduce((s, c) => s + (c.request_bytes || 0), 0);
+  const totResp = calls.reduce((s, c) => s + (c.response_bytes || 0), 0);
+  const head = `<div class="small mono">Total (últimas ${calls.length}): egress ${fmtBytes(totReq)} hacia el LLM · ${fmtBytes(totResp)} de vuelta</div>`;
+  return head + calls.map((c) => {
     const status = c.status == null ? "?" : (c.status === 0 ? "sin respuesta" : `HTTP ${c.status}`);
     const proc = c.client_process ? ` · proceso: ${esc(c.client_process)}` : "";
     const rel = (c.related_event_ids && c.related_event_ids.length)
@@ -145,6 +168,7 @@ function llmCallsHtml(calls) {
     return `<details>
     <summary class="mono">${esc(c.ts)} · ${esc(c.method || "")} ${esc(c.path || "")} · ${esc(c.model || "—")} · ${status}${c.streaming ? " · stream" : ""}${c.latency_ms != null ? ` · ${c.latency_ms} ms` : ""}</summary>
     <div class="small mono">PID cliente: ${c.client_pid != null ? esc(String(c.client_pid)) : "—"}${proc} · ${esc(c.client_addr || "")}${rel} · prompt ${esc(String(c.prompt_chars == null ? 0 : c.prompt_chars))} chars${c.prompt_tokens != null ? ` (${esc(String(c.prompt_tokens))} tokens)` : ""} · respuesta ${esc(String(c.response_chars == null ? 0 : c.response_chars))} chars${c.completion_tokens != null ? ` (${esc(String(c.completion_tokens))} tokens)` : ""}</div>
+    <div class="small mono">Egress medido: ${fmtBytes(c.request_bytes)} hacia el LLM · ${fmtBytes(c.response_bytes)} de vuelta</div>
     <h4>Prompt</h4><pre class="small">${esc(c.prompt || "")}</pre>
     <h4>Respuesta</h4><pre class="small">${esc(c.response || "")}</pre>
   </details>`;

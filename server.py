@@ -28,14 +28,15 @@ from llm_proxy import LlmProxy
 from pdf_export import build_report_pdf
 from monitor import NetMonitor
 from store import LlmCallStore, Store
-from sysmon_source import poll_sysmon_events, sysmon_available
+from sysmon_source import (poll_sysmon_dns, poll_sysmon_events,
+                           sysmon_available)
 from tshark_source import (SniCapture, find_active_interface, sni_available,
                           tshark_path)
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONFIG_PATH = DATA_DIR / "config.json"
-VERSION = "1.4"
+VERSION = "2.0-alpha"
 
 app = FastAPI(title="AI NetWatch")
 
@@ -192,6 +193,7 @@ def _start() -> None:
     if _cfg["llm_proxy_enabled"]:
         _set_llm_proxy(True)
     sm = poll_sysmon_events if (_cfg["sysmon_enabled"] and sysmon_available()) else None
+    eid22 = poll_sysmon_dns if sm else None  # mismo canal Sysmon que EID 3
     sni_fn = None
     if _cfg["tshark_enabled"]:
         path = tshark_path()
@@ -201,7 +203,7 @@ def _start() -> None:
             sni_capture.start()
             sni_fn = sni_capture.poll_records
     monitor = NetMonitor(store, extra_hosts=list(_cfg["extra_hosts"]),
-                         sysmon_fn=sm, sni_fn=sni_fn)
+                         sysmon_fn=sm, eid22_fn=eid22, sni_fn=sni_fn)
     monitor.start()
 
 

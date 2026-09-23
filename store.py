@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS events (
     protocol TEXT NOT NULL DEFAULT 'tcp',
     image TEXT,
     sni_domain TEXT,
+    ai_layer TEXT,
     seen_count INTEGER NOT NULL DEFAULT 1,
     first_seen TEXT NOT NULL,
     last_seen TEXT NOT NULL
@@ -60,6 +61,8 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     response_chars INTEGER,
     prompt_tokens INTEGER,
     completion_tokens INTEGER,
+    request_bytes INTEGER,
+    response_bytes INTEGER,
     latency_ms REAL,
     client_addr TEXT,
     prompt TEXT,
@@ -80,6 +83,11 @@ class LlmCallStore:
         self.conn.row_factory = sqlite3.Row
         with self._lock:
             self.conn.executescript(_LLM_SCHEMA)
+            cols = {r[1] for r in self.conn.execute("PRAGMA table_info(llm_calls)")}
+            if "request_bytes" not in cols:
+                self.conn.execute("ALTER TABLE llm_calls ADD COLUMN request_bytes INTEGER")
+            if "response_bytes" not in cols:
+                self.conn.execute("ALTER TABLE llm_calls ADD COLUMN response_bytes INTEGER")
             self.conn.commit()
 
     def record(self, call: dict) -> int:
@@ -87,13 +95,15 @@ class LlmCallStore:
             cur = self.conn.execute(
                 "INSERT INTO llm_calls (ts, method, path, status, model,"
                 " streaming, prompt_chars, response_chars, prompt_tokens,"
-                " completion_tokens, latency_ms, client_addr, prompt, response)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " completion_tokens, request_bytes, response_bytes, latency_ms,"
+                " client_addr, prompt, response)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (call["ts"], call.get("method"), call.get("path"),
                  call.get("status"), call.get("model"),
                  int(call.get("streaming") or 0),
                  call.get("prompt_chars"), call.get("response_chars"),
                  call.get("prompt_tokens"), call.get("completion_tokens"),
+                 call.get("request_bytes"), call.get("response_bytes"),
                  call.get("latency_ms"), call.get("client_addr"),
                  call.get("prompt"), call.get("response")),
             )
@@ -144,6 +154,8 @@ class Store:
                 self.conn.execute("ALTER TABLE events ADD COLUMN image TEXT")
             if "sni_domain" not in cols:
                 self.conn.execute("ALTER TABLE events ADD COLUMN sni_domain TEXT")
+            if "ai_layer" not in cols:
+                self.conn.execute("ALTER TABLE events ADD COLUMN ai_layer TEXT")
             self.conn.commit()
 
     def _today(self) -> str:
@@ -164,6 +176,7 @@ class Store:
         self, process: str, dest_ip: str, dest_port: int,
         catalog_domain: str | None, dest_host: str | None,
         protocol: str = "tcp", image: str | None = None,
+        ai_layer: str | None = None,
     ) -> dict:
         """Registra una conexion establecida a un destino AI.
 
@@ -179,17 +192,18 @@ class Store:
             if row:
                 self.conn.execute(
                     "UPDATE events SET seen_count=seen_count+1, last_seen=?, ts=?,"
-                    " image=COALESCE(?, image) WHERE id=?",
-                    (ts, ts, image, row["id"]),
+                    " image=COALESCE(?, image),"
+                    " ai_layer=COALESCE(?, ai_layer) WHERE id=?",
+                    (ts, ts, image, ai_layer, row["id"]),
                 )
                 event_id = row["id"]
             else:
                 cur = self.conn.execute(
                     "INSERT INTO events (ts, process, dest_ip, dest_port, dest_host,"
-                    " catalog_domain, protocol, image, seen_count, first_seen, last_seen)"
-                    " VALUES (?,?,?,?,?,?,?,?,1,?,?)",
+                    " catalog_domain, protocol, image, ai_layer, seen_count, first_seen, last_seen)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,1,?,?)",
                     (ts, process, dest_ip, dest_port, dest_host, catalog_domain,
-                     protocol, image, ts, ts),
+                     protocol, image, ai_layer, ts, ts),
                 )
                 event_id = cur.lastrowid
             self._bump_daily("events")

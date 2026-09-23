@@ -1,4 +1,4 @@
-# AI NetWatch (v1.4)
+# AI NetWatch (v2.0-alpha)
 
 Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad + dominio real por SNI** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
 
@@ -10,7 +10,7 @@ Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, An
 
 ## Limitaciones honestas
 
-- No ve **bytes** ni **payload**: solo que un proceso abrio/mantiene conexion a un destino IA, con cuantas veces se repite. Bytes/payload requieren ETW/WFP o MITM (fuera de scope).
+- No ve **bytes/payload del trafico TLS remoto**: para un proveedor remoto solo se ve la conexion (proceso/destino/periodicidad) y el dominio (SNI/EID22), no cuanto sale. El egress en bytes SI se mide, pero solo para el LLM local via el proxy inspector (HTTP plano en loopback). Bytes remotos requieren ETW `Kernel-Network` (pywin32/helper nativo, rompe "solo stdlib") o Npcap loopback (adaptador ausente) o MITM.
 - El dominio SNI es el declarado en el **handshake TLS** (tshark): definitivo e inmune a CNAME/CDN, pero solo lo ve en sesiones TLS nuevas; una keep-alive que ya estaba establecida cuando arranco la captura no vuelve a decir SNI. Sin tshark, cae al dominio best-effort (cache DNS + resolucion activa del catalogo cada 5 min).
 - Sin Sysmon, el polling (5 s) puede perder conexiones muy breves. Con Sysmon activo (recomendado), cada conexion es un evento: nada se pierde.
 
@@ -42,6 +42,18 @@ Sysmon64.exe -accepteula -i
 
 Notas v15: servicio `Sysmon64`, canal de eventos `Microsoft-Windows-Sysmon/Operational` (en v14 era `...-Operational`), campos `DestinationIp`/`DestinationHostname` (antes `DestinationAddress`). Sin config XML: Sysmon loguea todo y AI NetWatch filtra por catalogo.
 
+## Cobertura universal de proveedores (R1, v2.0-alpha)
+
+Un catalogo de ~20 dominios no es cobertura: cualquier proveedor nuevo o SDK no listado se cuela. R1 lo cierra con dos piezas:
+
+- **Sysmon EventID 22 (DnsQuery)** como fuente adicional: por cada consulta DNS queda `proceso + dominio consultado + IPs resueltos` (`QueryResults`). El join es **proceso -> dominio -> IP real**, no heuristico: una conexion a esa IP se enlaza al dominio que el proceso resolvio, aunque ese dominio no este en el catalogo ni en la cache DNS.
+- **Clasificador en 3 capas** (`ai_classifier.py`), por evidencia y no por heuristica sola:
+  1. **Catalogo** (evidencia directa): dominio del catalogo -> proveedor conocido, confianza 1.0.
+  2. **Heuristica** (senal de revision, NO evidencia): token IA o TLD `.ai` en el dominio -> se muestra para revisar, confianza 0.5, no se afirma.
+  3. **LLM local** (opcional, bajo demanda, con cache por dominio y fail-safe): para confirmar dominios limpios que ni catalogo ni heuristica deciden. No corre en el bucle caliente.
+
+Cada evento lleva su capa (`ai_layer`: catalog/heuristic/llm/unlisted) visible en la UI (columna *IA (capa)*). Un dominio que no cae en ninguna capa queda **"sin clasificar"**: visible, nunca oculto. Para no inundar con trafico no-IA de internet, un dominio aprendido solo por EID 22 se registra **solo si el clasificador lo marca como IA**.
+
 ## LLM Inspector (R3, v1.3-v1.4)
 
 Reverse proxy **solo stdlib** en loopback para inspeccionar las llamadas HTTP de un cliente a un LLM local OpenAI-compatible (p. ej. `llama-server`):
@@ -51,6 +63,7 @@ Reverse proxy **solo stdlib** en loopback para inspeccionar las llamadas HTTP de
 - Cobertura por endpoint: chat/completions (incluido tool-calling), completions legacy, embeddings, audio e imagenes. Embeddings e imagenes no persisten el dato crudo (vectores/b64): solo metadatos. Un intento que no conecta al upstream queda registrado como fallo (`status 0`).
 - Streaming SSE: se reenvia byte a byte tal cual; el contenido se acumula para el registro sin tocar el framing.
 - **Auto-observacion**: si `llm_base_url` apunta al mismo upstream que el target del proxy, las llamadas propias de NetWatch (explicador y test) tambien pasan por el proxy y quedan registradas. La config no se reescribe; el proxy nunca apunta a si mismo (sin bucle).
+- **Egress medido (bytes)**: por llamada se registran `request_bytes` (cuerpo que sale hacia el LLM) y `response_bytes` (bytes totales que vuelven). Es medida real del wire, no estimacion; base del dashboard de egress (v2.1).
 - **Enlace local**: cada llamada intenta enlazarse con el evento de red del mismo destino, proceso y ventana temporal (120 s), si ese destino esta siendo vigilado.
 - Toggle en vivo en la UI (tarjeta *LLM Inspector*); para inspeccionar, apunta el cliente al puerto del proxy.
 - **Limite honesto**: solo cubre el LLM local (HTTP plano en loopback). Un proveedor remoto viaja cifrado y su contenido no se ve; de el se ve la conexion (eventos de red), no el prompt.
