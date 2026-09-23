@@ -7,6 +7,7 @@ el ciclo de monitor). Fail-safe total: una alerta nunca rompe al monitor.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,10 +22,11 @@ class AlertLog:
     """Cola de alertas acotada + log plano (data/alerts.log) + webhook."""
 
     def __init__(self, path: Path | str | None = None, max_items: int = 200,
-                 webhook_url: str = ""):
+                 webhook_url: str = "", max_log_bytes: int = 1_000_000):
         self.path = Path(path) if path else None
         self.max_items = max(10, int(max_items))
         self.webhook_url = webhook_url or ""
+        self.max_log_bytes = max(1024, int(max_log_bytes))
         self._items: list[dict] = []
         self._lock = threading.Lock()
         self._next_id = 1
@@ -44,10 +46,18 @@ class AlertLog:
         if self.path is not None:
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
+                line = json.dumps(
+                    item, ensure_ascii=False, default=str) + "\n"
                 with self._lock:
+                    # Rotacion por tamano (una generacion): sin tope el
+                    # append-only creceria para siempre.
+                    if self.path.exists() \
+                            and self.path.stat().st_size > self.max_log_bytes:
+                        backup = self.path.with_name(
+                            self.path.name + ".1")
+                        os.replace(str(self.path), str(backup))
                     with open(self.path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps(
-                            item, ensure_ascii=False, default=str) + "\n")
+                        f.write(line)
             except OSError:
                 pass  # el log nunca rompe al monitor
         if self.webhook_url:

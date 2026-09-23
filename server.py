@@ -56,6 +56,10 @@ _cfg: dict = {
     "sysmon_enabled": True,
     "tshark_enabled": True,
     "retention_days": 90,
+    # llm_calls guarda prompts/respuestas en claro (el dato mas sensible):
+    # retencion mas corta que la de eventos (metadatos).
+    "retention_days_llm": 30,
+    "llm_store_content": True,
     "alerts_enabled": True,
     "alert_webhook_url": "",
 }
@@ -112,14 +116,19 @@ def _load_config() -> None:
     for k in ("jev_enabled", "jev_api_key", "llm_enabled", "llm_base_url",
               "llm_model", "llm_proxy_enabled", "llm_proxy_port",
               "llm_proxy_target", "extra_hosts", "sysmon_enabled",
-              "tshark_enabled", "retention_days", "alerts_enabled",
-              "alert_webhook_url"):
+              "tshark_enabled", "retention_days", "retention_days_llm",
+              "llm_store_content", "alerts_enabled",
+              "alert_webhook_url"):  # noqa: E128
         if k in data:
             _cfg[k] = data[k]
-    rd = _cfg.get("retention_days")
-    if not isinstance(rd, int) or isinstance(rd, bool) \
-            or not (1 <= rd <= 3650):
-        _cfg["retention_days"] = 90
+    for key, default in (("retention_days", 90),
+                         ("retention_days_llm", 30)):
+        rd = _cfg.get(key)
+        if not isinstance(rd, int) or isinstance(rd, bool) \
+                or not (1 <= rd <= 3650):
+            _cfg[key] = default
+    if not isinstance(_cfg.get("llm_store_content"), bool):
+        _cfg["llm_store_content"] = True
     if not isinstance(_cfg.get("alerts_enabled"), bool):
         _cfg["alerts_enabled"] = True
     # Webhook: solo loopback; un archivo editado a mano no lo apunta fuera.
@@ -191,7 +200,7 @@ def _set_llm_proxy(enabled: bool) -> bool:
     proxy = LlmProxy(bind_host="127.0.0.1",
                      bind_port=int(_cfg["llm_proxy_port"]),
                      target=(host or "127.0.0.1", int(port_s or 8099)),
-                     on_call=llm_calls.record if llm_calls else None)
+                     on_call=_record_llm_call if llm_calls else None)
     try:
         proxy.bind()
     except OSError:
@@ -201,7 +210,6 @@ def _set_llm_proxy(enabled: bool) -> bool:
     return True
 
 
-@app.on_event("startup")
 def _on_new_ai_event(ev: dict) -> None:
     """Alerta (O3): aparece un destino IA nuevo (proceso->destino antes no
     visto). El motor de reglas por umbral llega en v2.1; esto es la base."""
@@ -220,16 +228,29 @@ def _on_new_ai_event(ev: dict) -> None:
 
 
 def _prune_retention() -> None:
-    """Retencion (F7): eventos/triajes/llm_calls > retention_days. Fail-safe:
-    un fallo de prune nunca rompe el arranque ni el ciclo del monitor."""
+    """Retencion (F7): eventos/triajes > retention_days; llm_calls >
+    retention_days_llm (contenido en claro: vida mas corta). Fail-safe: un
+    fallo de prune nunca rompe el arranque ni el ciclo del monitor."""
     try:
         days = int(_cfg.get("retention_days") or 90)
         if store is not None:
             store.prune(days)
         if llm_calls is not None:
-            llm_calls.prune(days)
+            llm_calls.prune(int(_cfg.get("retention_days_llm") or 30))
     except Exception:
         pass
+
+
+def _record_llm_call(call: dict) -> None:
+    """Guarda la llamada del proxy. Con `llm_store_content` apagado solo se
+    persisten metadatos y bytes; prompt/respuesta (claro) no."""
+    if llm_calls is None:
+        return
+    if not _cfg.get("llm_store_content", True):
+        call = dict(call)
+        call["prompt"] = ""
+        call["response"] = ""
+    llm_calls.record(call)
 
 
 @app.on_event("startup")
@@ -296,6 +317,8 @@ class ConfigRequest(BaseModel):
     sysmon_enabled: bool | None = None
     tshark_enabled: bool | None = None
     retention_days: int | None = None
+    retention_days_llm: int | None = None
+    llm_store_content: bool | None = None
 
 
 class TriageRequest(BaseModel):
@@ -387,11 +410,15 @@ def set_config(req: ConfigRequest):
     if req.tshark_enabled is not None:
         _cfg["tshark_enabled"] = req.tshark_enabled
         _set_sni_capture(req.tshark_enabled)
-    if req.retention_days is not None:
-        rd = int(req.retention_days)
-        if not (1 <= rd <= 3650):
-            raise HTTPException(400, "retention_days: entre 1 y 3650")
-        _cfg["retention_days"] = rd
+    for key in ("retention_days", "retention_days_llm"):
+        val = getattr(req, key)
+        if val is not None:
+            v = int(val)
+            if not (1 <= v <= 3650):
+                raise HTTPException(400, f"{key}: entre 1 y 3650")
+            _cfg[key] = v
+    if req.llm_store_content is not None:
+        _cfg["llm_store_content"] = bool(req.llm_store_content)
     _save_config()
     return _mask(_cfg)
 

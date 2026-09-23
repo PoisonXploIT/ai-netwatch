@@ -68,6 +68,18 @@ class TestAlertLog(unittest.TestCase):
         finally:
             srv.shutdown()
 
+    def test_log_rotation_by_size(self):
+        log = alerts.AlertLog(Path(self.tmp.name) / "a.log",
+                              max_log_bytes=512)
+        big = "x" * 300
+        for _ in range(4):
+            log.push("k", big)
+        cur = Path(self.tmp.name) / "a.log"
+        backup = Path(self.tmp.name) / "a.log.1"
+        self.assertTrue(backup.exists())
+        # La generacion activa no pasa de ~max_log_bytes + un push.
+        self.assertLess(cur.stat().st_size, 512 + 400)
+
     def test_webhook_failure_does_not_raise(self):
         # Puerto cerrado: el push nunca lanza.
         self.log.webhook_url = "http://127.0.0.1:1/alert"

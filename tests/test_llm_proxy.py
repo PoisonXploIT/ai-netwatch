@@ -18,7 +18,7 @@ import threading
 import time
 import unittest
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -197,7 +197,8 @@ def _fresh_cfg() -> dict:
         "llm_proxy_enabled": False, "llm_proxy_port": 8098,
         "llm_proxy_target": "127.0.0.1:8099",
         "extra_hosts": [], "sysmon_enabled": True,
-        "retention_days": 90, "alerts_enabled": True,
+        "retention_days": 90, "retention_days_llm": 30,
+        "llm_store_content": True, "alerts_enabled": True,
         "alert_webhook_url": "",
     }
 
@@ -380,6 +381,26 @@ class TestEffectiveLlmBase(ConfigBase):
             server.llm_proxy = None
 
 
+class TestServerStartupHandlers(unittest.TestCase):
+    """Regresion: un callback del monitor con @app.on_event("startup") se
+    registraria como handler de arranque y FastAPI lo invocaria sin
+    argumentos -> TypeError en el arranque (bug v2.0, commit 757afc6)."""
+
+    def test_startup_handlers_take_no_args(self):
+        import functools
+        import inspect
+
+        for h in server.app.router.on_startup:
+            f = h.func if isinstance(h, functools.partial) else h
+            params = [p for p in inspect.signature(f).parameters.values()
+                      if p.default is inspect.Parameter.empty
+                      and p.kind in (p.POSITIONAL_ONLY,
+                                     p.POSITIONAL_OR_KEYWORD)]
+            self.assertEqual(params, [],
+                             f"{getattr(f, '__name__', h)} no puede ser "
+                             "handler de arranque (exige argumentos)")
+
+
 class TestProxyConfig(ConfigBase):
 
     def test_public_target_rejected(self):
@@ -443,6 +464,53 @@ class TestProxyConfig(ConfigBase):
             with self.assertRaises(HTTPException):
                 server.set_config(server.ConfigRequest(retention_days=bad))
         self.assertEqual(server._cfg["retention_days"], 30)
+
+    def test_retention_days_llm_validated(self):
+        server.set_config(server.ConfigRequest(retention_days_llm=7))
+        self.assertEqual(server._cfg["retention_days_llm"], 7)
+        for bad in (0, -5, 100000):
+            with self.assertRaises(HTTPException):
+                server.set_config(
+                    server.ConfigRequest(retention_days_llm=bad))
+
+    def test_prune_retention_split_days(self):
+        """Wire: eventos > retention_days; llm_calls > retention_days_llm.
+        Un evento de 60 d sobrevive a 90 d pero una llamada LLM de 40 d
+        muere con 30 d (contenido en claro: vida mas corta)."""
+        from store import Store
+        ev_store = Store(Path(self.tmp.name) / "ev.db")
+        server.store = ev_store
+        old_ev = (datetime.now(timezone.utc) - timedelta(days=60)).strftime(
+            "%Y-%m-%d %H:%M:%SZ")
+        with ev_store._lock:
+            ev_store.conn.execute(
+                "INSERT INTO events (ts, process, dest_ip, dest_port,"
+                " protocol, first_seen, last_seen) VALUES (?,?,?,?,?,?,?)",
+                (old_ev, "a.exe", "1.1.1.1", 443, "tcp", old_ev, old_ev))
+        old_llm = (datetime.now(timezone.utc) - timedelta(days=40)).strftime(
+            "%Y-%m-%d %H:%M:%SZ")
+        self.store.record({"ts": old_llm})
+        server._cfg["retention_days"] = 90
+        server._cfg["retention_days_llm"] = 30
+        server._prune_retention()
+        self.assertEqual(len(ev_store.list_events()), 1)
+        self.assertEqual(self.store.list_calls(), [])
+        ev_store.close()
+
+    def test_record_llm_call_strips_content_when_disabled(self):
+        server._cfg["llm_store_content"] = False
+        server._record_llm_call({
+            "ts": "2026-01-01 00:00:00Z", "prompt": "secreto",
+            "response": "respuesta-secreta"})
+        row = self.store.list_calls()[0]
+        self.assertEqual(row["prompt"], "")
+        self.assertEqual(row["response"], "")
+        server._cfg["llm_store_content"] = True
+        server._record_llm_call({
+            "ts": "2026-01-01 00:00:01Z", "prompt": "hola",
+            "response": "adios"})
+        row = self.store.list_calls()[0]
+        self.assertEqual(row["prompt"], "hola")
 
     def test_load_revalidates_proxy_target(self):
         # Un config.json editado a mano no apunta el proxy fuera.

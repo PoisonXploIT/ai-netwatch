@@ -206,6 +206,8 @@ async function loadConfig() {
     document.getElementById("alerts-toggle").checked = !!c.alerts_enabled;
     document.getElementById("alert-webhook").value = c.alert_webhook_url || "";
     document.getElementById("retention-days").value = c.retention_days || 90;
+    document.getElementById("retention-llm-days").value = c.retention_days_llm || 30;
+    document.getElementById("llm-content-store").checked = !!c.llm_store_content;
     document.getElementById("sysmon-toggle").checked = !!c.sysmon_enabled;
     const t = document.getElementById("tshark-toggle");
     t.checked = !!c.tshark_enabled;
@@ -311,9 +313,17 @@ function bind() {
   });
   $("btn-save-retention").addEventListener("click", async () => {
     const days = parseInt($("retention-days").value, 10);
+    const llmDays = parseInt($("retention-llm-days").value, 10);
     try {
-      await api("/api/config", { method: "POST", body: JSON.stringify({ retention_days: days }) });
-      toast(`Retención guardada: ${days} días.`, "ok");
+      await api("/api/config", { method: "POST", body: JSON.stringify({
+        retention_days: days, retention_days_llm: llmDays }) });
+      toast(`Retención guardada: eventos ${days} d, LLM calls ${llmDays} d.`, "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("llm-content-store").addEventListener("change", async (ev) => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({ llm_store_content: ev.target.checked }) });
+      toast(ev.target.checked ? "Contenido LLM se guarda (claro)." : "Solo metadatos y bytes; el contenido LLM ya no se persiste.", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-reset-llmcalls").addEventListener("click", async () => {

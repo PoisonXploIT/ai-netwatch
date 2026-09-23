@@ -66,10 +66,15 @@
       <button id="btn-save-alerts">Guardar</button>
     </div>
     <div class="row">
-      <label>Retenci&oacute;n (d&iacute;as)</label>
+      <label>Retenci&oacute;n eventos (d&iacute;as)</label>
       <input id="retention-days" type="number" min="1" max="3650" style="width:90px">
+      <label>LLM calls (d&iacute;as)</label>
+      <input id="retention-llm-days" type="number" min="1" max="3650" style="width:90px">
       <button id="btn-save-retention">Guardar</button>
-      <span class="hint">Eventos, triajes y llamadas LLM m&aacute;s antiguos que esto se borran (VACUUM incluido). El hist&oacute;rico diario de estad&iacute;sticas se conserva.</span>
+      <span class="hint">Eventos/triajes y llamadas LLM m&aacute;s antiguos que esto se borran (VACUUM incluido). LLM calls llevan vida m&aacute;s corta: guardan contenido en claro. El hist&oacute;rico diario de estad&iacute;sticas se conserva.</span>
+    </div>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="llm-content-store"> Guardar contenido de prompts/respuestas LLM (en claro). Apagado: solo metadatos y bytes.</label>
     </div>
   </section>
 
