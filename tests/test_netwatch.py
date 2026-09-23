@@ -338,14 +338,31 @@ class TestJevTriage(unittest.TestCase):
         self.assertIn("422", str(ctx.exception))
         self.assertIn("valid dictionary", str(ctx.exception))
 
-    def test_cap(self):
-        calls = {}
+    def test_batches_cover_all_events(self):
+        # Regresion: antes events[:50] dejaba sin triar el resto (filas
+        # vacias en la UI). Ahora: lotes de <=TRIAGE_CAP que cubren todos.
+        calls = []
         def fake(url, body, key, timeout=30):
-            calls["n"] = len(body["state"])
-            return {"model": "jev-1.13.0", "answers": {}}
+            calls.append(len(body["state"]))
+            first = int(list(body["questions"])[0][1:].split("_")[0])
+            return {"model": "jev-1.13.0",
+                    "answers": {f"f{first}_class": {
+                        "choice": "expected_ai_use", "confidence": 0.9}}}
         with mock.patch.object(jev_triage, "_http_post_json", side_effect=fake):
-            jev_triage.triage_events([{"process": f"p{i}"} for i in range(80)], "k")
-        self.assertEqual(calls["n"], jev_triage.TRIAGE_CAP)
+            r = jev_triage.triage_events(
+                [{"process": f"p{i}"} for i in range(80)], "k")
+        self.assertEqual(calls, [50, 30])
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(r["count"], 80)
+        self.assertEqual(len(r["verdicts"]), 80)
+
+    def test_error_when_no_answers_at_all(self):
+        # Cero respuestas en todos los lotes = error, no 'ok' con todo None.
+        with mock.patch.object(jev_triage, "_http_post_json",
+                               return_value={"model": "jev-1.13.0",
+                                             "answers": {}}):
+            r = jev_triage.triage_events([{"process": "a"}], "k")
+        self.assertEqual(r["status"], "error")
 
 
 class TestLlmLocal(unittest.TestCase):

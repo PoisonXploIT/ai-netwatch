@@ -2,8 +2,9 @@
 
 Mismo contrato que sec-dashboard: POST {base_url} con
 {model, state[], questions{}} -> {answers}. Modelo pin jev-1.13.0.
-Una sola llamada por triaje (batch). Fail-safe: nunca lanza hacia fuera;
-devuelve status ok/skipped/error y el caller degrada a vista clasica.
+Un lote de hasta TRIAGE_CAP eventos por llamada (batch); el triaje cubre
+todos los eventos en lotes. Fail-safe: nunca lanza hacia fuera; devuelve
+status ok/skipped/error y el caller degrada a vista clasica.
 
 Preguntas EXACTAS (las parametrisan los eventos, no la prosa):
   fN_class -> Choice: expected_ai_use / background_exfil_suspect /
@@ -19,6 +20,8 @@ import urllib.request
 
 PINNED_MODEL = "jev-1.13.0"
 DEFAULT_BASE_URL = "https://api.typesafe.ai/v1/systemone"
+# Eventos por llamada TypeSafe (tamano de lote). El triaje cubre TODOS
+# los eventos en lotes de este tamano; no es un techo global.
 TRIAGE_CAP = 50
 
 # Criterias en ingles a proposito (doc TypeSafe: english = mejor precision).
@@ -172,37 +175,47 @@ def _ask(states: list[dict], idxs: list[int], api_key: str, base_url: str,
 
 def triage_events(events: list[dict], api_key: str, base_url: str = DEFAULT_BASE_URL,
                    model: str = PINNED_MODEL, timeout: int = 30) -> dict:
-    """Triaje batch. Devuelve {status, model, count, verdicts{idx: {...}}}."""
+    """Triaje batch de TODOS los eventos. Devuelve
+    {status, model, count, verdicts{idx: {...}}}.
+
+    Procesa en lotes de TRIAGE_CAP (50) y fusiona veredictos por indice
+    global: cubre todos los eventos sin exceder el limite probado por
+    llamada. Si un lote falla, reintenta por sub-trozos de _CHUNK (10).
+    """
     if not events:
         return {"status": "skipped", "reason": "no_events"}
     if not api_key:
         return {"status": "skipped", "reason": "no_api_key"}
-    events = events[:TRIAGE_CAP]
-    state = [_state_for(e) for e in events]
-    answers: dict | None = None
-    try:
-        answers = _ask(state, list(range(len(state))), api_key, base_url,
-                       model, timeout)
-    except Exception as e:
-        # Fallback por trozos de 10: tolera limites/errores transitorios del API.
-        answers = {}
-        errors: list[str] = []
-        for start in range(0, len(state), _CHUNK):
-            idxs = list(range(start, min(start + _CHUNK, len(state))))
-            try:
-                a = _ask([state[i] for i in idxs], idxs, api_key, base_url,
-                         model, timeout)
-                if isinstance(a, dict):
-                    answers.update(a)
-            except Exception as e2:
-                errors.append(f"chunk {idxs[0]}-{idxs[-1]}: {e2}")
-        if not answers:
-            return {"status": "error",
-                    "reason": "; ".join(errors) or f"{type(e).__name__}: {e}"}
-    if not isinstance(answers, dict):
-        return {"status": "error", "reason": "bad_response_shape"}
+    n = len(events)
+    states_all = [_state_for(e) for e in events]
+    answers: dict = {}
+    errors: list[str] = []
+    for start in range(0, n, TRIAGE_CAP):
+        idxs = list(range(start, min(start + TRIAGE_CAP, n)))
+        try:
+            a = _ask([states_all[i] for i in idxs], idxs, api_key, base_url,
+                     model, timeout)
+            if isinstance(a, dict):
+                answers.update(a)
+            else:
+                errors.append(f"lote {idxs[0]}-{idxs[-1]}: bad_response_shape")
+        except Exception as e:
+            # Fallback por sub-trozos de _CHUNK (10): tolera limites/
+            # errores transitorios del API.
+            for s2 in range(0, len(idxs), _CHUNK):
+                sub = idxs[s2:s2 + _CHUNK]
+                try:
+                    a2 = _ask([states_all[i] for i in sub], sub, api_key,
+                              base_url, model, timeout)
+                    if isinstance(a2, dict):
+                        answers.update(a2)
+                except Exception as e2:
+                    errors.append(f"chunk {sub[0]}-{sub[-1]}: {e2}")
+    if not answers:
+        return {"status": "error",
+                "reason": "; ".join(errors)[:500] or "no_answers"}
     verdicts: dict[str, dict] = {}
-    for i in range(len(events)):
+    for i in range(n):
         cls = answers.get(f"f{i}_class") or {}
         sev = answers.get(f"f{i}_sev") or {}
         act = answers.get(f"f{i}_act") or {}
@@ -217,6 +230,6 @@ def triage_events(events: list[dict], api_key: str, base_url: str = DEFAULT_BASE
             "immediate_action": noul,
             "prob_false_positive": _prob_false_positive(choice, conf),
         }
-    missing = [i for i in range(len(events)) if f"f{i}_class" not in answers]
-    return {"status": "ok", "model": model, "count": len(events),
+    missing = [i for i in range(n) if f"f{i}_class" not in answers]
+    return {"status": "ok", "model": model, "count": n,
             "partial": bool(missing), "verdicts": verdicts}

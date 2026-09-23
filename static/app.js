@@ -134,19 +134,27 @@ function triageHtml(data) {
   const parts = [];
   const jev = data.jev || {};
   if (jev.status === "ok") {
-    const rows = (data.events || []).map((e, i) => {
+    const evs = data.events || [];
+    let triaged = 0;
+    const rows = evs.map((e, i) => {
       const v = (jev.verdicts || {})[String(i)] || {};
+      if (v.verdict != null) triaged++;
+      // Sin veredicto: 'no triado' explicito (no un vacio que parezca fallo).
+      const cls = v.verdict != null ? verdictBadge(v.verdict)
+        : `<span class="hint">no triado</span>`;
       return `<tr>
         <td>${esc(e.process)}</td>
         <td class="mono">${esc(e.dest)}</td>
-        <td>${verdictBadge(v.verdict)}</td>
+        <td>${cls}</td>
         ${numCell(v.confidence, v.confidence)}
         ${numCell(v.prob_false_positive == null ? null : Math.round(v.prob_false_positive * 100) + "%", v.prob_false_positive)}
         ${sevCell(v.severity_score)}
         ${numCell(v.immediate_action, v.immediate_action)}
       </tr>`;
     }).join("");
-    parts.push(`<h3>Veredictos Jev</h3><table>
+    const countNote = triaged < evs.length
+      ? ` <span class="hint">(triados ${triaged} de ${evs.length})</span>` : "";
+    parts.push(`<h3>Veredictos Jev${countNote}</h3><table>
       <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificación</th><th class="num">Confianza</th><th class="num">Prob. falso positivo</th><th class="num">Criticidad</th><th class="num">Acción inmediata</th></tr></thead>
       <tbody>${rows}</tbody></table>`);
   } else if (jev.status === "skipped") {

@@ -975,9 +975,12 @@ def triage(req: TriageRequest):
         if flagged:
             explanations = explain_events(
                 _effective_llm_base(), _cfg["llm_model"], events, result.get("verdicts"))
+    # Destino con identidad IA (sni > catalogo > cache DNS > IP), mismo
+    # orden que _provider_of: sin esto la tabla mostraba IPs crudas y
+    # CDN, y el trafico a IA no se reconocia como tal.
     payload = {"events": [
         {"id": e["id"], "process": e["process"],
-         "dest": f"{e['dest_host'] or e['dest_ip']}:{e['dest_port']}",
+         "dest": f"{_provider_of(e)}:{e['dest_port']}",
          "catalog": e["catalog_domain"], "seen_count": e["seen_count"]}
         for e in events],
         "jev": result, "llm_explanations": explanations}

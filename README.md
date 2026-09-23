@@ -206,7 +206,7 @@ Los tres exports se descargan (`Content-Disposition: attachment`) y se generan e
 
 ## Contrato Jev (exacto)
 
-Modelo pin `jev-1.13.0`, una llamada batch por triaje (cap 50 eventos). State por evento: `process, dest_ip, dest_port, dest_host, sni_domain, catalog_domain, seen_count, first_seen, last_seen, user_active` (veredicto de autonomía R2), `sessions, iat_cv, beaconing` (F1/D3) (el titulo usa el dominio SNI si existe, porque es el real). Preguntas con criteria contrastivas:
+Modelo pin `jev-1.13.0`, lotes de hasta 50 eventos por llamada (cubre todos los eventos; si un lote falla, reintenta por trozos de 10). State por evento: `process, dest_ip, dest_port, dest_host, sni_domain, catalog_domain, seen_count, first_seen, last_seen, user_active` (veredicto de autonomía R2), `sessions, iat_cv, beaconing` (F1/D3) (el titulo usa el dominio SNI si existe, porque es el real). Preguntas con criteria contrastivas:
 
 1. **Choice** — `expected_ai_use` / `background_exfil_suspect` / `telemetry_noise` / `unrelated`
 2. **Score 0-3** — criticidad de exfiltracion (0 esperado/sin datos; 1 telemetry baja sensibilidad; 2 background a destino ambiguo; 3 probable exfiltracion activa)

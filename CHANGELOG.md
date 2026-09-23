@@ -10,6 +10,16 @@ con `-WindowStyle Hidden`) se niega en silencio. Diseno: una tarea
 programada `AI-NETWATCH-NetBytes` con "Run with highest privileges",
 creada UNA vez (elevada), que el ciclo dispara con `schtasks /run`:
 sin prompt por ciclo, y funciona aunque el servidor corra oculto.
+
+Ademas, fix del triaje Jev: antes `events[:50]` dejaba sin veredicto a
+los eventos 51+ (filas vacias en la UI; con 144 eventos, 94 sin
+clasificar). Ahora el triaje cubre TODOS los eventos en lotes de 50 y
+fusiona veredictos por indice global; si un lote falla, reintenta por
+trozos de 10. El destino del triaje usa la identidad IA
+(`sni_domain > catalog_domain > dest_host > dest_ip`, mismo orden que
+`_provider_of`): en vez de IPs crudas/CDN se ve `platform.deepseek.com`,
+`huggingface.co`... La UI marca "no triado" explicito y cuenta
+"triados X de Y" cuando hay parcialidad.
 - `setup_netbytes_task.ps1`: setup unico desde consola ELEVADA
   (`Register-ScheduledTask`, RunLevel Highest, logon interactivo,
   `AllowStartOnDemand`).
