@@ -586,6 +586,7 @@ _shadow_alerted: set[str] = set()
 _autonomy_alerted: set[str] = set()  # R2: una alerta por proceso+proveedor
 _beacon_alerted: set[str] = set()    # D3: una alerta de beaconing por clave
 _rules_alerted: set[str] = set()     # v2.2: una alerta por regla
+_new_dest_alerted: set[str] = set()  # v2.3: una alerta por proceso+proveedor
 
 
 def _provider_of(ev: dict) -> str:
@@ -660,14 +661,20 @@ def _on_new_ai_event(ev: dict) -> None:
     host = _provider_of(ev)
     dest = f"{host}:{ev.get('dest_port')}"
     layer = ev.get("ai_layer") or "?"
-    alerts.push(
-        "new_ai_destination",
-        f"Nuevo destino IA: {ev.get('process')} -> {dest} (capa {layer})",
-        details={"event_id": ev.get("id"), "process": ev.get("process"),
-                 "dest_ip": ev.get("dest_ip"), "dest_port": ev.get("dest_port"),
-                 "catalog_domain": ev.get("catalog_domain"),
-                 "ai_layer": layer},
-    )
+    # Dedup por (proceso, proveedor): una IP nueva del mismo proveedor (CDN
+    # con IPv6 rotatoria) no vuelve a alertar. Antes disparaba por evento.
+    key = f"{ev.get('process')}|{host}"
+    if key not in _new_dest_alerted:
+        _new_dest_alerted.add(key)
+        alerts.push(
+            "new_ai_destination",
+            f"Nuevo destino IA: {ev.get('process')} -> {dest} (capa {layer})",
+            details={"event_id": ev.get("id"), "process": ev.get("process"),
+                     "dest_ip": ev.get("dest_ip"),
+                     "dest_port": ev.get("dest_port"),
+                     "catalog_domain": ev.get("catalog_domain"),
+                     "ai_layer": layer},
+        )
     # Shadow AI: IA detectada que no esta aprobada. Una alerta por
     # proveedor; se reevalua al cambiar la aprobacion (set_config).
     if host and not _is_approved_provider(host) \
@@ -997,12 +1004,67 @@ def test_ai(req: TestRequest):
     raise HTTPException(400, "target debe ser jev o llm")
 
 
+def _group_by_provider(rows: list[dict]) -> list[dict]:
+    """v2.3: colapsa eventos por (proceso, proveedor) para quitar el ruido de
+    las IPs rotatorias de CDN. Suma sesiones/polls, cuenta IPs y conserva el
+    primer/ultimo avistamiento. Solo agregacion de vista: no toca deteccion."""
+    groups: dict[tuple[str, str], dict] = {}
+    for e in rows:
+        key = (str(e.get("process") or ""), str(e.get("provider") or ""))
+        g = groups.get(key)
+        if g is None:
+            g = {
+                "process": e.get("process"), "image": e.get("image"),
+                "provider": e.get("provider"), "kind": e.get("kind"),
+                "ai_layer": e.get("ai_layer"),
+                "autonomy_verdict": e.get("autonomy_verdict"),
+                "autonomy_score": e.get("autonomy_score"),
+                "iat_cv": e.get("iat_cv"), "dest_port": e.get("dest_port"),
+                "sessions": 0, "seen_count": 0, "_ips": set(),
+                "first_seen": e.get("first_seen"),
+                "last_seen": e.get("last_seen"),
+            }
+            groups[key] = g
+        g["sessions"] += int(e.get("sessions") or 0)
+        g["seen_count"] += int(e.get("seen_count") or 0)
+        g["_ips"].add(str(e.get("dest_ip")))
+        fs, ls = e.get("first_seen"), e.get("last_seen")
+        if fs and (not g["first_seen"] or fs < g["first_seen"]):
+            g["first_seen"] = fs
+        if ls and (not g["last_seen"] or ls > g["last_seen"]):
+            g["last_seen"] = ls
+    out: list[dict] = []
+    for g in groups.values():
+        g["ip_count"] = len(g.pop("_ips"))
+        out.append(g)
+    out.sort(key=lambda g: g.get("last_seen") or "", reverse=True)
+    return out
+
+
 @app.get("/api/events")
 def list_events(limit: int = 200, process: str | None = None,
-                dest: str | None = None):
+                dest: str | None = None, layer: str | None = None,
+                verdict: str | None = None, shadow: bool = False,
+                hide_cdn: bool = False, group: str = "provider"):
+    """Eventos con filtros de vista (v2.3): proceso/destino/capa/veredicto,
+    solo-no-aprobados (shadow), ocultar CDN, y agrupacion por proveedor
+    (colapsa el ruido de IPs rotatorias). Nada de esto cambia la deteccion."""
     limit = max(1, min(int(limit), 1000))
-    return {"events": _req_store().list_events(limit=limit, process=process,
-                                               dest=dest)}
+    fetch = 1000 if group == "provider" else limit
+    rows = _req_store().list_events(limit=fetch, process=process, dest=dest,
+                                    layer=layer, verdict=verdict)
+    for e in rows:
+        e["provider"] = _provider_of(e)
+        e["kind"] = destination_kind(e.get("provider") or "")
+    if shadow:
+        rows = [e for e in rows if e["provider"]
+                and not _is_approved_provider(e["provider"])]
+    if hide_cdn:
+        rows = [e for e in rows if e["kind"] != "cdn"]
+    grouped = group == "provider"
+    if grouped:
+        rows = _group_by_provider(rows)[:limit]
+    return {"events": rows, "grouped": grouped}
 
 
 @app.post("/api/triage")
@@ -1345,6 +1407,7 @@ def reset(req: ResetRequest):
     _autonomy_alerted.clear()
     _beacon_alerted.clear()
     _rules_alerted.clear()
+    _new_dest_alerted.clear()
     return {**out, "daily_stats_kept": True}
 
 

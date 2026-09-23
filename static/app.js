@@ -92,7 +92,32 @@ function fmtBytes(n) {
   return (n / 1024 / 1024).toFixed(2) + " MB";
 }
 
-function eventsTableHtml(events) {
+function kindBadge(kind) {
+  const m = { api: "API", web: "web", cdn: "CDN" };
+  return m[kind] ? ` <span class="hint">[${m[kind]}]</span>` : "";
+}
+
+function groupedEventsTableHtml(events) {
+  if (!events.length) return `<div class="hint">Sin eventos con los filtros actuales.</div>`;
+  const rows = events.map((e) => `<tr>
+    <td>${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}</td>
+    <td class="mono">${esc(e.provider || "-")}${kindBadge(e.kind)}</td>
+    <td>${aiLayerHtml(e.ai_layer)}</td>
+    <td>${autonomyBadge(e.autonomy_verdict, e.autonomy_score)}</td>
+    <td class="num">${e.sessions ?? 0}${beaconBadge(e)}</td>
+    <td class="num">${e.seen_count ?? 0}</td>
+    <td class="num" title="IPs distintas para este proceso y proveedor (CDN rotatorio).">${e.ip_count ?? 0}</td>
+    <td class="mono small">${esc(e.first_seen || "")}</td>
+    <td class="mono small">${esc(e.last_seen || "")}</td>
+  </tr>`).join("");
+  return `<table>
+    <thead><tr><th>Proceso</th><th>Proveedor</th><th>IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente.">Sesiones</th><th class="num" title="Polls = muestras de presencia.">Polls</th><th class="num">#IPs</th><th>Primera vez</th><th>Última vez</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function eventsTableHtml(events, grouped) {
+  if (grouped) return groupedEventsTableHtml(events);
   if (!events.length) return `<div class="hint">Sin eventos todavía (monitor activo).</div>`;
   const rows = events.map((e) => `<tr>
     <td>${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}</td>
@@ -176,10 +201,28 @@ function triageHtml(data) {
   return parts.join("");
 }
 
+function eventsQuery() {
+  const $ = (id) => document.getElementById(id);
+  const p = new URLSearchParams();
+  p.set("limit", "200");
+  p.set("group", $("ev-group") && $("ev-group").checked ? "provider" : "none");
+  const layer = $("ev-layer") && $("ev-layer").value;
+  if (layer) p.set("layer", layer);
+  const verdict = $("ev-verdict") && $("ev-verdict").value;
+  if (verdict) p.set("verdict", verdict);
+  if ($("ev-shadow") && $("ev-shadow").checked) p.set("shadow", "true");
+  if ($("ev-hide-cdn") && $("ev-hide-cdn").checked) p.set("hide_cdn", "true");
+  const proc = $("ev-process") && $("ev-process").value.trim();
+  if (proc) p.set("process", proc);
+  const dest = $("ev-dest") && $("ev-dest").value.trim();
+  if (dest) p.set("dest", dest);
+  return p.toString();
+}
+
 async function refreshEvents() {
   try {
-    const d = await api("/api/events?limit=200");
-    document.getElementById("events-wrap").innerHTML = eventsTableHtml(d.events);
+    const d = await api("/api/events?" + eventsQuery());
+    document.getElementById("events-wrap").innerHTML = eventsTableHtml(d.events, d.grouped);
   } catch (e) { /* server caído */ }
 }
 
@@ -506,6 +549,29 @@ function bind() {
     } finally {
       btn.disabled = false;
     }
+  });
+
+  const evRefresh = () => refreshEvents();
+  ["ev-group", "ev-layer", "ev-verdict", "ev-shadow", "ev-hide-cdn"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("change", evRefresh);
+  });
+  ["ev-process", "ev-dest"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("input", () => {
+      clearTimeout(el._t);
+      el._t = setTimeout(evRefresh, 300);
+    });
+  });
+  $("btn-ev-clear").addEventListener("click", () => {
+    $("ev-group").checked = true;
+    $("ev-layer").value = "";
+    $("ev-verdict").value = "";
+    $("ev-shadow").checked = false;
+    $("ev-hide-cdn").checked = false;
+    $("ev-process").value = "";
+    $("ev-dest").value = "";
+    refreshEvents();
   });
 
   loadConfig();

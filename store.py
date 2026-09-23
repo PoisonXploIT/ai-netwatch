@@ -433,22 +433,30 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
         return dict(row) if row else None
 
     def list_events(self, limit: int = 200, process: str | None = None,
-                    dest: str | None = None) -> list[dict]:
-        q = "SELECT * FROM events"
+                    dest: str | None = None, layer: str | None = None,
+                    verdict: str | None = None) -> list[dict]:
+        """Eventos vivos. Filtros opcionales por proceso, destino (IP/host/
+        SNI/catalogo), capa IA y veredicto de autonomia (v2.3: para quitar
+        ruido en la vista sin tocar la deteccion)."""
+        where: list[str] = []
         args: list[object] = []
         if process:
-            q += " WHERE process LIKE ?"
+            where.append("process LIKE ?")
             args.append(f"%{process}%")
         if dest:
-            cols = (" AND (dest_ip LIKE ? OR COALESCE(dest_host,'') LIKE ?"
-                    " OR COALESCE(catalog_domain,'') LIKE ?"
-                    " OR COALESCE(sni_domain,'') LIKE ?)"
-                    if process else
-                    " WHERE dest_ip LIKE ? OR COALESCE(dest_host,'') LIKE ?"
-                    " OR COALESCE(catalog_domain,'') LIKE ?"
-                    " OR COALESCE(sni_domain,'') LIKE ?")
-            q += cols
+            where.append("(dest_ip LIKE ? OR COALESCE(dest_host,'') LIKE ?"
+                         " OR COALESCE(catalog_domain,'') LIKE ?"
+                         " OR COALESCE(sni_domain,'') LIKE ?)")
             args.extend([f"%{dest}%", f"%{dest}%", f"%{dest}%", f"%{dest}%"])
+        if layer:
+            where.append("ai_layer = ?")
+            args.append(layer)
+        if verdict:
+            where.append("autonomy_verdict = ?")
+            args.append(verdict)
+        q = "SELECT * FROM events"
+        if where:
+            q += " WHERE " + " AND ".join(where)
         q += " ORDER BY last_seen DESC LIMIT ?"
         args.append(limit)
         return [dict(r) for r in self.conn.execute(q, args).fetchall()]

@@ -98,6 +98,7 @@ class TestNewAiEventMessage(unittest.TestCase):
         self._alerts = server.alerts
         server._cfg["alerts_enabled"] = True
         server.alerts = self.log
+        server._new_dest_alerted.clear()
 
     def tearDown(self):
         server._cfg.clear()
@@ -127,10 +128,21 @@ class TestNewAiEventMessage(unittest.TestCase):
 
     def test_raw_ip_is_last_resort(self):
         ev = {"id": 3, "process": "x.exe",
-             "dest_ip": "1.2.3.4", "dest_port": 443}
+              "dest_ip": "1.2.3.4", "dest_port": 443}
         server._on_new_ai_event(ev)
         row = self.log.list()[-1]
         self.assertIn("1.2.3.4:443", row["message"])
+
+    def test_dedup_same_process_provider_different_ip(self):
+        # v2.3: misma pareja (proceso, proveedor) con IP distinta (CDN con
+        # IPv6 rotatoria) -> una sola alerta new_ai_destination.
+        base = {"process": "python.exe", "dest_port": 443,
+                "catalog_domain": "huggingface.co"}
+        server._on_new_ai_event({**base, "id": 1, "dest_ip": "2600:9000::1"})
+        server._on_new_ai_event({**base, "id": 2, "dest_ip": "2600:9000::2"})
+        rows = [r for r in self.log.list()
+                if r["kind"] == "new_ai_destination"]
+        self.assertEqual(len(rows), 1)
 
 
 if __name__ == "__main__":

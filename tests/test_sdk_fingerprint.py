@@ -138,6 +138,30 @@ class TestEid1Cmdline(unittest.TestCase):
         self.assertIn("uvicorn", evs[0]["cmdline"])
         self.assertTrue(evs[0]["image"].endswith("python.exe"))
 
+    def test_no_processname_derived_from_image(self):
+        # Sysmon que no emite ProcessName/ParentProcessName: el nombre se
+        # deriva del basename de Image (regresion: antes todo era "" y el
+        # poll devolvía []).
+        xml = (
+            "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>"
+            "<System><EventID>1</EventID></System>"
+            "<EventData>"
+            "<Data Name='UtcTime'>2026-09-23 10:00:00.000</Data>"
+            "<Data Name='ProcessId'>4242</Data>"
+            "<Data Name='Image'>C:\\x\\.venv\\Scripts\\python.exe</Data>"
+            "<Data Name='CommandLine'>C:\\x\\.venv\\Scripts\\python.exe app.py</Data>"
+            "<Data Name='ParentImage'>C:\\Windows\\System32\\cmd.exe</Data>"
+            "<Data Name='ParentCommandLine'>cmd /c start</Data>"
+            "</EventData></Event>"
+        )
+        sample = json.dumps([{"RecordId": "101", "Xml": xml}])
+        with mock.patch.object(sysmon_source, "_run_ps",
+                               return_value=sample):
+            evs = sysmon_source.poll_sysmon_process_creation()
+        self.assertEqual(len(evs), 1)
+        self.assertEqual(evs[0]["process"], "python.exe")
+        self.assertEqual(evs[0]["parent_process"], "cmd.exe")
+
 
 class ServerSdkBase(unittest.TestCase):
     def setUp(self) -> None:

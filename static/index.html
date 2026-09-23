@@ -87,6 +87,29 @@
   <section class="card">
     <h2>Eventos (conexiones a destinos IA)</h2>
     <p class="hint">v1.1: proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo + periodicidad. Columna SNI = dominio real declarado en el handshake TLS (tshark); Catálogo = match por resolución activa.</p>
+    <div class="row" id="events-filters">
+      <label class="check"><input type="checkbox" id="ev-group" checked> Agrupar por proveedor</label>
+      <label>Capa</label>
+      <select id="ev-layer">
+        <option value="">Todas</option>
+        <option value="catalog">catálogo</option>
+        <option value="heuristic">heurística</option>
+        <option value="llm">LLM local</option>
+      </select>
+      <label>Autonomía</label>
+      <select id="ev-verdict">
+        <option value="">Todas</option>
+        <option value="autonomous">autónomo</option>
+        <option value="scheduled">programado</option>
+        <option value="user_driven">usuario</option>
+        <option value="unknown">desconocido</option>
+      </select>
+      <label class="check"><input type="checkbox" id="ev-shadow"> Solo no aprobados</label>
+      <label class="check"><input type="checkbox" id="ev-hide-cdn"> Ocultar CDN</label>
+      <input id="ev-process" placeholder="proceso" style="width:120px">
+      <input id="ev-dest" placeholder="destino" style="width:160px">
+      <button id="btn-ev-clear">Limpiar</button>
+    </div>
     <div id="events-wrap" class="table-wrap"></div>
   </section>
 

@@ -173,6 +173,10 @@ def poll_sysmon_process_creation(max_events: int = 300) -> list[dict]:
             rec = int(r.get("RecordId") or 0)
             image = str(fields.get("Image") or "")
             proc = str(fields.get("ProcessName") or "")
+            # Algunos Sysmon no emiten ProcessName/ParentProcessName en el
+            # XML: se deriva del basename de Image (siempre presente).
+            if not proc and image:
+                proc = image.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
             pid = int(fields.get("ProcessId") or 0)
             parent_image = str(fields.get("ParentImage") or "")
         except (TypeError, ValueError):
