@@ -97,14 +97,24 @@ Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`)
 `rules.py` evalúa cada 60 s el estado existente con reglas por umbral:
 **service_ai_call** (veredicto autónomo/programado llamando a IA no
 aprobada), **beacon_unapproved** (beaconing N≥5, CV≤0.3 a proveedor no
-aprobado) y **egress_volume_unapproved** (>X MB/día a IA no aprobada;
-`available=false` hasta los bytes remotos). Cada regla que pasa a disparar
-genera una alerta `rule_fired` (una por regla; reset re-alerta).
-Config: `rules_enabled`, `rule_egress_mb_per_day`. UI: tarjeta *Reglas*.
-**Nota de viabilidad**: trazar `Microsoft-Windows-Kernel-Network`
-(logman/tracerpt) requiere **admin**; el colector de bytes será un modo
-elevado, y sin admin el dashboard seguirá diciendo "no disponible" con
-motivo.
+aprobado) y **egress_volume_unapproved** (>X MB a IA no aprobada según
+bytes remotos; `available=false` sin datos de colector). Cada regla que
+pasa a disparar genera una alerta `rule_fired` (una por regla; reset
+re-alerta). Config: `rules_enabled`, `rule_egress_mb_per_day`. UI:
+tarjeta *Reglas*.
+
+## Bytes remotos (v2.2)
+
+`netcollector.py` es un colector **elevado** (UAC, opt-in) que traza
+`Microsoft-Windows-Kernel-Network` con logman/tracerpt (~N s por ciclo),
+parsea el XML **por nombre de campo** y suma bytes por destino (solo
+copia de datos TCP/UDP; sin loopback ni DNS). El servidor (no elevado)
+solo lee el JSONL resultante y lo acumula en `net_bytes`; nunca
+interpreta ETLs. Config: `net_bytes_enabled` (off por defecto),
+`net_bytes_duration_s`, `net_bytes_cycle_s`. Con datos, el dashboard
+muestra `cloud_bytes` real (total + top proveedores); sin admin o sin
+datos, "no disponible" con motivo — nunca un cero que engane. Cada ciclo
+elevado pide UAC; es opt-in y visible a propósito.
 
 ## Sesiones y beaconing (F1/D3, v2.1)
 

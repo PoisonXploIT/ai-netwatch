@@ -109,49 +109,72 @@ def get_foreground_pid() -> int | None:
         return None
 
 
-def is_session_locked() -> bool | None:
-    """Sesion bloqueada / pantalla apagada = LogonUI.exe corriendo.
+class _PROCESSENTRY32(ctypes.Structure):
+    """PROCESSENTRY32W (tlhelp32.h), layout verificado empiricamente contra
+    la API: dwSize + 9 DWORDs (Flags, LinkCount, ProcessID, ThreadID,
+    InheritedHandle, ParentPID, PriorityClass, BasePriority, ContiguousItems),
+    szExeFile[260] en offset 40 y cola hasta el dwSize que Process32First
+    acepta (312). El struct minimo (dwSize+szExeFile) falla con
+    ERROR_MORE_DATA (24)."""
 
-    None si no se puede determinar (no-Windows o fallo de snapshot)."""
+    _fields_ = [("dwSize", ctypes.c_uint),
+                ("ContiguousItems", ctypes.c_uint),
+                ("Flags", ctypes.c_uint),
+                ("LinkCount", ctypes.c_uint),
+                ("ProcessID", ctypes.c_uint),
+                ("ThreadID", ctypes.c_uint),
+                ("InheritedHandle", ctypes.c_uint),
+                ("ParentPID", ctypes.c_uint),
+                ("PriorityClass", ctypes.c_ulong),
+                ("BasePriority", ctypes.c_ulong),
+                ("szExeFile", ctypes.c_char * 260),
+                ("_tail", ctypes.c_char * 12)]
+
+
+def _process_snapshot() -> list[tuple[int, str]] | None:
+    """Snapshot de procesos: [(pid, nombre_exe_bajo), ...]. None si no se
+    puede (no-Windows o fallo)."""
     if sys.platform != "win32":
         return None
     try:
         k32 = ctypes.windll.kernel32
-        TH32CS_SNAPPROCESS = 0x2
-
-        # Layout verificado empiricamente contra la API (tlhelp32.h):
-        # 10 DWORDs, szExeFile[260] en offset 44, y cola hasta el dwSize
-        # que Process32First acepta (312). El struct minimo
-        # (dwSize+szExeFile) falla con ERROR_MORE_DATA (24).
-        class _PROCESSENTRY32(ctypes.Structure):
-            _fields_ = [("dwSize", ctypes.c_uint),
-                        ("_pad", ctypes.c_uint * 9),
-                        ("szExeFile", ctypes.c_char * 260),
-                        ("_tail", ctypes.c_char * 12)]
-
-        snap = k32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+        snap = k32.CreateToolhelp32Snapshot(0x2, 0)
         if not snap:
             return None
+        out: list[tuple[int, str]] = []
         try:
             entry = _PROCESSENTRY32()
             entry.dwSize = ctypes.sizeof(entry)
             if not k32.Process32First(snap, ctypes.byref(entry)):
                 return None
-            found = False
             while True:
                 name = (bytes(entry.szExeFile).split(b"\x00")[0]
                         .decode("utf-8", "ignore").lower())
-                if name == "logonui.exe":
-                    found = True
-                    break
+                out.append((int(entry.ProcessID), name))
                 entry.dwSize = ctypes.sizeof(entry)
                 if not k32.Process32Next(snap, ctypes.byref(entry)):
                     break
-            return found
+            return out
         finally:
             k32.CloseHandle(snap)
     except Exception:
         return None
+
+
+def pid_name_map() -> dict[int, str]:
+    """{pid: nombre_exe} de todos los procesos. Vacio si no se puede."""
+    snap = _process_snapshot()
+    return dict(snap) if snap else {}
+
+
+def is_session_locked() -> bool | None:
+    """Sesion bloqueada / pantalla apagada = LogonUI.exe corriendo.
+
+    None si no se puede determinar (no-Windows o fallo de snapshot)."""
+    snap = _process_snapshot()
+    if snap is None:
+        return None
+    return any(name == "logonui.exe" for _, name in snap)
 
 
 def evaluate(process: str, pid: int | None = None, *,

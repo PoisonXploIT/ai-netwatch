@@ -15,7 +15,10 @@ import io
 import json
 import os
 import re
+import subprocess
+import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -73,6 +76,10 @@ _cfg: dict = {
     # bytes remotos).
     "rules_enabled": True,
     "rule_egress_mb_per_day": 500.0,
+    # v2.2: colector elevado de bytes remotos (opt-in; UAC en cada ciclo).
+    "net_bytes_enabled": False,
+    "net_bytes_duration_s": 30,
+    "net_bytes_cycle_s": 600,
 }
 
 
@@ -277,6 +284,26 @@ def _auto_classify_cycle() -> None:
         pass
 
 
+def _egress_rows() -> list[dict]:
+    """v2.2: bytes remotos por proveedor (net_bytes + mapeo IP->proveedor
+    via eventos, el mas reciente gana). Vacio si el colector elevado nunca
+    ha volcado datos."""
+    if store is None:
+        return []
+    ip_prov: dict[str, str] = {}
+    for ev in store.list_events(limit=500):
+        ip = str(ev.get("dest_ip") or "")
+        if ip and ip not in ip_prov:
+            ip_prov[ip] = _provider_of(ev)
+    out: list[dict] = []
+    for r in store.net_bytes_sum():
+        prov = ip_prov.get(str(r["dest_ip"]), "desconocido")
+        out.append({"provider": prov,
+                    "bytes": int(r["bytes"]),
+                    "unapproved": not _is_approved_provider(prov)})
+    return out
+
+
 def _rules_events() -> list[dict]:
     """Eventos enriquecidos para el motor de reglas (provider y
     unapproved con la misma logica que shadow). Vacio sin store."""
@@ -304,9 +331,11 @@ def _rules_cycle() -> None:
     if alerts is None or not _cfg.get("alerts_enabled"):
         return
     try:
+        egress = _egress_rows() or None
         results = rules.evaluate(
             _rules_events(),
-            egress_mb_per_day=float(_cfg.get("rule_egress_mb_per_day", 500)))
+            egress_mb_per_day=float(_cfg.get("rule_egress_mb_per_day", 500)),
+            egress=egress)
         for r in results:
             if r["fired"] and r["id"] not in _rules_alerted:
                 _rules_alerted.add(r["id"])
@@ -327,6 +356,66 @@ def _auto_classify_loop() -> None:
         _auto_classify_cycle()
         _rules_cycle()
         _auto_stop.wait(60)
+
+
+_net_stop = threading.Event()
+
+
+def _spawn_netcollector(duration_s: int, out_path: Path) -> None:
+    """Lanza el colector elevado (UAC). El hijo ELEVADO escribe el JSONL;
+    este proceso (no elevado) solo espera a leerlo. Sin admin => el UAC
+    se niega y no hay fichero: degradacion honesta, sin numeros."""
+    script = Path(__file__).resolve().parent / "netcollector.py"
+    py = sys.executable
+    ps = (f"Start-Process -FilePath '{py}'"
+          f" -ArgumentList '{script}', {int(duration_s)}, '{out_path}'"
+          " -Verb RunAs")
+    subprocess.Popen(["powershell", "-NoProfile", "-Command", ps],
+                     creationflags=0x0800)  # CREATE_NO_WINDOW
+
+
+def _netbytes_cycle() -> None:
+    """v2.2: un ciclo del colector elevado (opt-in). Fail-safe total."""
+    if store is None:
+        return
+    duration_s = int(_cfg.get("net_bytes_duration_s", 30))
+    out_path = DATA_DIR / f"netprobe_{int(time.time())}.jsonl"
+    try:
+        _spawn_netcollector(duration_s, out_path)
+    except (OSError, subprocess.SubprocessError):
+        return
+    deadline = time.monotonic() + duration_s + 90
+    while not out_path.exists() and time.monotonic() < deadline:
+        _net_stop.wait(5)
+    if not out_path.exists():
+        return  # sin admin / UAC denegado / fallo: no hay datos
+    try:
+        rows = []
+        with open(out_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    rows.append(json.loads(line))
+        store.ingest_net_bytes(rows, time.strftime("%Y-%m-%dT%H:%M:%S"))
+    except (OSError, ValueError):
+        return
+    try:
+        out_path.unlink()
+    except OSError:
+        pass
+
+
+def _netbytes_loop() -> None:
+    """Hilo daemon del colector elevado: cada net_bytes_cycle_s, si esta
+    activado. Desactivado => solo duerme (opt-in por diseño)."""
+    while not _net_stop.is_set():
+        if _cfg.get("net_bytes_enabled"):
+            try:
+                _netbytes_cycle()
+            except Exception:
+                pass
+        cycle = int(_cfg.get("net_bytes_cycle_s", 600))
+        _net_stop.wait(max(30, min(cycle, 86400)))
 
 
 _shadow_alerted: set[str] = set()
@@ -505,11 +594,15 @@ def _start() -> None:
     _auto_stop.clear()
     threading.Thread(target=_auto_classify_loop, daemon=True,
                      name="ai-netwatch-auto-classify").start()
+    _net_stop.clear()
+    threading.Thread(target=_netbytes_loop, daemon=True,
+                     name="ai-netwatch-netbytes").start()
 
 
 @app.on_event("shutdown")
 def _stop() -> None:
     _auto_stop.set()
+    _net_stop.set()
     if llm_proxy:
         llm_proxy.stop()
     if sni_capture:
@@ -551,6 +644,9 @@ class ConfigRequest(BaseModel):
     approved_providers: list[str] | None = None
     rules_enabled: bool | None = None
     rule_egress_mb_per_day: float | None = None
+    net_bytes_enabled: bool | None = None
+    net_bytes_duration_s: int | None = None
+    net_bytes_cycle_s: int | None = None
 
 
 class TriageRequest(BaseModel):
@@ -651,6 +747,23 @@ def set_config(req: ConfigRequest):
             _cfg[key] = v
     if req.llm_store_content is not None:
         _cfg["llm_store_content"] = bool(req.llm_store_content)
+    if (req.net_bytes_enabled is not None
+            or req.net_bytes_duration_s is not None
+            or req.net_bytes_cycle_s is not None):
+        if req.net_bytes_enabled is not None:
+            _cfg["net_bytes_enabled"] = bool(req.net_bytes_enabled)
+        if req.net_bytes_duration_s is not None:
+            v = int(req.net_bytes_duration_s)
+            if not (5 <= v <= 600):
+                raise HTTPException(
+                    400, "net_bytes_duration_s: entre 5 y 600 s")
+            _cfg["net_bytes_duration_s"] = v
+        if req.net_bytes_cycle_s is not None:
+            v = int(req.net_bytes_cycle_s)
+            if not (60 <= v <= 86400):
+                raise HTTPException(
+                    400, "net_bytes_cycle_s: entre 60 y 86400 s")
+            _cfg["net_bytes_cycle_s"] = v
     if req.rules_enabled is not None or req.rule_egress_mb_per_day is not None:
         # Cambian las reglas: reevaluar desde cero (re-alerta si sigue
         # firmando).
@@ -938,8 +1051,8 @@ def autonomy_state() -> dict:
 def dashboard(days: int = 7) -> dict:
     """Panel (v2.0): agrega lo que ya existe — actividad diaria, top
     proveedores/procesos por presencia, reparto por capa, shadow y LLM
-    local. Bytes cloud: no disponible para TLS remoto (honestidad, no un
-    cero que engane)."""
+    local. Bytes cloud: reales si el colector elevado ha volcado datos;
+    si no, 'no disponible' con motivo (nunca un cero que engane)."""
     days = max(1, min(int(days), 365))
     st = _req_store()
     providers: dict[str, int] = {}
@@ -970,12 +1083,28 @@ def dashboard(days: int = 7) -> dict:
         "shadow_count": shadow_providers()["count"],
         "llm_calls": (llm_calls.summary(days=days)
                       if llm_calls is not None else None),
-        "cloud_bytes": {
-            "available": False,
-            "reason": ("TLS remoto cifrado: bytes cloud requieren "
-                       "ETW/logman (v2.1)"),
-        },
+        "cloud_bytes": _cloud_bytes(),
     }
+
+
+def _cloud_bytes() -> dict:
+    """v2.2: bytes remotos reales si el colector elevado ha volcado datos;
+    si no, 'no disponible' con motivo (nunca un cero que engane)."""
+    egress = _egress_rows()
+    if not egress:
+        return {"available": False,
+                "reason": ("bytes remotos: colector elevado sin datos "
+                           "(ETW Kernel-Network requiere admin; activar en "
+                           "config net_bytes_enabled)")}
+    total = sum(r["bytes"] for r in egress)
+    return {"available": True,
+            "total_bytes": total,
+            "window": ("acumulado desde inicio del colector elevado"
+                       " (ventanas sin solapes)"),
+            "by_provider": [{"provider": r["provider"],
+                             "bytes": r["bytes"]}
+                            for r in sorted(egress,
+                                            key=lambda x: -x["bytes"])[:10]]}
 
 
 @app.get("/api/rules")
@@ -983,7 +1112,8 @@ def list_rules():
     """v2.2: estado actual de las reglas (evalua ahora, sin cache)."""
     results = rules.evaluate(
         _rules_events(),
-        egress_mb_per_day=float(_cfg.get("rule_egress_mb_per_day", 500)))
+        egress_mb_per_day=float(_cfg.get("rule_egress_mb_per_day", 500)),
+        egress=_egress_rows() or None)
     return {"rules": results}
 
 

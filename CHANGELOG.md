@@ -2,6 +2,36 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## Bytes remotos (v2.2) — "cuanto sale" con ETW Kernel-Network
+
+### Anadido
+- **`netcollector.py`**: colector ELEVADO (UAC, opt-in). `logman start` ->
+  N s -> stop -> `tracerpt -of XML` -> parseo POR NOMBRE (`<Data Name=...>`)
+  -> agregar por destino. Mapa EventID verificado en maquina real:
+  TCP data 10/18/26/27/34 y UDP 11 (size = bytes); handshake/connect/
+  accept/DNS ignorados. Excluye loopback y dport 53. Solo copia de datos
+  con size>0; IPv4 e IPv6.
+- **Gotchas verificados**: logman escribe `{base}_000001.etl` (se resuelve
+  con glob); XML, no CSV (CSV pone User Data en columna posicional);
+  sin admin el ETL nunca aparece -> degradacion rapida (~15 s), sin
+  esperar la duracion.
+- **Store**: tabla `net_bytes` (dest_ip, dest_port, bytes acumulados,
+  first/last_seen); `ingest_net_bytes()` acumula entre ciclos (ventanas
+  sin solapes); prune y reset la cubren.
+- **Servidor**: hilo `_netbytes_loop` (opt-in: `net_bytes_enabled`,
+  duracion/ciclo configurables). Lanza el colector elevado via UAC,
+  espera el JSONL, lo ingesta y lo borra. El proceso no elevado NUNCA
+  interpreta ETLs; si no hay datos, nada.
+- **Dashboard**: `cloud_bytes` ahora REAL cuando hay datos (total + top
+  proveedores mapeados IP->proveedor via eventos); si no, "no disponible"
+  con motivo (nunca un cero que engane).
+- **Regla `egress_volume_unapproved`** pasa a available=True con datos:
+  dispara si un proveedor NO APROBADO supera `rule_egress_mb_per_day`
+  (acumulado desde inicio del colector; sin datos, available=False).
+- Tests: parse XML sintetico (solo data, sin loopback/DNS/connect),
+  aggregate, ingest acumulativo/reset, dashboard disponible/no,
+  regla egress sobre/bajo umbral y aprobada (`tests/test_netcollector.py`).
+
 ## Motor de reglas (v2.2) — umbral sobre señales existentes
 
 ### Anadido

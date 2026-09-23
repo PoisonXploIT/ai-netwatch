@@ -9,9 +9,9 @@ Reglas:
   aprobada (R2 + shadow).
 - beacon_unapproved: beaconing (N>=5, CV<=0.3) a proveedor no aprobado
   (D3 + shadow).
-- egress_volume_unapproved: >X MB/dia a IA no aprobada — PENDIENTE de
-  bytes remotos (v2.2: ETW Kernel-Network, requiere admin): available
-  False hasta entonces. Honestidad: sin dato, no regla.
+- egress_volume_unapproved: >X MB a IA no aprobada (bytes remotos del
+  colector elevado; acumulado desde inicio del colector). Sin datos de
+  colector => available=False. Honestidad: sin dato, no regla.
 """
 from __future__ import annotations
 
@@ -27,12 +27,15 @@ def _top(items: list[str], n: int = 5) -> str:
     return ", ".join(seen[:n]) + (" ..." if len(seen) > n else "")
 
 
-def evaluate(events: list[dict], *, egress_mb_per_day: float) -> list[dict]:
+def evaluate(events: list[dict], *, egress_mb_per_day: float,
+             egress: list[dict] | None = None) -> list[dict]:
     """Evalua las reglas contra eventos ya enriquecidos.
 
     events: dicts con (process, provider, autonomy_verdict, sessions,
-    iat_cv, unapproved). Devuelve uno por regla: {id, available, reason,
-    fired, detail}.
+    iat_cv, unapproved). egress: bytes remotos por proveedor
+    [{provider, bytes, unapproved}] o None si el colector elevado no ha
+    volcado datos (la regla egress queda disponible=False).
+    Devuelve uno por regla: {id, available, reason, fired, detail}.
     """
     svc = [f"{e.get('process')} -> {e.get('provider')}" for e in events
            if (e.get("autonomy_verdict") in ("autonomous", "scheduled")
@@ -45,14 +48,31 @@ def evaluate(events: list[dict], *, egress_mb_per_day: float) -> list[dict]:
                 and n >= _BEACON_MIN_N and e.get("unapproved")):
             bcn.append(f"{e.get('process')} -> {e.get('provider')}"
                        f" (CV {float(cv):.3f}, {n} sesiones)")
+    if egress is None:
+        egress_rule = {
+            "id": "egress_volume_unapproved",
+            "available": False,
+            "reason": (f"> {egress_mb_per_day:g} MB a IA no aprobada: "
+                       "sin datos del colector elevado (ETW Kernel-Network"
+                       ", requiere admin)"),
+            "fired": False,
+            "detail": None,
+        }
+    else:
+        limit_b = float(egress_mb_per_day) * 1024.0 * 1024.0
+        over = [f"{r['provider']} ({int(r['bytes']) / (1024.0 * 1024.0):.1f}"
+                f" MB)" for r in egress
+                if r.get("unapproved") and int(r["bytes"]) > limit_b]
+        egress_rule = {
+            "id": "egress_volume_unapproved",
+            "available": True,
+            "reason": None,
+            "fired": bool(over),
+            "detail": (f"egress a IA no aprobada > {egress_mb_per_day:g} MB:"
+                       f" {_top(over)}" if over else None),
+        }
     return [
-        {"id": "egress_volume_unapproved",
-         "available": False,
-         "reason": (f"> {egress_mb_per_day:g} MB/dia a IA no aprobada: "
-                    "pendiente de bytes remotos (v2.2: ETW Kernel-Network,"
-                    " requiere admin)"),
-         "fired": False,
-         "detail": None},
+        egress_rule,
         {"id": "service_ai_call",
          "available": True,
          "reason": None,

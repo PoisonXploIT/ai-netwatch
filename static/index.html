@@ -211,8 +211,13 @@
     </details>
 
     <details>
+      <summary>Bytes remotos (v2.2)</summary>
+      <p><b>netcollector.py</b> es un colector <b>elevado</b> (UAC, opt-in) que traza <span class="mono">Microsoft-Windows-Kernel-Network</span> con logman/tracerpt y suma bytes por destino (solo copia de datos TCP/UDP; sin loopback ni DNS). El servidor no elevado solo lee el JSONL resultante. Config: <span class="mono">net_bytes_enabled</span> (off por defecto), <span class="mono">net_bytes_duration_s</span>, <span class="mono">net_bytes_cycle_s</span>. Con datos, el panel muestra <b>cloud_bytes</b> real; sin admin o sin datos, "no disponible" con motivo &mdash; nunca un cero que engane. Cada ciclo pide UAC: opt-in y visible a prop&oacute;sito.</p>
+    </details>
+
+    <details>
       <summary>Reglas (v2.2)</summary>
-      <p>El motor de reglas eval&iacute;a cada 60 s el estado existente: <b>service_ai_call</b> (veredicto aut&oacute;nomo/programado llamando a IA no aprobada), <b>beacon_unapproved</b> (beaconing a proveedor no aprobado) y <b>egress_volume_unapproved</b> (&gt;X MB/d&iacute;a a IA no aprobada; pendiente de bytes remotos, que requieren admin). Cada regla que pasa a disparar genera una alerta <span class="mono">rule_fired</span>; la tarjeta muestra su estado en vivo.</p>
+      <p>El motor de reglas eval&iacute;a cada 60 s el estado existente: <b>service_ai_call</b> (veredicto aut&oacute;nomo/programado llamando a IA no aprobada), <b>beacon_unapproved</b> (beaconing a proveedor no aprobado) y <b>egress_volume_unapproved</b> (&gt;X MB a IA no aprobada seg&uacute;n bytes remotos; sin datos de colector, disponible=false). Cada regla que pasa a disparar genera una alerta <span class="mono">rule_fired</span>; la tarjeta muestra su estado en vivo.</p>
     </details>
 
     <details>

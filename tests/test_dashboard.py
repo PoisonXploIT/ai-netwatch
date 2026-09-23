@@ -102,7 +102,9 @@ class TestDashboard(DashboardBase):
     def test_cloud_bytes_unavailable_not_zero(self):
         out = server.dashboard(days=7)
         self.assertFalse(out["cloud_bytes"]["available"])
-        self.assertIn("TLS", out["cloud_bytes"]["reason"])
+        # v2.2: motivo honesto (colector elevado), nunca un cero que engane.
+        self.assertIn("ETW", out["cloud_bytes"]["reason"])
+        self.assertNotIn("total_bytes", out["cloud_bytes"])
 
     def test_days_clamped(self):
         self.assertEqual(server.dashboard(days=0)["days"], 1)

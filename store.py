@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS sessions_log (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_key
     ON sessions_log(process, dest_ip, dest_port, ts);
+CREATE TABLE IF NOT EXISTS net_bytes (
+    dest_ip TEXT NOT NULL,
+    dest_port INTEGER NOT NULL,
+    bytes INTEGER NOT NULL DEFAULT 0,
+    first_seen TEXT,
+    last_seen TEXT,
+    PRIMARY KEY (dest_ip, dest_port)
+);
 CREATE TABLE IF NOT EXISTS domain_classifications (
     domain TEXT PRIMARY KEY,
     is_ai INTEGER NOT NULL,
@@ -570,6 +578,42 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             })
         return out
 
+    def ingest_net_bytes(self, rows: list[dict], ts: str) -> int:
+        """v2.2: bytes remotos del colector elevado por destino.
+
+        rows: [{dest_ip, dest_port, bytes}]. Acumula (cada ciclo del
+        colector es una ventana nueva; no hay solapes). Devuelve el
+        numero de destinos actualizados."""
+        n = 0
+        for r in rows:
+            try:
+                b = int(r.get("bytes") or 0)
+                dest_ip = str(r.get("dest_ip") or "")
+                dest_port = int(r.get("dest_port") or 0)
+            except (TypeError, ValueError):
+                continue
+            if b <= 0 or not dest_ip:
+                continue
+            self.conn.execute(
+                "INSERT INTO net_bytes(dest_ip, dest_port, bytes,"
+                " first_seen, last_seen) VALUES(?, ?, ?, ?, ?)"
+                " ON CONFLICT(dest_ip, dest_port) DO UPDATE SET"
+                " bytes = net_bytes.bytes + excluded.bytes,"
+                " last_seen = max(net_bytes.last_seen, excluded.last_seen)"
+                , (dest_ip, dest_port, b, ts, ts))
+            n += 1
+        self.conn.commit()
+        return n
+
+    def net_bytes_sum(self) -> list[dict]:
+        """Bytes acumulados por destino, mayor primero."""
+        rows = self.conn.execute(
+            "SELECT dest_ip, dest_port, SUM(bytes) AS b FROM net_bytes"
+            " GROUP BY dest_ip, dest_port ORDER BY b DESC"
+        ).fetchall()
+        return [{"dest_ip": r["dest_ip"], "dest_port": int(r["dest_port"]),
+                 "bytes": int(r["b"])} for r in rows]
+
     def prune(self, days: int) -> dict:
         """Retencion (F7): borra eventos/triajes mas antiguos que N dias.
 
@@ -584,23 +628,29 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
                 "DELETE FROM triages WHERE ts < ?", (cut,)).rowcount
             sl = self.conn.execute(
                 "DELETE FROM sessions_log WHERE ts < ?", (cut,)).rowcount
+            nb = self.conn.execute(
+                "DELETE FROM net_bytes WHERE last_seen < ?", (cut,)).rowcount
             # VACUUM no puede correr dentro de la transaccion del DELETE.
             self.conn.commit()
             self.conn.execute("VACUUM")
             self.conn.commit()
         return {"events_removed": ev, "triages_removed": tr,
-                "sessions_removed": sl}
+                "sessions_removed": sl, "net_bytes_removed": nb}
 
     def reset(self) -> dict:
         """Borra eventos y triajes vivos; daily_stats NO se toca (historico)."""
         with self._lock:
             ev = self.conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
             tr = self.conn.execute("SELECT COUNT(*) FROM triages").fetchone()[0]
+            nb = self.conn.execute(
+                "SELECT COUNT(*) FROM net_bytes").fetchone()[0]
             self.conn.execute("DELETE FROM events")
             self.conn.execute("DELETE FROM triages")
             self.conn.execute("DELETE FROM sessions_log")
+            self.conn.execute("DELETE FROM net_bytes")
             self.conn.commit()
-        return {"events_removed": ev, "triages_removed": tr}
+        return {"events_removed": ev, "triages_removed": tr,
+                "net_bytes_removed": nb}
 
     def latest_triage(self) -> dict | None:
         row = self.conn.execute(
