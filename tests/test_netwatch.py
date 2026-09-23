@@ -274,8 +274,21 @@ class TestJevTriage(unittest.TestCase):
         v0 = r["verdicts"]["0"]
         v1 = r["verdicts"]["1"]
         self.assertEqual(v0["prob_false_positive"], 0.05)
-        self.assertEqual(v1["prob_false_positive"], 0.8)
+        # v2.4: prob falso positivo = 1 - conf en TODOS los veredictos
+        # (la confianza es sobre el veredicto elegido, no su negacion).
+        self.assertEqual(v1["prob_false_positive"], 0.2)
         self.assertEqual(v1["severity_score"], 3)
+
+    def test_prob_fp_is_complement_for_all_verdicts(self):
+        # v2.4: sospechoso con conf baja -> prob FP alta (antes salia 0.32,
+        # que es lo contrario de lo que significa).
+        self.assertEqual(
+            jev_triage._prob_false_positive("background_exfil_suspect", 0.32),
+            0.68)
+        self.assertEqual(
+            jev_triage._prob_false_positive("expected_ai_use", 0.9), 0.10)
+        self.assertIsNone(jev_triage._prob_false_positive(None, 0.5))
+        self.assertIsNone(jev_triage._prob_false_positive("x", None))
 
     def test_error_on_network_failure(self):
         with mock.patch.object(jev_triage, "_http_post_json", side_effect=OSError("boom")):

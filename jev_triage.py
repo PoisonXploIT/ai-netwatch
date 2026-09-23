@@ -147,15 +147,17 @@ def _state_for(event: dict) -> dict:
 
 
 def _prob_false_positive(verdict, confidence):
+    """Probabilidad de falso positivo = complemento de la confianza en el
+    veredicto elegido. Jev reporta confianza 0..1 sobre SU veredicto
+    (expected_ai_use o sospechoso); la prob. de que ese veredicto sea un
+    falso positivo es 1 - conf en ambos casos."""
     if not verdict or confidence is None:
         return None
     try:
         conf = float(confidence)
     except (TypeError, ValueError):
         return None
-    if verdict == "expected_ai_use":
-        return round(1.0 - conf, 4)
-    return round(conf, 4)
+    return round(1.0 - conf, 4)
 
 
 _CHUNK = 10  # tamano del reintent por trozos si la llamada completa falla
