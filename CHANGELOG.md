@@ -2,11 +2,20 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
-## Proximo (v2.3) — Evidencia y fingerprinting
+## Proximo
 
-- Evidencia exportable: cadena de hashes + export STIX.
+Nada pendiente de v2.3; el siguiente hito se define tras su cierre/tag.
 
 Hecho en v2.3 (sin tag aun):
+- Evidence exportable: cadena de hashes + bundle STIX 2.1 (`evidence`,
+  modulo puro, sin librerias externas). Cadena: cada fila liga indice +
+  hash anterior + evento (genesis fijo); alterar cualquier fila rompe el
+  resto y es verificable offline (`verify_chain`). STIX 2.1:
+  network-traffic/process/ipv4-addr/ipv6-addr/port/domain-name + report;
+  IDs deterministas (mismos eventos -> mismo bundle). Endpoints:
+  `GET /api/evidence/chain` (JSONL) y `GET /api/evidence/stix`
+  (`application/stix+json;version=2.1`), ambos con `?days=` (1..365);
+  botones en la tarjeta Exportar.
 ### Filtros y agrupacion de eventos (v2.3)
 - Vista con filtros (capa IA, autonomia, solo-no-aprobados, ocultar CDN,
   proceso/destino) y agrupacion por proveedor: colapsa las IPs

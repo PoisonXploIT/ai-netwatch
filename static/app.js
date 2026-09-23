@@ -434,6 +434,17 @@ function bind() {
   $("btn-exp-pdf").addEventListener("click", () => {
     window.location.href = "/api/export/pdf";
   });
+  // Evidencia (v2.3): days sale del select de opciones fijas (1/7/30/90).
+  const evDays = () => {
+    const v = parseInt($("ev-days").value, 10);
+    return [1, 7, 30, 90].includes(v) ? v : 7;
+  };
+  $("btn-ev-chain").addEventListener("click", () => {
+    window.location.href = `/api/evidence/chain?days=${evDays()}`;
+  });
+  $("btn-ev-stix").addEventListener("click", () => {
+    window.location.href = `/api/evidence/stix?days=${evDays()}`;
+  });
   $("btn-save-jev").addEventListener("click", async () => {
     try {
       await api("/api/config", { method: "POST", body: JSON.stringify({ jev_api_key: $("jev-key").value.trim() }) });

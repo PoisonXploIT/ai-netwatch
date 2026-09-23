@@ -149,6 +149,15 @@
       <button id="btn-exp-csv" class="primary">CSV</button>
       <button id="btn-exp-pdf" class="primary">PDF (informe)</button>
     </div>
+    <p class="hint">Evidencia (v2.3): cadena de hashes sobre los eventos de la ventana (si se altera una fila se rompe el resto; verificable offline) y bundle STIX 2.1 para SIEM/CTI.</p>
+    <div class="row">
+      <select id="ev-days" style="width:60px">
+        <option>1</option><option selected>7</option><option>30</option><option>90</option>
+      </select>
+      <span class="hint">dias</span>
+      <button id="btn-ev-chain" class="primary">Cadena de hashes (JSONL)</button>
+      <button id="btn-ev-stix" class="primary">STIX 2.1 (JSON)</button>
+    </div>
   </section>
 
   <section class="card">

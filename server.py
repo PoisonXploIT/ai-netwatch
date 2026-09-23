@@ -31,6 +31,7 @@ from ai_catalog import KNOWN_AI_DOMAINS
 from ai_classifier import classify_domain, destination_kind
 from alerts import AlertLog
 import auto_classify
+import evidence
 import rules
 import secret_store
 from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
@@ -1454,6 +1455,56 @@ def export_csv():
     return Response(buf.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition":
                              'attachment; filename="ai-netwatch.csv"'})
+
+
+def _evidence_events(days: int) -> list[dict]:
+    """Eventos de la ventana ordenados (first_seen, id): orden estable para
+    cadena de hashes y bundle STIX reproducible."""
+    st = _req_store()
+    return sorted(st.events_since(days),
+                  key=lambda e: (str(e.get("first_seen")),
+                                 int(e.get("id") or 0)))
+
+
+@app.get("/api/evidence/chain")
+def evidence_chain(days: int = 7):
+    """v2.3: cadena de hashes sobre los eventos (JSONL). Cada fila liga
+    indice + hash anterior + evento; alterar cualquier fila rompe el resto
+    y es verificable offline (evidence.verify_chain)."""
+    days = max(1, min(int(days), 365))
+    evs = _evidence_events(days)
+    if not evs:
+        raise HTTPException(404, "no events in window")
+    rows = evidence.hash_chain(evs)
+    body = "\n".join(json.dumps(r, ensure_ascii=False, sort_keys=True)
+                    for r in rows) + "\n"
+    stamp = datetime.now().strftime("%Y%m%d")
+    return Response(body.encode("utf-8"),
+                    media_type="application/x-ndjson",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="ai-netwatch-chain-{stamp}.jsonl"'})
+
+
+@app.get("/api/evidence/stix")
+def evidence_stix(days: int = 7):
+    """v2.3: bundle STIX 2.1 sobre los eventos (JSON). IDs deterministas:
+    misma ventana -> mismo bundle, reproducible para evidencia."""
+    days = max(1, min(int(days), 365))
+    evs = _evidence_events(days)
+    if not evs:
+        raise HTTPException(404, "no events in window")
+    first = str(evs[0].get("first_seen") or "")
+    last = str(evs[-1].get("last_seen") or "")
+    bundle = evidence.stix_bundle(
+        evs,
+        title=f"AI-NETWATCH evidencia {first} .. {last}",
+        description=(f"{len(evs)} conexiones a destinos IA (ventana de "
+                     f"{days} dias). Generado por ai-netwatch v{VERSION}."))
+    stamp = datetime.now().strftime("%Y%m%d")
+    return Response(json.dumps(bundle, ensure_ascii=False, indent=2),
+                    media_type="application/stix+json;version=2.1",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="ai-netwatch-stix-{stamp}.json"'})
 
 
 @app.get("/", response_class=HTMLResponse)
