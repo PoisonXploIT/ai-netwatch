@@ -124,7 +124,7 @@ class LlmCallStore:
                  call.get("prompt"), call.get("response")),
             )
             self.conn.commit()
-            return cur.lastrowid
+            return int(cur.lastrowid or 0)
 
     def list_calls(self, limit: int = 100) -> list[dict]:
         limit = max(1, min(int(limit), 1000))
@@ -365,7 +365,7 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             )
             self._bump_daily("triages")
             self.conn.commit()
-            return cur.lastrowid
+            return int(cur.lastrowid or 0)
 
     def stats(self, days: int = 7) -> list[dict]:
         """Rollup diario de los ultimos `days` dias (incluye dias sin actividad)."""

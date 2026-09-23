@@ -150,7 +150,7 @@ _CHUNK = 10  # tamano del reintent por trozos si la llamada completa falla
 
 
 def _ask(states: list[dict], idxs: list[int], api_key: str, base_url: str,
-         model: str, timeout: int) -> dict:
+         model: str, timeout: int) -> dict | None:
     """Una llamada TypeSafe para los eventos idxs (state local 0..n-1)."""
     questions: dict[str, dict] = {}
     for pos, gi in enumerate(idxs):

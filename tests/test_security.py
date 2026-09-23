@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 import server  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
+import secret_store  # noqa: E402
 from store import Store  # noqa: E402
 
 
@@ -110,7 +111,10 @@ class TestConfigPersistence(SecurityBase):
             jev_api_key="k-test-123", llm_base_url="http://127.0.0.1:8099",
             llm_model="dirk", sysmon_enabled=False))
         data = json.loads(server.CONFIG_PATH.read_text(encoding="utf-8"))
-        self.assertEqual(data["jev_api_key"], "k-test-123")
+        # La key no queda en claro en disco: se cifra con DPAPI (cuando esta).
+        if secret_store.available():
+            self.assertNotEqual(data["jev_api_key"], "k-test-123")
+            self.assertTrue(data["jev_api_key"].startswith(secret_store.PREFIX))
         # Simular reinicio: cfg a defaults y recargar desde disco.
         server._cfg = _fresh_cfg()
         server._load_config()

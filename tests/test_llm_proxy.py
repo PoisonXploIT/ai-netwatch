@@ -207,7 +207,7 @@ class ConfigBase(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.store = LlmCallStore(Path(self.tmp.name) / "llm.db")
-        self._old = {
+        self._old: dict = {
             "store": server.store, "cfg": server._cfg,
             "path": server.CONFIG_PATH, "calls": server.llm_calls,
             "proxy": server.llm_proxy,

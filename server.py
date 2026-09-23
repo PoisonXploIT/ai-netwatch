@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from alerts import AlertLog
 import auto_classify
+import secret_store
 from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
 from llm_local import explain_events, is_loopback_url
 from llm_proxy import LlmProxy
@@ -105,10 +106,15 @@ def _valid_proxy_target(target: str) -> bool:
     return is_loopback_url(f"http://{host}:{port}")
 
 
+_KEY_NEEDS_MIGRATION = False
+
+
 def _load_config() -> None:
     """Config persistente (data/config.json). Si el LLM URL persistido no es
     loopback absoluto, se descarta (SSRF): la seguridad no la hereda un
     archivo editado a mano."""
+    global _KEY_NEEDS_MIGRATION
+    _KEY_NEEDS_MIGRATION = False
     if not CONFIG_PATH.exists():
         return
     try:
@@ -147,14 +153,35 @@ def _load_config() -> None:
         _cfg["llm_proxy_port"] = 8098
     if not _valid_proxy_target(str(_cfg.get("llm_proxy_target") or "")):
         _cfg["llm_proxy_target"] = "127.0.0.1:8099"
+    # Secreto: la key Jev se persiste cifrada (DPAPI). Un blob 'dpapi:' se
+    # descifra a memoria; si no descifra, queda vacia. Un valor en claro de un
+    # config antiguo se mantiene en memoria y se migra al proximo guardado.
+    stored_key = str(data.get("jev_api_key") or "")
+    if secret_store.is_protected(stored_key):
+        _cfg["jev_api_key"] = secret_store.unprotect(stored_key) or ""
+    elif stored_key:
+        _KEY_NEEDS_MIGRATION = True
 
 
 def _save_config() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(_cfg, indent=2), encoding="utf-8")
+    # La key Jev nunca se escribe en claro: se cifra con DPAPI; si el cifrado
+    # no esta disponible, no se persiste (se re-introduce en la UI).
+    out = dict(_cfg)
+    key = str(out.get("jev_api_key") or "")
+    if key:
+        enc = secret_store.protect(key)
+        out["jev_api_key"] = enc if enc else ""
+    CONFIG_PATH.write_text(json.dumps(out, indent=2), encoding="utf-8")
 
 
 _load_config()
+if _KEY_NEEDS_MIGRATION and _cfg.get("jev_api_key"):
+    try:  # migracion silenciosa: config antiguo en claro -> blob DPAPI
+        _save_config()
+        _KEY_NEEDS_MIGRATION = False
+    except OSError:
+        pass
 
 store: Store | None = None
 llm_calls: LlmCallStore | None = None
@@ -163,6 +190,14 @@ sni_capture: SniCapture | None = None
 llm_proxy: LlmProxy | None = None
 alerts: AlertLog | None = None
 _auto_stop = threading.Event()
+
+
+def _req_store() -> Store:
+    """Store inicializado. Los endpoints solo corren tras el startup; si no,
+    es un 503 limpio en vez de un AttributeError sobre None."""
+    if store is None:
+        raise HTTPException(503, "store no inicializado")
+    return store
 
 
 def _set_sni_capture(enabled: bool) -> None:
@@ -292,11 +327,12 @@ def _start() -> None:
     sni_fn = None
     if _cfg["tshark_enabled"]:
         path = tshark_path()
-        iface = find_active_interface(path) if path else None
-        if iface is not None:
-            sni_capture = SniCapture(path, iface)
-            sni_capture.start()
-            sni_fn = sni_capture.poll_records
+        if path is not None:
+            iface = find_active_interface(path)
+            if iface is not None:
+                sni_capture = SniCapture(path, iface)
+                sni_capture.start()
+                sni_fn = sni_capture.poll_records
     monitor = NetMonitor(store, extra_hosts=list(_cfg["extra_hosts"]),
                          sysmon_fn=sm, eid22_fn=eid22, sni_fn=sni_fn,
                          prune_fn=_prune_retention,
@@ -495,16 +531,18 @@ def test_ai(req: TestRequest):
 def list_events(limit: int = 200, process: str | None = None,
                 dest: str | None = None):
     limit = max(1, min(int(limit), 1000))
-    return {"events": store.list_events(limit=limit, process=process, dest=dest)}
+    return {"events": _req_store().list_events(limit=limit, process=process,
+                                               dest=dest)}
 
 
 @app.post("/api/triage")
 def triage(req: TriageRequest):
-    events = (store.list_events(limit=1000) if req.event_ids is None
-              else [e for i in req.event_ids if (e := store.get_event(i))] )
+    st = _req_store()
+    events = (st.list_events(limit=1000) if req.event_ids is None
+              else [e for i in req.event_ids if (e := st.get_event(i))] )
     if not events:
         raise HTTPException(404, "no hay eventos que triar")
-    result = {"status": "skipped", "reason": "ai_disabled"}
+    result: dict = {"status": "skipped", "reason": "ai_disabled"}
     if _cfg.get("jev_enabled") and _cfg.get("jev_api_key"):
         result = triage_events(events, _cfg["jev_api_key"],
                                _cfg["jev_base_url"], _cfg["jev_model"])
@@ -525,13 +563,13 @@ def triage(req: TriageRequest):
          "catalog": e["catalog_domain"], "seen_count": e["seen_count"]}
         for e in events],
         "jev": result, "llm_explanations": explanations}
-    store.save_triage(result.get("status", "error"), result.get("model"), payload)
+    st.save_triage(result.get("status", "error"), result.get("model"), payload)
     return payload
 
 
 @app.get("/api/triages/latest")
 def latest_triage():
-    t = store.latest_triage()
+    t = _req_store().latest_triage()
     if not t:
         raise HTTPException(404, "sin triajes")
     return t
@@ -568,8 +606,8 @@ def _pid_by_local_ports(ports: set[int]) -> dict[int, int]:
             buf, ctypes.byref(size), False, proto, table_class, 0)
         if err != 0:
             return out
-        n = ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint32)).contents[0]
-        rows = (MIB_TCPROW_EX * n).from_buffer_copy(buf[4:])
+        n = int(ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint32))[0])
+        rows = (MIB_TCPROW_EX * n).from_buffer_copy(buf, 4)
         for r in rows:
             port = ((r.dwLocalPort >> 8) & 0xFF) * 256 + (r.dwLocalPort & 0xFF)
             if port in ports and r.dwOwningPid:
@@ -667,9 +705,10 @@ def list_alerts(since_id: int = 0):
 @app.get("/api/stats")
 def stats(days: int = 7):
     days = max(1, min(int(days), 365))
-    live = store.list_events(limit=1000)
+    st = _req_store()
+    live = st.list_events(limit=1000)
     return {
-        "daily": store.stats(days=days),
+        "daily": st.stats(days=days),
         "live": {
             "events": len(live),
             "processes": len({e["process"] for e in live}),
@@ -682,14 +721,15 @@ def stats(days: int = 7):
 def reset(req: ResetRequest):
     if not req.confirm:
         raise HTTPException(400, "se requiere {\"confirm\": true}")
-    out = store.reset()
+    out = _req_store().reset()
     return {**out, "daily_stats_kept": True}
 
 
 @app.get("/api/export/json")
 def export_json():
-    events = store.list_events(limit=1000)
-    triage = store.latest_triage()
+    st = _req_store()
+    events = st.list_events(limit=1000)
+    triage = st.latest_triage()
     return JSONResponse(
         {"tool": "ai_net_monitor", "version": VERSION, "events": events,
          "latest_triage": triage["payload"] if triage else None},
@@ -700,9 +740,10 @@ def export_json():
 @app.get("/api/export/pdf")
 def export_pdf():
     # Solo datos del store; nunca config/keys (ver tests de seguridad).
-    events = store.list_events(limit=1000)
-    triage = store.latest_triage()
-    daily = store.stats(days=7)
+    st = _req_store()
+    events = st.list_events(limit=1000)
+    triage = st.latest_triage()
+    daily = st.stats(days=7)
     pdf = build_report_pdf(VERSION, events,
                            triage["payload"] if triage else None, daily)
     return Response(pdf, media_type="application/pdf",
@@ -712,7 +753,7 @@ def export_pdf():
 
 @app.get("/api/export/csv")
 def export_csv():
-    events = store.list_events(limit=1000)
+    events = _req_store().list_events(limit=1000)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["ts", "process", "image", "protocol", "dest_ip", "dest_port",

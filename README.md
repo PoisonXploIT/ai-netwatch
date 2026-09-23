@@ -123,7 +123,12 @@ Derivado: `prob_false_positive` = 1−confianza si `expected_ai_use`, confianza 
 - **Exports sin path traversal**: el contenido se genera en memoria; ningun endpoint toma nombres de archivo del usuario.
 - **tshark pasivo y gestionado**: la captura solo emite SNIs (sin payload); no hay forma de apuntarla a otra interfaz desde la API (la interfaz la elige el arranque localmente).
 - **Proxy inspector en loopback**: `llm_proxy_target` exige `host:port` cuyo host resuelve a loopback (400 si no; revalidado al cargar config). El proxy solo escucha `127.0.0.1`; los logs de llamada son por diseño el contenido de las llamadas (inspeccion local, no exfiltracion).
+- **Secretos en reposo (DPAPI)**: la API key de Jev se cifra con DPAPI (`secret_store.py`, ctypes stdlib) y nunca se escribe en claro en `data/config.json`; un config antiguo en claro se migra solo al arrancar. Si DPAPI no esta disponible, la key no se persiste. `data/` esta en `.gitignore`.
 - Suite dedicada: `tests/test_security.py` (SSRF, persistencia + revalidacion, reset, inputs, fail-safe) y `tests/test_llm_proxy.py` (reenvio, streaming SSE, target loopback, toggle en vivo, reset).
+
+## Calidad (CI)
+
+CI en GitHub Actions (`.github/workflows/ci.yml`, Windows): `ruff check .`, `mypy .` y `python -m unittest discover tests`. Config de mypy en `mypy.ini` (`ignore_missing_imports`). Licencia MIT (`LICENSE`); politica de seguridad en `SECURITY.md`.
 
 ## Guia de uso
 

@@ -2,6 +2,22 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## Puerta de publicacion v2.0 (2026-09-23) — DPAPI, CI, LICENSE, SECURITY, mypy
+
+### Seguridad
+- **Key Jev cifrada en reposo con DPAPI** (`secret_store.py`, ctypes stdlib):
+  `data/config.json` ya no guarda la key en claro; un config antiguo en claro se
+  migra solo al arrancar. Fail-safe: si DPAPI no esta o el blob no descifra
+  (otra cuenta/maquina), se trata como "sin key" sin romper el arranque. `data/`
+  esta en `.gitignore` (nada sensible sale al push).
+
+### Calidad / producto
+- **CI** (`.github/workflows/ci.yml`, Windows): `ruff` + `mypy` + `unittest`.
+- **mypy en verde** (22 archivos); config en `mypy.ini`. Correcciones de tipos en
+  `store.py`, `jev_triage.py` y `server.py` (helper `_req_store`, guardas de
+  `None`, tipado de `result`); sin cambios de comportamiento.
+- **LICENSE** (MIT) y **SECURITY.md** (modelo de seguridad y como reportar).
+
 ## v2.0-alpha (2026-09-23) — R1 cobertura universal + egress en bytes
 
 ### Añadido

@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: pip install fastapi uvicorn ruff mypy
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tipos (mypy)
+        run: mypy .
+
+      - name: Tests (unittest)
+        run: python -m unittest discover tests -v
