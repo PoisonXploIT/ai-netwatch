@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from ai_catalog import KNOWN_AI_DOMAINS
 from alerts import AlertLog
 import auto_classify
+import rules
 import secret_store
 from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
 from llm_local import explain_events, is_loopback_url
@@ -68,6 +69,10 @@ _cfg: dict = {
     "llm_store_content": True,
     "alerts_enabled": True,
     "alert_webhook_url": "",
+    # v2.2: motor de reglas (umbral de egress para la regla pendiente de
+    # bytes remotos).
+    "rules_enabled": True,
+    "rule_egress_mb_per_day": 500.0,
 }
 
 
@@ -272,17 +277,62 @@ def _auto_classify_cycle() -> None:
         pass
 
 
+def _rules_events() -> list[dict]:
+    """Eventos enriquecidos para el motor de reglas (provider y
+    unapproved con la misma logica que shadow). Vacio sin store."""
+    out: list[dict] = []
+    if store is None:
+        return out
+    for ev in store.list_events(limit=500):
+        provider = _provider_of(ev)
+        out.append({
+            "process": ev.get("process"),
+            "provider": provider,
+            "autonomy_verdict": ev.get("autonomy_verdict"),
+            "sessions": ev.get("sessions"),
+            "iat_cv": ev.get("iat_cv"),
+            "unapproved": not _is_approved_provider(provider),
+        })
+    return out
+
+
+def _rules_cycle() -> None:
+    """v2.2: motor de reglas sobre el estado existente (ciclo de 60 s).
+    Fail-safe; alerta solo en transicion no-firing -> firing."""
+    if not _cfg.get("rules_enabled", True):
+        return
+    if alerts is None or not _cfg.get("alerts_enabled"):
+        return
+    try:
+        results = rules.evaluate(
+            _rules_events(),
+            egress_mb_per_day=float(_cfg.get("rule_egress_mb_per_day", 500)))
+        for r in results:
+            if r["fired"] and r["id"] not in _rules_alerted:
+                _rules_alerted.add(r["id"])
+                alerts.push(
+                    "rule_fired",
+                    f"Regla {r['id']}: {r['detail']}",
+                    details={"rule": r["id"], "detail": r["detail"]},
+                )
+    except Exception:
+        pass
+
+
 def _auto_classify_loop() -> None:
-    """Hilo daemon del clasificador: 60 s entre ciclos. Deliberadamente NO en
-    el hilo del monitor (una llamada LLM lenta no bloquea el poll de 5 s)."""
+    """Hilo daemon del clasificador y reglas: 60 s entre ciclos.
+    Deliberadamente NO en el hilo del monitor (una llamada LLM lenta no
+    bloquea el poll de 5 s)."""
     while not _auto_stop.is_set():
         _auto_classify_cycle()
+        _rules_cycle()
         _auto_stop.wait(60)
 
 
 _shadow_alerted: set[str] = set()
 _autonomy_alerted: set[str] = set()  # R2: una alerta por proceso+proveedor
 _beacon_alerted: set[str] = set()    # D3: una alerta de beaconing por clave
+_rules_alerted: set[str] = set()     # v2.2: una alerta por regla
 
 
 def _provider_of(ev: dict) -> str:
@@ -499,6 +549,8 @@ class ConfigRequest(BaseModel):
     llm_store_content: bool | None = None
     catalog_approved: bool | None = None
     approved_providers: list[str] | None = None
+    rules_enabled: bool | None = None
+    rule_egress_mb_per_day: float | None = None
 
 
 class TriageRequest(BaseModel):
@@ -599,10 +651,24 @@ def set_config(req: ConfigRequest):
             _cfg[key] = v
     if req.llm_store_content is not None:
         _cfg["llm_store_content"] = bool(req.llm_store_content)
+    if req.rules_enabled is not None or req.rule_egress_mb_per_day is not None:
+        # Cambian las reglas: reevaluar desde cero (re-alerta si sigue
+        # firmando).
+        _rules_alerted.clear()
+        if req.rules_enabled is not None:
+            _cfg["rules_enabled"] = bool(req.rules_enabled)
+        if req.rule_egress_mb_per_day is not None:
+            mb = float(req.rule_egress_mb_per_day)
+            if not (0.1 <= mb <= 1_000_000):
+                raise HTTPException(
+                    400, "rule_egress_mb_per_day: entre 0.1 y 1000000 MB")
+            _cfg["rule_egress_mb_per_day"] = mb
     if req.catalog_approved is not None or req.approved_providers is not None:
         # Cambia la aprobacion: reevaluar alertas shadow (los que queden
         # sin aprobar vuelven a alertar al reaparecer).
         _shadow_alerted.clear()
+        # La aprobacion tambien cambia 'unapproved' en las reglas.
+        _rules_alerted.clear()
         if req.catalog_approved is not None:
             _cfg["catalog_approved"] = bool(req.catalog_approved)
         if req.approved_providers is not None:
@@ -912,6 +978,15 @@ def dashboard(days: int = 7) -> dict:
     }
 
 
+@app.get("/api/rules")
+def list_rules():
+    """v2.2: estado actual de las reglas (evalua ahora, sin cache)."""
+    results = rules.evaluate(
+        _rules_events(),
+        egress_mb_per_day=float(_cfg.get("rule_egress_mb_per_day", 500)))
+    return {"rules": results}
+
+
 @app.get("/api/alerts")
 def list_alerts(since_id: int = 0):
     return {"alerts": alerts.list(since_id) if alerts else [],
@@ -942,6 +1017,7 @@ def reset(req: ResetRequest):
     _shadow_alerted.clear()
     _autonomy_alerted.clear()
     _beacon_alerted.clear()
+    _rules_alerted.clear()
     return {**out, "daily_stats_kept": True}
 
 

@@ -102,6 +102,12 @@
     <div id="autonomy-wrap"></div>
   </section>
 
+  <section class="card" id="rules-card">
+    <h2>Reglas (v2.2)</h2>
+    <p class="hint">Reglas por umbral sobre lo que ya se mide: shadow, autonom&iacute;a y beaconing. Una regla que pasa a disparar alerta una vez (<span class="mono">rule_fired</span>); el reset re-alerta.</p>
+    <div id="rules-wrap"></div>
+  </section>
+
   <section class="card">
     <h2>Estadísticas (últimos 7 días)</h2>
     <p class="hint">El reset borra los eventos y triajes vivos, pero el histórico diario se conserva para la estadística.</p>
@@ -202,6 +208,11 @@
         <li><b>Límite honesto</b>: solo cubre el LLM local. Un proveedor remoto (TLS) no se puede descifrar pasivamente; de él se ve la conexión (eventos de red) pero no el contenido.</li>
         <li><b>Privacidad</b>: prompts y respuestas quedan en claro en <span class="mono">data/llm_calls.db</span>. Si un prompt lleva una API key o datos sensibles, esa información queda en ese fichero: borra las llamadas cuando termines (botón de la tarjeta).</li>
       </ul>
+    </details>
+
+    <details>
+      <summary>Reglas (v2.2)</summary>
+      <p>El motor de reglas eval&iacute;a cada 60 s el estado existente: <b>service_ai_call</b> (veredicto aut&oacute;nomo/programado llamando a IA no aprobada), <b>beacon_unapproved</b> (beaconing a proveedor no aprobado) y <b>egress_volume_unapproved</b> (&gt;X MB/d&iacute;a a IA no aprobada; pendiente de bytes remotos, que requieren admin). Cada regla que pasa a disparar genera una alerta <span class="mono">rule_fired</span>; la tarjeta muestra su estado en vivo.</p>
     </details>
 
     <details>

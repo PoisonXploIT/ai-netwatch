@@ -265,6 +265,22 @@ async function refreshAutonomy() {
   } catch (e) { /* sin datos aún */ }
 }
 
+async function refreshRules() {
+  const wrap = document.getElementById("rules-wrap");
+  if (!wrap) return;
+  try {
+    const r = await api("/api/rules");
+    wrap.innerHTML = (r.rules || []).map(x => {
+      let badge, txt;
+      if (!x.available) { badge = "badge-warn"; txt = `pendiente: ${esc(x.reason || "")}`; }
+      else if (x.fired) { badge = "badge-bad"; txt = `DISPARADA · ${esc(x.detail || "")}`; }
+      else { badge = "badge-ok"; txt = "no dispara"; }
+      return `<div class="row"><span class="mono">${esc(x.id)}</span>
+        <span class="${badge}">${txt}</span></div>`;
+    }).join("");
+  } catch (e) { /* sin datos aún */ }
+}
+
 async function refreshDashboard() {
   const wrap = document.getElementById("dashboard-wrap");
   if (!wrap) return;
@@ -467,6 +483,7 @@ function bind() {
   refreshLlmCalls();
   refreshShadow();
   refreshAutonomy();
+  refreshRules();
   refreshDashboard();
   setInterval(refreshEvents, 5000);
   setInterval(refreshStats, 60000);
@@ -474,6 +491,7 @@ function bind() {
   setInterval(refreshAlerts, 10000);
   setInterval(refreshShadow, 15000);
   setInterval(refreshAutonomy, 15000);
+  setInterval(refreshRules, 60000);
   setInterval(refreshDashboard, 60000);
 }
 

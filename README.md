@@ -92,6 +92,20 @@ uv pip install fastapi uvicorn
 
 Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar), toggle Sysmon y toggle tshark sobreviven al reinicio.
 
+## Motor de reglas (v2.2)
+
+`rules.py` evalúa cada 60 s el estado existente con reglas por umbral:
+**service_ai_call** (veredicto autónomo/programado llamando a IA no
+aprobada), **beacon_unapproved** (beaconing N≥5, CV≤0.3 a proveedor no
+aprobado) y **egress_volume_unapproved** (>X MB/día a IA no aprobada;
+`available=false` hasta los bytes remotos). Cada regla que pasa a disparar
+genera una alerta `rule_fired` (una por regla; reset re-alerta).
+Config: `rules_enabled`, `rule_egress_mb_per_day`. UI: tarjeta *Reglas*.
+**Nota de viabilidad**: trazar `Microsoft-Windows-Kernel-Network`
+(logman/tracerpt) requiere **admin**; el colector de bytes será un modo
+elevado, y sin admin el dashboard seguirá diciendo "no disponible" con
+motivo.
+
 ## Sesiones y beaconing (F1/D3, v2.1)
 
 **Sesiones (F1)**: una sesión es una transición ausente→presente por clave
@@ -122,7 +136,8 @@ eventos con veredicto.
 diaria, top proveedores/procesos por presencia (`seen_count` = polls, no
 sesiones), reparto por capa, nº de shadow AI y LLM Inspector local
 (llamadas/tokens/bytes). **Bytes cloud: no disponible para TLS remoto**
-(`cloud_bytes.available=false` con motivo; ETW/logman en v2.1) — un "no
+(`cloud_bytes.available=false` con motivo; ETW Kernel-Network en v2.2,
+requiere admin) — un "no
 disponible", no un cero que engane.
 
 ## Shadow AI (v2.0)

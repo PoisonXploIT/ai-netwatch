@@ -73,6 +73,20 @@ header .sub { color: var(--muted); font-size: 13px; }
   padding: 2px 10px;
 }
 
+/* Badges de estado (app.js): ok / warn / bad. */
+.badge-ok,
+.badge-warn,
+.badge-bad {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge-ok { color: var(--v-ok); background: var(--v-ok-bg); }
+.badge-warn { color: var(--v-warn); background: var(--v-warn-bg); }
+.badge-bad { color: var(--v-bad); background: var(--v-bad-bg); }
+
 main { padding: 8px 24px 32px; max-width: 1280px; }
 
 .card {

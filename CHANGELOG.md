@@ -2,6 +2,28 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## Motor de reglas (v2.2) — umbral sobre señales existentes
+
+### Anadido
+- **`rules.py`**: motor puro (sin I/O). Reglas evaluadas cada 60 s sobre el
+  estado existente (shadow + autonomía + beaconing):
+  - `service_ai_call`: veredicto autonomous/scheduled llamando a IA no
+    aprobada.
+  - `beacon_unapproved`: beaconing (N>=5, CV<=0.3) a proveedor no aprobado.
+  - `egress_volume_unapproved`: >X MB/dia a IA no aprobada —
+    **available=False** hasta bytes remotos (honestidad: sin dato, no regla).
+- **Alerta `rule_fired`**: una por regla en transicion no-firing -> firing;
+  reset y cambio de config re-alertan.
+- **Config**: `rules_enabled`, `rule_egress_mb_per_day` (0.1..1e6 MB).
+- **`GET /api/rules`** + tarjeta *Reglas* (estado en vivo, refresh 60 s).
+- **Probe de viabilidad bytes remotos**: `logman`/`tracerpt` presentes,
+  pero trazar `Microsoft-Windows-Kernel-Network` **requiere admin**
+  (verificado en esta maquina). El colector de bytes sera un modo elevado;
+  sin admin, `cloud_bytes.available=false` con motivo.
+- Tests: reglas puras (fuego/no-fuego por veredicto, aprobacion, N, CV),
+  dedup de alerta, silencio con rules_enabled=False, re-alerta tras reset,
+  forma de la API (`tests/test_rules.py`).
+
 ## Sesiones y beaconing (F1/D3, v2.1) — episodios de conexion, no polls
 
 ### Anadido
