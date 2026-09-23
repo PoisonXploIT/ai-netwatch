@@ -2,6 +2,27 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## v2.2.1 — Elevacion sin prompt: tarea programada (bytes remotos)
+
+El colector elevado quedo verificado (B1/B2/B3), pero el spawn desde el
+servidor fallaba: UAC desde un proceso de fondo oculto (`services-up`
+con `-WindowStyle Hidden`) se niega en silencio. Diseno: una tarea
+programada `AI-NETWATCH-NetBytes` con "Run with highest privileges",
+creada UNA vez (elevada), que el ciclo dispara con `schtasks /run`:
+sin prompt por ciclo, y funciona aunque el servidor corra oculto.
+- `setup_netbytes_task.ps1`: setup unico desde consola ELEVADA
+  (`Register-ScheduledTask`, RunLevel Highest, logon interactivo,
+  `AllowStartOnDemand`).
+- `netcollector_task.ps1`: accion de la tarea; lee
+  `data\netcollector_cmd.json` (python/script/duracion/salida en rutas
+  absolutas) y lanza `netcollector.py`. Error =>
+  `data\netcollector_task_error.txt`.
+- Servidor: si la tarea existe, `schtasks /run` (sin elevarse); si no,
+  fallback al UAC por ciclo (solo consola interactiva). El panel expone
+  `spawn_method` (`task`/`uac`) en `cloud_bytes`.
+- Tests: spawn task vs UAC, contenido del cmd file, coherencia de los
+  scripts. Sin admin ni UAC reales (mocks).
+
 ## Fix colector elevado (v2.2) — B1/B2/B3 + stop -ets
 
 Correccion del camino elevado tras verificacion e2e en escritorio

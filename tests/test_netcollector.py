@@ -16,6 +16,7 @@ import json
 import sys
 import tempfile
 import unittest
+import unittest.mock as mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -184,11 +185,14 @@ class NetBytesServerBase(unittest.TestCase):
         self.store = Store(Path(self.tmp.name) / "t.db")
         self.log = alerts.AlertLog(Path(self.tmp.name) / "alerts.log")
         self._old = {k: getattr(server, k)
-                     for k in ("store", "_cfg", "CONFIG_PATH", "alerts")}
+                     for k in ("store", "_cfg", "CONFIG_PATH", "alerts",
+                               "DATA_DIR")}
         self._old_meta = server._net_last_meta
         server.store = self.store
         server.alerts = self.log
         server.CONFIG_PATH = Path(self.tmp.name) / "config.json"
+        server.DATA_DIR = Path(self.tmp.name) / "data"
+        server.DATA_DIR.mkdir()
         server._cfg = {"catalog_approved": True,
                        "approved_providers": [],
                        "alerts_enabled": True,
@@ -203,6 +207,59 @@ class NetBytesServerBase(unittest.TestCase):
         server._net_last_meta = self._old_meta
         self.store.close()
         self.tmp.cleanup()
+
+
+class TestSpawnNetCollector(NetBytesServerBase):
+    """v2.2.1: spawn por tarea programada (sin prompt) o fallback UAC."""
+
+    def test_task_path_writes_cmd_and_runs_schtasks(self):
+        outp = Path(self.tmp.name) / "o.jsonl"
+        with mock.patch.object(
+                 server, "_netbytes_task_exists", return_value=True), \
+             mock.patch("subprocess.run") as run_mock:
+            method = server._spawn_netcollector(30, outp)
+        self.assertEqual(method, "task")
+        args = run_mock.call_args[0][0]
+        self.assertEqual(args[:2], ["schtasks", "/run"])
+        self.assertIn(server.NETBYTES_TASK_NAME, args)
+        cmd = json.loads(server._netbytes_cmd_file()
+                         .read_text(encoding="utf-8"))
+        self.assertEqual(cmd["duration_s"], 30)
+        self.assertEqual(cmd["out_path"], str(outp))
+        self.assertTrue(cmd["script"].endswith("netcollector.py"))
+
+    def test_uac_fallback_when_no_task(self):
+        outp = Path(self.tmp.name) / "o.jsonl"
+        with mock.patch.object(
+                 server, "_netbytes_task_exists", return_value=False), \
+             mock.patch("subprocess.Popen") as popen_mock:
+            method = server._spawn_netcollector(30, outp)
+        self.assertEqual(method, "uac")
+        argv = popen_mock.call_args[0][0]
+        self.assertIn("-Verb RunAs", argv[-1])
+        # El cmd file solo se escribe en el camino de tarea.
+        self.assertFalse(server._netbytes_cmd_file().exists())
+
+    def test_write_netbytes_cmd_contents(self):
+        outp = Path(self.tmp.name) / "o.jsonl"
+        server._write_netbytes_cmd(45, outp)
+        cmd = json.loads(server._netbytes_cmd_file()
+                         .read_text(encoding="utf-8"))
+        self.assertEqual(cmd["duration_s"], 45)
+        self.assertEqual(cmd["out_path"], str(outp))
+        self.assertIn("python", cmd["python"])
+
+
+class TestTaskScripts(unittest.TestCase):
+    """Los scripts de la tarea programada existen y son coherentes."""
+
+    def test_wrapper_and_setup_exist(self):
+        root = Path(__file__).resolve().parent.parent
+        w = (root / "netcollector_task.ps1").read_text(encoding="utf-8")
+        s = (root / "setup_netbytes_task.ps1").read_text(encoding="utf-8")
+        self.assertIn("netcollector_cmd.json", w)
+        self.assertIn(server.NETBYTES_TASK_NAME, s)
+        self.assertIn("RunLevel Highest", s)
 
 
 class TestNetBytesStore(NetBytesServerBase):
@@ -255,6 +312,11 @@ class TestReadNetJsonl(NetBytesServerBase):
         out = server.dashboard(days=7)
         self.assertEqual(
             out["cloud_bytes"]["last_meta"]["events_seen"], 805)
+
+    def test_spawn_method_exposed(self):
+        server._netbytes_spawn_method = "task"
+        out = server.dashboard(days=7)
+        self.assertEqual(out["cloud_bytes"]["spawn_method"], "task")
 
 
 class TestDashboardCloudBytes(NetBytesServerBase):

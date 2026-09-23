@@ -360,19 +360,62 @@ def _auto_classify_loop() -> None:
 
 _net_stop = threading.Event()
 _net_last_meta: dict | None = None  # diagnostico del ultimo colector
+_netbytes_spawn_method: str | None = None  # 'task' | 'uac' | None
+NETBYTES_TASK_NAME = "AI-NETWATCH-NetBytes"
 
 
-def _spawn_netcollector(duration_s: int, out_path: Path) -> None:
-    """Lanza el colector elevado (UAC). El hijo ELEVADO escribe el JSONL;
-    este proceso (no elevado) solo espera a leerlo. Sin admin => el UAC
-    se niega y no hay fichero: degradacion honesta, sin numeros."""
-    script = Path(__file__).resolve().parent / "netcollector.py"
+def _netbytes_cmd_file() -> Path:
+    return DATA_DIR / "netcollector_cmd.json"
+
+
+def _write_netbytes_cmd(duration_s: int, out_path: Path) -> None:
+    """Parametros para la tarea programada (wrapper): rutas absolutas,
+    sin suposiciones de cwd ni usuario."""
+    cmd = {
+        "python": sys.executable,
+        "script": str(Path(__file__).resolve().parent / "netcollector.py"),
+        "duration_s": int(duration_s),
+        "out_path": str(out_path),
+    }
+    _netbytes_cmd_file().write_text(
+        json.dumps(cmd, ensure_ascii=False), encoding="utf-8")
+
+
+def _netbytes_task_exists(name: str = NETBYTES_TASK_NAME) -> bool:
+    """Existe la tarea programada (creada una vez con
+    setup_netbytes_task.ps1 elevado)?"""
+    try:
+        r = subprocess.run(["schtasks", "/query", "/TN", name],
+                           capture_output=True, timeout=30)
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _spawn_netcollector(duration_s: int, out_path: Path) -> str:
+    """Lanza el colector elevado. Devuelve el metodo usado: 'task' o
+    'uac'. El hijo ELEVADO escribe el JSONL; este proceso (no elevado)
+    solo espera a leerlo.
+
+    - Tarea programada AI-NETWATCH-NetBytes (creada una vez, highest
+      privileges): `schtasks /run` — sin prompt, funciona aunque el
+      servidor corra desde un proceso de fondo oculto.
+    - Si no existe: fallback UAC (Start-Process -Verb RunAs); solo
+      funciona desde consola interactiva. Sin admin => no hay fichero:
+      degradacion honesta, sin numeros."""
+    if _netbytes_task_exists():
+        _write_netbytes_cmd(duration_s, out_path)
+        subprocess.run(["schtasks", "/run", "/TN", NETBYTES_TASK_NAME],
+                       capture_output=True, timeout=60)
+        return "task"
     py = sys.executable
+    script = Path(__file__).resolve().parent / "netcollector.py"
     ps = (f"Start-Process -FilePath '{py}'"
           f" -ArgumentList '{script}', {int(duration_s)}, '{out_path}'"
           " -Verb RunAs")
     subprocess.Popen(["powershell", "-NoProfile", "-Command", ps],
                      creationflags=0x0800)  # CREATE_NO_WINDOW
+    return "uac"
 
 
 def _read_netjsonl(out_path: Path) -> tuple[list[dict], dict | None]:
@@ -399,8 +442,9 @@ def _netbytes_cycle() -> None:
         return
     duration_s = int(_cfg.get("net_bytes_duration_s", 30))
     out_path = DATA_DIR / f"netprobe_{int(time.time())}.jsonl"
+    global _netbytes_spawn_method
     try:
-        _spawn_netcollector(duration_s, out_path)
+        _netbytes_spawn_method = _spawn_netcollector(duration_s, out_path)
     except (OSError, subprocess.SubprocessError):
         return
     deadline = time.monotonic() + duration_s + 90
@@ -1113,11 +1157,13 @@ def _cloud_bytes() -> dict:
                 "reason": ("bytes remotos: colector elevado sin datos "
                            "(ETW Kernel-Network requiere admin; activar en "
                            "config net_bytes_enabled)"),
-                "last_meta": _net_last_meta}
+                "last_meta": _net_last_meta,
+                "spawn_method": _netbytes_spawn_method}
     total = sum(r["bytes"] for r in egress)
     return {"available": True,
             "total_bytes": total,
             "last_meta": _net_last_meta,
+            "spawn_method": _netbytes_spawn_method,
             "window": ("acumulado desde inicio del colector elevado"
                        " (ventanas sin solapes)"),
             "by_provider": [{"provider": r["provider"],

@@ -116,8 +116,22 @@ muestra `cloud_bytes` real (total + top proveedores); sin admin o sin
 datos, "no disponible" con motivo — nunca un cero que engane. El
 colector escribe una linea meta de diagnostico (`events_seen`, `rows`,
 `xml_ok`, `etl_found`) que el panel expone como `last_meta`: distingue
-"corrio y no hubo trafico" de "fallo". Cada ciclo elevado pide UAC; es
-opt-in y visible a propósito.
+"corrio y no hubo trafico" de "fallo".
+
+**Elevacion sin prompt (v2.2.1)**: una vez creada la tarea programada
+`AI-NETWATCH-NetBytes` ("Run with highest privileges"), cada ciclo se
+dispara con `schtasks /run`: sin UAC por ciclo y funciona aunque el
+servidor corra desde un proceso de fondo oculto. Setup unico, desde una
+consola ELEVADA:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\setup_netbytes_task.ps1
+```
+
+Si la tarea no existe, degrada al UAC por ciclo (solo funciona desde
+consola interactiva). Opt-in (`net_bytes_enabled`) y visible a propósito;
+el panel muestra `spawn_method` (`task`/`uac`) para saber que camino
+corrio.
 
 ## Sesiones y beaconing (F1/D3, v2.1)
 
