@@ -7,14 +7,25 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 - Evidencia exportable: cadena de hashes + export STIX.
 
 Hecho en v2.3 (sin tag aun):
+### Filtros y agrupacion de eventos (v2.3)
+- Vista con filtros (capa IA, autonomia, solo-no-aprobados, ocultar CDN,
+  proceso/destino) y agrupacion por proveedor: colapsa las IPs
+  rotatorias de CDN (python.exe -> huggingface.co: 104 IPs en una fila)
+  sumando sesiones/polls.
+- GET /api/events con layer/verdict/shadow/hide_cdn/group; cada fila
+  lleva provider+kind.
+- new_ai_destination deduplica por (proceso, proveedor): fin de las
+  alertas repetidas por IP.
 - Fingerprinting de SDK IA por proceso + artefactos (`sdk_fingerprint`,
   display-only; no toca deteccion ni aprobaciones): python/node con SDKs
   instalados en su arbol (site-packages / node_modules) -> label
   `python-sdk(...)`/`node-sdk(...)` sin depender del dominio destino.
   Alimentado por Sysmon EID1 (imagen + CommandLine). Superficie:
-  `GET /api/processes` (ficha por imagen), label `sdk` en
-  `top_processes` del dashboard y bloque "Procesos con SDK IA" en el
-  panel. Sin artefacto verificable -> None, nunca inventa. JA3/JA4
+  `GET /api/processes` (ficha por imagen) y label `sdk` en
+  `top_processes` del dashboard. El bloque "Procesos con SDK IA" del
+  panel se alimenta de `GET /api/processes` (no hay campo
+  sdk_processes en /api/dashboard). Sin artefacto verificable -> None,
+  nunca inventa. JA3/JA4
   queda fuera a proposito: huella TLS compartida con navegadores,
   solo confirmacion, y stdlib no parsea TLS.
 - `cloud_bytes.by_provider`: mapear los bytes "desconocido" (IPs sin

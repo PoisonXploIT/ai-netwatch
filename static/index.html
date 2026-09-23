@@ -204,6 +204,11 @@
     </details>
 
     <details>
+      <summary>Filtros y agrupaci&oacute;n de eventos (v2.3)</summary>
+      <p>La tarjeta Eventos tiene una fila de filtros: capa IA, autonom&iacute;a, solo no aprobados, ocultar CDN, proceso/destino y bot&oacute;n Limpiar. Con <b>Agrupar por proveedor</b> (on por defecto) cada fila es un par (proceso, proveedor): colapsa las IPs rotatorias de CDN (p. ej. <span class="mono">python.exe &rarr; huggingface.co</span>: 104 IPs en una fila) sumando sesiones/polls y contando IPs distintas. Cada fila lleva <b>provider</b> + <b>kind</b> (API/web/CDN).</p>
+    </details>
+
+    <details>
       <summary>Veredictos Jev (triage)</summary>
       <p>El botón <b>Triar eventos con Jev</b> envía los eventos vivos a Jev (TypeSafe, modelo pin) y obtiene por cada uno:</p>
       <ul>
