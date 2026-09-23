@@ -529,6 +529,22 @@ class TestByProviderEid22Mapping(NetBytesServerBase):
         self.assertEqual(rows[0]["kind"], "cdn")
         self.assertTrue(rows[0]["unapproved"])
 
+    def test_cloud_bytes_api_exposes_host_and_kind(self):
+        # v2.3: la superficie del API (dashboard) expone host y kind, no
+        # solo provider/bytes.
+        self.store.record_dns_resolution(
+            "5.6.7.8", "d3bbv8sr76az5s.cloudfront.net")
+        self.store.ingest_net_bytes(
+            [{"dest_ip": "5.6.7.8", "dest_port": 443, "bytes": 1000}],
+            "2026-09-23T10:00:00")
+        cb = server._cloud_bytes()
+        self.assertTrue(cb["available"])
+        row = cb["by_provider"][0]
+        self.assertEqual(row["provider"], "desconocido")
+        self.assertEqual(
+            row["host"], "d3bbv8sr76az5s.cloudfront.net")
+        self.assertEqual(row["kind"], "cdn")
+
     def test_event_wins_over_persisted_dns(self):
         # v2.3: el evento (SNI/catalogo) es definitivo sobre la tabla DNS.
         self.store.record_dns_resolution("5.6.7.8", "openrouter.ai")

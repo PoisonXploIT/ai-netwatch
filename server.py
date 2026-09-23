@@ -1270,7 +1270,11 @@ def _cloud_bytes() -> dict:
             "spawn_method": _netbytes_spawn_method,
             "window": ("acumulado desde inicio del colector elevado"
                        " (ventanas sin solapes)"),
+            # v2.3: host/kind pasan al API (label api/web/cdn y hostname
+            # resuelto aunque el provider quede 'desconocido').
             "by_provider": [{"provider": r["provider"],
+                             "host": r.get("host", ""),
+                             "kind": r.get("kind", ""),
                              "bytes": r["bytes"]}
                             for r in sorted(egress,
                                             key=lambda x: -x["bytes"])[:10]]}
