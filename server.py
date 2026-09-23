@@ -142,7 +142,12 @@ def _load_config() -> None:
               "tshark_enabled", "retention_days", "retention_days_llm",
               "llm_store_content", "alerts_enabled",
               "alert_webhook_url", "catalog_approved",
-              "approved_providers"):  # noqa: E128
+              "approved_providers",
+              # v2.1/v2.2: sin estas, un restart revertia reglas y bytes
+              # remotos a los defaults (persistencia silenciosamente rota).
+              "rules_enabled", "rule_egress_mb_per_day",
+              "net_bytes_enabled", "net_bytes_duration_s",
+              "net_bytes_cycle_s"):  # noqa: E128
         if k in data:
             _cfg[k] = data[k]
     for key, default in (("retention_days", 90),
@@ -157,6 +162,22 @@ def _load_config() -> None:
         _cfg["alerts_enabled"] = True
     if not isinstance(_cfg.get("catalog_approved"), bool):
         _cfg["catalog_approved"] = True
+    if not isinstance(_cfg.get("rules_enabled"), bool):
+        _cfg["rules_enabled"] = True
+    egress = _cfg.get("rule_egress_mb_per_day")
+    if not isinstance(egress, (int, float)) or isinstance(egress, bool) \
+            or not (0 < egress <= 1e9):
+        _cfg["rule_egress_mb_per_day"] = 500.0
+    if not isinstance(_cfg.get("net_bytes_enabled"), bool):
+        _cfg["net_bytes_enabled"] = False
+    dur = _cfg.get("net_bytes_duration_s")
+    if not isinstance(dur, int) or isinstance(dur, bool) \
+            or not (5 <= dur <= 3600):
+        _cfg["net_bytes_duration_s"] = 30
+    cyc = _cfg.get("net_bytes_cycle_s")
+    if not isinstance(cyc, int) or isinstance(cyc, bool) \
+            or not (30 <= cyc <= 86400):
+        _cfg["net_bytes_cycle_s"] = 600
     ap = _cfg.get("approved_providers")
     if not isinstance(ap, list):
         ap = []

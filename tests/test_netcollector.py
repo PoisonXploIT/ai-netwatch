@@ -259,6 +259,52 @@ class TestSpawnNetCollector(NetBytesServerBase):
         self.assertIn("spawn task", lines[1])
 
 
+class TestConfigPersistence(NetBytesServerBase):
+    """Regresion v2.2.1: las claves de v2.1/v2.2 debían sobrevivir un
+    restart (_load_config). Antes del fix, _load_config no las cargaba:
+    POST enabled=true + watchdog/restart => revertia a false y el
+    colector nunca disparaba (spawn_method=null)."""
+
+    def _reload(self, payload: dict) -> None:
+        server.CONFIG_PATH.write_text(json.dumps(payload),
+                                       encoding="utf-8")
+        server._cfg = {}
+        server._load_config()
+
+    def test_v22_keys_survive_restart(self):
+        self._reload({"net_bytes_enabled": True,
+                      "net_bytes_duration_s": 45,
+                      "net_bytes_cycle_s": 120,
+                      "rules_enabled": False,
+                      "rule_egress_mb_per_day": 42})
+        self.assertIs(server._cfg["net_bytes_enabled"], True)
+        self.assertEqual(server._cfg["net_bytes_duration_s"], 45)
+        self.assertEqual(server._cfg["net_bytes_cycle_s"], 120)
+        self.assertIs(server._cfg["rules_enabled"], False)
+        self.assertEqual(server._cfg["rule_egress_mb_per_day"], 42)
+
+    def test_bad_values_fall_to_defaults(self):
+        self._reload({"net_bytes_enabled": "banana",
+                      "net_bytes_duration_s": -5,
+                      "net_bytes_cycle_s": "x",
+                      "rules_enabled": 3,
+                      "rule_egress_mb_per_day": -1})
+        self.assertIs(server._cfg["net_bytes_enabled"], False)
+        self.assertEqual(server._cfg["net_bytes_duration_s"], 30)
+        self.assertEqual(server._cfg["net_bytes_cycle_s"], 600)
+        self.assertIs(server._cfg["rules_enabled"], True)
+        self.assertEqual(server._cfg["rule_egress_mb_per_day"], 500.0)
+
+    def test_post_then_reload_via_endpoint(self):
+        # Flujo exacto: POST /api/config => restart (_load_config).
+        server.set_config(server.ConfigRequest(
+            net_bytes_enabled=True, rule_egress_mb_per_day=42))
+        server._cfg = {}
+        server._load_config()
+        self.assertIs(server._cfg["net_bytes_enabled"], True)
+        self.assertEqual(server._cfg["rule_egress_mb_per_day"], 42)
+
+
 class TestTaskScripts(unittest.TestCase):
     """Los scripts de la tarea programada existen y son coherentes."""
 

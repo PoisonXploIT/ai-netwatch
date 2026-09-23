@@ -34,6 +34,15 @@ sin prompt por ciclo, y funciona aunque el servidor corra oculto.
 - Documentado: el config se carga en memoria al arrancar; editar
   `config.json` con el servidor vivo no tiene efecto hasta restart (los
   cambios van por panel / `POST /api/config`).
+- **Fix persistencia (causa raiz del path roto)**: `_load_config` no
+  cargaba las claves de v2.1/v2.2 (`rules_enabled`,
+  `rule_egress_mb_per_day`, `net_bytes_enabled`, `net_bytes_duration_s`,
+  `net_bytes_cycle_s`): tras cada restart (el watchdog reinicia a
+  menudo) volvian a los defaults y el colector nunca disparaba. Ahora se
+  cargan y validan rango (duracion 5..3600 s, ciclo 30..86400 s,
+  umbral >0, bools). Test: POST `net_bytes_enabled=true` +
+  `rule_egress_mb_per_day=42` => `_load_config()` => sobreviven; valores
+  invalidos => defaults.
 
 ## Fix colector elevado (v2.2) — B1/B2/B3 + stop -ets
 
