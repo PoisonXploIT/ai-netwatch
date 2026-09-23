@@ -92,6 +92,15 @@ uv pip install fastapi uvicorn
 
 Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar), toggle Sysmon y toggle tshark sobreviven al reinicio.
 
+## Panel (v2.0)
+
+`GET /api/dashboard?days=7` (clamp 1..365) agrega lo que ya existe: actividad
+diaria, top proveedores/procesos por presencia (`seen_count` = polls, no
+sesiones), reparto por capa, nº de shadow AI y LLM Inspector local
+(llamadas/tokens/bytes). **Bytes cloud: no disponible para TLS remoto**
+(`cloud_bytes.available=false` con motivo; ETW/logman en v2.1) — un "no
+disponible", no un cero que engane.
+
 ## Shadow AI (v2.0)
 
 Detectar IA (catalogo + capas) no es lo mismo que aprobarla. **Shadow AI** =
@@ -108,6 +117,7 @@ IA detectada cuyo proveedor no esta aprobado:
 
 - `GET /api/events?limit=&process=&dest=`
 - `GET /api/shadow` (IA detectada no aprobada, agrupado por proveedor)
+- `GET /api/dashboard?days=7` (panel: actividad, tops, capas, shadow, LLM local)
 - `POST /api/triage` (`{"event_ids": [...]}` opcional; sin ids = todos)
 - `GET /api/triages/latest`
 - `GET/POST /api/config` (key Jev maskeda en lecturas; incluye `llm_proxy_enabled/port/target`, `catalog_approved`, `approved_providers`)

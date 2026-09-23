@@ -139,6 +139,21 @@ class LlmCallStore:
         ).fetchone()
         return dict(row) if row else None
 
+    def summary(self, days: int | None = None) -> dict:
+        """Totales del inspector (locales): llamadas, tokens y bytes."""
+        q = ("SELECT COUNT(*) AS calls,"
+             " COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,"
+             " COALESCE(SUM(completion_tokens),0) AS completion_tokens,"
+             " COALESCE(SUM(request_bytes),0) AS request_bytes,"
+             " COALESCE(SUM(response_bytes),0) AS response_bytes"
+             " FROM llm_calls")
+        args: list[object] = []
+        if days is not None:
+            q += " WHERE ts >= ?"
+            args.append(_cutoff_ts(days))
+        r = self.conn.execute(q, tuple(args)).fetchone()
+        return {k: int(v or 0) for k, v in dict(r).items()}
+
     def clear(self) -> int:
         with self._lock:
             n = self.conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0]
@@ -356,6 +371,13 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
         q += " ORDER BY last_seen DESC LIMIT ?"
         args.append(limit)
         return [dict(r) for r in self.conn.execute(q, args).fetchall()]
+
+    def events_since(self, days: int) -> list[dict]:
+        """Eventos vivos con last_seen dentro de `days` (panel)."""
+        q = ("SELECT * FROM events WHERE last_seen >= ?"
+             " ORDER BY last_seen DESC")
+        return [dict(r) for r in
+                self.conn.execute(q, (_cutoff_ts(days),)).fetchall()]
 
     def ai_events(self) -> list[dict]:
         """Eventos clasificados como IA (ai_layer != none)."""

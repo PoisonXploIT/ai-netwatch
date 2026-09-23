@@ -223,6 +223,33 @@ async function refreshShadow() {
   } catch (e) { /* sin datos aún */ }
 }
 
+async function refreshDashboard() {
+  const wrap = document.getElementById("dashboard-wrap");
+  if (!wrap) return;
+  try {
+    const d = await api("/api/dashboard?days=7");
+    const topList = (items, label) => items.length
+      ? `<p class="hint">${label}</p>` + items.map(i =>
+        `<div class="row"><span class="mono">${esc(i.name)}</span><span class="hint">${i.seen_count} presencias</span></div>`).join("")
+      : "";
+    const layers = d.layers.length
+      ? d.layers.map(l => `${l.layer}: ${l.seen_count}`).join(" · ")
+      : "sin datos";
+    const llm = d.llm_calls
+      ? `llamadas: ${d.llm_calls.calls} · tokens: ${(d.llm_calls.prompt_tokens || 0) + (d.llm_calls.completion_tokens || 0)} · bytes locales: ${fmtBytes((d.llm_calls.request_bytes || 0) + (d.llm_calls.response_bytes || 0))}`
+      : "inspector sin datos";
+    const daily = d.daily.map(x => `${x.date}: ${x.events} ev / ${x.triages} tri`).join(" · ");
+    wrap.innerHTML = `
+      <div class="row"><span class="hint">Actividad (7 días): ${daily || "sin datos"}</span></div>
+      ${topList(d.top_providers, "Top proveedores por presencia")}
+      ${topList(d.top_processes, "Top procesos")}
+      <div class="row"><span class="hint">Capas: ${layers}</span></div>
+      <div class="row"><a href="#shadow-card" class="hint">Shadow AI: ${d.shadow_count} proveedor(es) no aprobado(s)</a></div>
+      <div class="row"><span class="hint">LLM Inspector (local): ${llm}</span></div>
+      <div class="row"><span class="hint">Bytes cloud: no disponible para TLS remoto (${esc(d.cloud_bytes.reason)}).</span></div>`;
+  } catch (e) { /* sin datos aún */ }
+}
+
 async function loadConfig() {
   try {
     const c = await api("/api/config");
@@ -397,11 +424,13 @@ function bind() {
   refreshStats();
   refreshLlmCalls();
   refreshShadow();
+  refreshDashboard();
   setInterval(refreshEvents, 5000);
   setInterval(refreshStats, 60000);
   setInterval(refreshLlmCalls, 10000);
   setInterval(refreshAlerts, 10000);
   setInterval(refreshShadow, 15000);
+  setInterval(refreshDashboard, 60000);
 }
 
 document.addEventListener("DOMContentLoaded", bind);

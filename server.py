@@ -802,6 +802,50 @@ def shadow_providers() -> dict:
     return {"shadow": items, "count": len(items)}
 
 
+@app.get("/api/dashboard")
+def dashboard(days: int = 7) -> dict:
+    """Panel (v2.0): agrega lo que ya existe — actividad diaria, top
+    proveedores/procesos por presencia, reparto por capa, shadow y LLM
+    local. Bytes cloud: no disponible para TLS remoto (honestidad, no un
+    cero que engane)."""
+    days = max(1, min(int(days), 365))
+    st = _req_store()
+    providers: dict[str, int] = {}
+    processes: dict[str, int] = {}
+    layers: dict[str, int] = {}
+    for e in st.events_since(days):
+        seen = int(e.get("seen_count") or 1)
+        prov = _provider_of(e)
+        if prov:
+            providers[prov] = providers.get(prov, 0) + seen
+        proc = str(e.get("process") or "?")
+        processes[proc] = processes.get(proc, 0) + seen
+        layer = str(e.get("ai_layer") or "none")
+        layers[layer] = layers.get(layer, 0) + seen
+
+    def _top(d: dict[str, int]) -> list[dict]:
+        return [{"name": k, "seen_count": v}
+                for k, v in sorted(d.items(), key=lambda kv: -kv[1])[:10]]
+
+    return {
+        "days": days,
+        "daily": st.stats(days=days),
+        "top_providers": _top(providers),
+        "top_processes": _top(processes),
+        "layers": [{"layer": k, "seen_count": v}
+                   for k, v in sorted(layers.items(),
+                                      key=lambda kv: -kv[1])],
+        "shadow_count": shadow_providers()["count"],
+        "llm_calls": (llm_calls.summary(days=days)
+                      if llm_calls is not None else None),
+        "cloud_bytes": {
+            "available": False,
+            "reason": ("TLS remoto cifrado: bytes cloud requieren "
+                       "ETW/logman (v2.1)"),
+        },
+    }
+
+
 @app.get("/api/alerts")
 def list_alerts(since_id: int = 0):
     return {"alerts": alerts.list(since_id) if alerts else [],

@@ -2,6 +2,23 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## Panel / dashboard (v2.0) — actividad agregada, sin F1
+
+### Añadido
+- **`GET /api/dashboard?days=7`** (clamp 1..365): agrega lo que ya existe.
+  Actividad diaria (eventos/triajes), top proveedores y procesos por
+  presencia (`seen_count`, polls — no sesiones; F1 pendiente para v2.1),
+  reparto por capa (catalog/llm/heuristic = cobertura real), nº de
+  shadow AI, y LLM Inspector local (llamadas/tokens/bytes).
+- **Bytes cloud**: `cloud_bytes.available=false` con motivo — no disponible
+  para TLS remoto (ETW/logman, v2.1). Honestidad: un "no disponible",
+  no un cero que engane.
+- **UI**: tarjeta *Panel* arriba de todo, refresh 60 s; enlace a la tarjeta
+  Shadow AI.
+- `Store.events_since(days)`, `LlmCallStore.summary(days)` (agregados SQL).
+- Tests: tops ordenados, capas, shadow count, resumen LLM, corte por días,
+  clamp de days (`tests/test_dashboard.py`).
+
 ## Shadow AI (v2.0) — detectar vs aprobar
 
 ### Añadido

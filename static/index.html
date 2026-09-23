@@ -31,6 +31,12 @@
   </div>
 </header>
 <main>
+  <section class="card" id="panel-card">
+    <h2>Panel</h2>
+    <p class="hint">Actividad de los &uacute;ltimos 7 d&iacute;as agregando lo que ya existe: presencia (polls), no sesiones. Bytes cloud: no disponible para TLS remoto (requiere ETW/logman, v2.1); el egress en bytes s&iacute; se mide para el LLM local.</p>
+    <div id="dashboard-wrap"></div>
+  </section>
+
   <section class="card" id="cfg-card">
     <h2>Configuración (persistente)</h2>
     <div class="row">
@@ -190,6 +196,11 @@
         <li><b>Límite honesto</b>: solo cubre el LLM local. Un proveedor remoto (TLS) no se puede descifrar pasivamente; de él se ve la conexión (eventos de red) pero no el contenido.</li>
         <li><b>Privacidad</b>: prompts y respuestas quedan en claro en <span class="mono">data/llm_calls.db</span>. Si un prompt lleva una API key o datos sensibles, esa información queda en ese fichero: borra las llamadas cuando termines (botón de la tarjeta).</li>
       </ul>
+    </details>
+
+    <details>
+      <summary>Panel</summary>
+      <p>El <b>Panel</b> agrega lo que ya existe (7 días): actividad diaria, top proveedores/procesos por presencia (<span class="mono">seen_count</span> = polls, no sesiones), reparto por capa, número de Shadow AI y LLM Inspector local (llamadas/tokens/bytes). <b>Bytes cloud: no disponible para TLS remoto</b> (requiere ETW/logman, v2.1); el egress en bytes sí se mide para el LLM local.</p>
     </details>
 
     <details>
