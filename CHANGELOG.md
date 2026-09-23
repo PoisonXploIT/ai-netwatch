@@ -14,6 +14,10 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   (columna *IA (capa)*). Dominio sin clasificar = visible, nunca oculto.
 - **Egress medido en bytes** (LLM Inspector): `request_bytes` / `response_bytes`
   por llamada (medida real del wire) + total en la tarjeta.
+- **Retencion (F7)**: config `retention_days` (default 90, rango 1–3650,
+  persistida). Prune de eventos/triajes/llm_calls mas antiguos que N dias +
+  `VACUUM`; corre en el arranque y cada 24 h desde el monitor. El historico
+  diario (`daily_stats`) se conserva. Input visible en Ajustes.
 
 ### Cambiado
 - Eventos: nueva columna `ai_layer`. LLM calls: nuevas columnas

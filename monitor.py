@@ -172,7 +172,7 @@ class NetMonitor(threading.Thread):
     def __init__(self, store: Store, poll_fn=poll_connections,
                  pidmap_fn=poll_pid_map, dns_fn=poll_dns_cache,
                  udp_fn=poll_udp_endpoints, catalog_fn=poll_catalog_ips,
-                 sysmon_fn=None, sni_fn=None, eid22_fn=None,
+                 sysmon_fn=None, sni_fn=None, eid22_fn=None, prune_fn=None,
                  interval: float = _POLL_S, extra_hosts: list[str] | None = None):
         super().__init__(daemon=True, name="ai-netwatch-monitor")
         self.store = store
@@ -184,6 +184,7 @@ class NetMonitor(threading.Thread):
         self._sysmon = sysmon_fn
         self._sni_poll = sni_fn
         self._eid22 = eid22_fn
+        self._prune = prune_fn
         self._eid22_cache: dict[str, str] = {}
         self._sm_last_recid = 0
         self._catalog_ip_cache: dict[str, str] = {}
@@ -298,6 +299,9 @@ catalog_domain solo si estaba vacio.
         last_pidmap = 0.0
         last_dns = 0.0
         last_catip = 0.0
+        # Retencion (F7): el primer prune lo hace el server en _start; aqui
+        # solo el refresco periodico (24 h).
+        last_prune = time.monotonic()
         while not self._stop.is_set():
             now = time.monotonic()
             try:
@@ -310,6 +314,9 @@ catalog_domain solo si estaba vacio.
                 if now - last_catip >= _CATALOG_IP_REFRESH_S:
                     self._catalog_ip_cache = self._catalog_ips(self.extra_hosts)
                     last_catip = now
+                if self._prune is not None and now - last_prune >= 86400.0:
+                    self._prune()
+                    last_prune = now
                 conns = self._poll() + self._udp()
                 self._eid22_cycle()
                 self._cycle(conns)

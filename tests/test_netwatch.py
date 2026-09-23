@@ -72,6 +72,26 @@ class TestStore(unittest.TestCase):
         self.assertEqual(self.store.get_event(a["id"])["protocol"], "udp")
         self.assertEqual(self.store.get_event(b["id"])["protocol"], "tcp")
 
+    def test_prune_removes_old_keeps_recent(self):
+        self.store.observe_connection("a.exe", "1.1.1.1", 443, "openai.com", None)
+        self.store.save_triage("ok", "m", {"x": 1})
+        old = "2020-01-01 00:00:00Z"
+        with self.store._lock:
+            self.store.conn.execute(
+                "UPDATE events SET ts=?, last_seen=? WHERE process='a.exe'",
+                (old, old))
+            self.store.conn.execute("UPDATE triages SET ts=?", (old,))
+        out = self.store.prune(90)
+        self.assertEqual(out["events_removed"], 1)
+        self.assertEqual(out["triages_removed"], 1)
+        self.assertEqual(self.store.list_events(), [])
+
+    def test_prune_keeps_recent_events(self):
+        self.store.observe_connection("a.exe", "1.1.1.1", 443, "openai.com", None)
+        out = self.store.prune(90)
+        self.assertEqual(out["events_removed"], 0)
+        self.assertEqual(len(self.store.list_events()), 1)
+
     def test_daily_stats_survive_reset(self):
         for _ in range(3):
             self.store.observe_connection("a.exe", "1.1.1.1", 443, "openai.com",

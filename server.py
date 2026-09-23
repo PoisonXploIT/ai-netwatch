@@ -54,6 +54,7 @@ _cfg: dict = {
     "extra_hosts": [],
     "sysmon_enabled": True,
     "tshark_enabled": True,
+    "retention_days": 90,
 }
 
 
@@ -108,9 +109,13 @@ def _load_config() -> None:
     for k in ("jev_enabled", "jev_api_key", "llm_enabled", "llm_base_url",
               "llm_model", "llm_proxy_enabled", "llm_proxy_port",
               "llm_proxy_target", "extra_hosts", "sysmon_enabled",
-              "tshark_enabled"):
+              "tshark_enabled", "retention_days"):
         if k in data:
             _cfg[k] = data[k]
+    rd = _cfg.get("retention_days")
+    if not isinstance(rd, int) or isinstance(rd, bool) \
+            or not (1 <= rd <= 3650):
+        _cfg["retention_days"] = 90
     url = str(_cfg.get("llm_base_url") or "")
     if url and not is_loopback_url(url):
         _cfg["llm_base_url"] = ""
@@ -186,10 +191,25 @@ def _set_llm_proxy(enabled: bool) -> bool:
 
 
 @app.on_event("startup")
+def _prune_retention() -> None:
+    """Retencion (F7): eventos/triajes/llm_calls > retention_days. Fail-safe:
+    un fallo de prune nunca rompe el arranque ni el ciclo del monitor."""
+    try:
+        days = int(_cfg.get("retention_days") or 90)
+        if store is not None:
+            store.prune(days)
+        if llm_calls is not None:
+            llm_calls.prune(days)
+    except Exception:
+        pass
+
+
+@app.on_event("startup")
 def _start() -> None:
     global store, monitor, sni_capture, llm_calls
     store = Store(DATA_DIR / "events.db")
     llm_calls = LlmCallStore(DATA_DIR / "llm_calls.db")
+    _prune_retention()
     if _cfg["llm_proxy_enabled"]:
         _set_llm_proxy(True)
     sm = poll_sysmon_events if (_cfg["sysmon_enabled"] and sysmon_available()) else None
@@ -203,7 +223,8 @@ def _start() -> None:
             sni_capture.start()
             sni_fn = sni_capture.poll_records
     monitor = NetMonitor(store, extra_hosts=list(_cfg["extra_hosts"]),
-                         sysmon_fn=sm, eid22_fn=eid22, sni_fn=sni_fn)
+                         sysmon_fn=sm, eid22_fn=eid22, sni_fn=sni_fn,
+                         prune_fn=_prune_retention)
     monitor.start()
 
 
@@ -241,6 +262,7 @@ class ConfigRequest(BaseModel):
     extra_hosts: list[str] | None = None
     sysmon_enabled: bool | None = None
     tshark_enabled: bool | None = None
+    retention_days: int | None = None
 
 
 class TriageRequest(BaseModel):
@@ -321,6 +343,11 @@ def set_config(req: ConfigRequest):
     if req.tshark_enabled is not None:
         _cfg["tshark_enabled"] = req.tshark_enabled
         _set_sni_capture(req.tshark_enabled)
+    if req.retention_days is not None:
+        rd = int(req.retention_days)
+        if not (1 <= rd <= 3650):
+            raise HTTPException(400, "retention_days: entre 1 y 3650")
+        _cfg["retention_days"] = rd
     _save_config()
     return _mask(_cfg)
 

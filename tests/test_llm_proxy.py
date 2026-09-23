@@ -18,6 +18,7 @@ import threading
 import time
 import unittest
 import urllib.request
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -196,6 +197,7 @@ def _fresh_cfg() -> dict:
         "llm_proxy_enabled": False, "llm_proxy_port": 8098,
         "llm_proxy_target": "127.0.0.1:8099",
         "extra_hosts": [], "sysmon_enabled": True,
+        "retention_days": 90,
     }
 
 
@@ -419,6 +421,14 @@ class TestProxyConfig(ConfigBase):
         self.assertIsNone(server.llm_proxy)
         self.assertEqual(server.get_config()["llm_proxy_running"], False)
 
+    def test_retention_days_validated_and_persisted(self):
+        server.set_config(server.ConfigRequest(retention_days=30))
+        self.assertEqual(server._cfg["retention_days"], 30)
+        for bad in (0, -5, 100000):
+            with self.assertRaises(HTTPException):
+                server.set_config(server.ConfigRequest(retention_days=bad))
+        self.assertEqual(server._cfg["retention_days"], 30)
+
     def test_load_revalidates_proxy_target(self):
         # Un config.json editado a mano no apunta el proxy fuera.
         server.CONFIG_PATH.write_text(json.dumps({
@@ -445,6 +455,28 @@ class TestProxyConfig(ConfigBase):
             server.reset_llm_calls(server.ResetRequest(confirm=False))
         r = server.reset_llm_calls(server.ResetRequest(confirm=True))
         self.assertEqual(r["calls_removed"], 1)
+
+
+class TestLlmCallPrune(unittest.TestCase):
+    """Retencion (F7) en llm_calls: prune > N dias + VACUUM."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.st = LlmCallStore(Path(self.tmp.name) / "p.db")
+
+    def tearDown(self):
+        self.st.close()
+        self.tmp.cleanup()
+
+    def test_prune_removes_old_keeps_recent(self):
+        self.st.record({"ts": "2020-01-01 00:00:00Z"})
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+        self.st.record({"ts": now})
+        out = self.st.prune(90)
+        self.assertEqual(out, 1)
+        rows = self.st.list_calls()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["ts"], now)
 
 
 class TestEgressBytes(unittest.TestCase):

@@ -48,6 +48,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
 
 
+def _cutoff_ts(days: int) -> str:
+    """Corte de retencion (F7): mismo formato que ts, comparable lexicografico."""
+    from datetime import timedelta
+    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
+        "%Y-%m-%d %H:%M:%SZ")
+
+
 _LLM_SCHEMA = """
 CREATE TABLE IF NOT EXISTS llm_calls (
     id INTEGER PRIMARY KEY,
@@ -127,6 +134,18 @@ class LlmCallStore:
         with self._lock:
             n = self.conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0]
             self.conn.execute("DELETE FROM llm_calls")
+            self.conn.commit()
+        return n
+
+    def prune(self, days: int) -> int:
+        """Retencion (F7): borra llamadas mas antiguas que N dias + VACUUM."""
+        cut = _cutoff_ts(days)
+        with self._lock:
+            cur = self.conn.execute("DELETE FROM llm_calls WHERE ts < ?", (cut,))
+            n = cur.rowcount
+            # VACUUM no puede correr dentro de la transaccion del DELETE.
+            self.conn.commit()
+            self.conn.execute("VACUUM")
             self.conn.commit()
         return n
 
@@ -286,6 +305,24 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
                 "triages": row["triages"] if row else 0,
             })
         return out
+
+    def prune(self, days: int) -> dict:
+        """Retencion (F7): borra eventos/triajes mas antiguos que N dias.
+
+        Eventos por last_seen (un evento vivo no caduca aunque sea antiguo);
+        daily_stats NO se toca (historico de rollup). VACUUM para recuperar
+        espacio; pensado para correr meses sin crecer sin limite."""
+        cut = _cutoff_ts(days)
+        with self._lock:
+            ev = self.conn.execute(
+                "DELETE FROM events WHERE last_seen < ?", (cut,)).rowcount
+            tr = self.conn.execute(
+                "DELETE FROM triages WHERE ts < ?", (cut,)).rowcount
+            # VACUUM no puede correr dentro de la transaccion del DELETE.
+            self.conn.commit()
+            self.conn.execute("VACUUM")
+            self.conn.commit()
+        return {"events_removed": ev, "triages_removed": tr}
 
     def reset(self) -> dict:
         """Borra eventos y triajes vivos; daily_stats NO se toca (historico)."""
