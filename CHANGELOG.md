@@ -13,9 +13,18 @@ v2.5(1) N1 — QUIC/HTTP-3: SNI del paquete Initial (en construccion, sin tag):
 - BPF/Npcap: `(tcp or udp) port 443` NO se parsea; lo valido es
   `udp port 443 or tcp port 443` (medido en vivo).
 - Probe verificado en esta maquina (tshark 4.6.6): SNI real de H3
-  (`www.google.com`, `www.cloudflare.com`) con Edge headless; el resto del
-  pipeline (eventos, attach por IP:puerto, clasificador) ya era
-  protocol-aware (polling UDP + Sysmon EID3).
+  (`www.google.com`, `www.cloudflare.com`) con Edge headless.
+- Fix del punto ciego REAL que el probe revelo: las conexiones UDP a
+  proveedores IA NUNCA llegaban a registrarse como eventos, porque
+  (medido) `Get-NetUDPEndpoint` no reporta RemoteAddress en sockets UDP
+  conectados (92 endpoints, 0 con remoto), Sysmon de esta maquina no
+  emite EID3 para msedge.exe, y netstat omite sockets UDP IPv6. Ahora
+  `poll_udp_endpoints` usa `netstat -ano -p UDP` (remoto+PID en v4):
+  QUIC/HTTP-3 v4 a destino IA se registra con proceso y el SNI del
+  paquete Initial se ancla al evento como en TCP.
+- Limitacion honesta (medida): QUIC IPv6 sigue ciego de conexion
+  (ninguna fuente da remoto+PID para UDP v6); el SNI SI se captura, pero
+  sin evento al que anclarlo. Documentado en README.
 
 Hecho en v2.4 (tag v2.4):
 - fix prob_falso_positivo: ahora es 1 - conf para TODOS los veredictos

@@ -59,18 +59,46 @@ def poll_connections() -> list[dict]:
     return _parse_conns(out, "tcp")
 
 
-def poll_udp_endpoints() -> list[dict]:
-    """Endpoints UDP con remoto (Get-NetUDPEndpoint): mismo shape, protocol=udp.
+def _parse_netstat_udp(out: str) -> list[dict]:
+    """Lineas de `netstat -ano -p UDP` -> conns protocol=udp.
 
-    Menos relevante para nube IA (casi todo es TCP/TLS 443) pero barato de
-    mirar y descarta trafico oculto por UDP."""
-    out = _run_ps(
-        "Get-NetUDPEndpoint -ErrorAction SilentlyContinue |"
-        " Where-Object { $_.RemoteAddress } |"
-        " Select-Object -Property RemoteAddress,RemotePort,OwningProcess |"
-        " ConvertTo-Json -Compress"
-    )
-    return _parse_conns(out, "udp")
+    Formato (medido):
+      UDP    0.0.0.0:50122          172.64.146.215:443              22484
+    Solo sockets conectados (remoto no '*:*'); cabeceras y basura se
+    ignoran. El puerto/PID invalidos descartan la linea.
+    """
+    conns = []
+    for line in (out or "").splitlines():
+        parts = line.split()
+        if len(parts) < 4 or parts[0] != "UDP":
+            continue
+        remote, pid_s = parts[2], parts[3]
+        if remote == "*:*" or ":" not in remote:
+            continue
+        ip, _, port_s = remote.rpartition(":")
+        ip = ip.strip("[]")
+        try:
+            port_i = int(port_s)
+            pid_i = int(pid_s)
+        except ValueError:
+            continue
+        if ip and port_i:
+            conns.append({"remote_ip": ip, "remote_port": port_i,
+                          "pid": pid_i, "protocol": "udp"})
+    return conns
+
+
+def poll_udp_endpoints() -> list[dict]:
+    """Endpoints UDP conectados (remoto+PID) via `netstat -ano -p UDP`.
+
+    Get-NetUDPEndpoint NO reporta RemoteAddress en sockets UDP conectados
+    (medido: 92 endpoints, 0 con remoto) y Sysmon de esta maquina no emite
+    EID3 para msedge; netstat si da remoto+PID. Limitacion medida: netstat
+    omite sockets UDP IPv6 (solo v4); el SNI QUIC v6 SI se captura pero sin
+    evento al que anclarlo.
+    """
+    out = _run_ps("netstat -ano -p UDP")
+    return _parse_netstat_udp(out)
 
 
 def poll_pid_map() -> dict[int, str]:

@@ -160,14 +160,43 @@ class TestMonitor(unittest.TestCase):
         self.assertTrue(events[0]["catalog_domain"].startswith("extra:"))
         self._cleanup(tmp, store)
 
+    def test_parse_netstat_udp(self):
+        out = (
+            "Conexiones activas\n"
+            "  Proto  Direccion local          Direccion remota        Estado           PID\n"
+            "  UDP    0.0.0.0:123            *:*                                    4300\n"
+            "  UDP    0.0.0.0:50122          172.64.146.215:443                  22484\n"
+            "  UDP    0.0.0.0:50987          104.18.41.41:443                   12812\n"
+            "  UDP    0.0.0.0:53             *:*                                    999\n"
+            "  TCP    0.0.0.0:443            1.2.3.4:5555                        1\n"
+            "  UDP    0.0.0.0:x              1.2.3.4:abc                         1\n"
+        )
+        conns = mon._parse_netstat_udp(out)
+        self.assertEqual(len(conns), 2)
+        self.assertEqual(conns[0], {"remote_ip": "172.64.146.215",
+                                    "remote_port": 443, "pid": 22484,
+                                    "protocol": "udp"})
+        self.assertEqual(conns[1]["remote_ip"], "104.18.41.41")
+
+    def test_parse_netstat_udp_v6_form(self):
+        # Formas IPv6 toleradas (en esta maquina netstat no las emite, pero
+        # en otras si): con corchetes y sin corchetes.
+        out = (
+            "  UDP [::]:50001 [2a06:98c1:58::f3]:443 123\n"
+            "  UDP [::]:50002 2a06:98c1:58::f3:443 124\n"
+        )
+        conns = mon._parse_netstat_udp(out)
+        self.assertEqual(len(conns), 2)
+        self.assertEqual(conns[0]["remote_ip"], "2a06:98c1:58::f3")
+        self.assertEqual(conns[1]["remote_ip"], "2a06:98c1:58::f3")
+
     def test_udp_endpoints_parsed_and_stored(self):
         tmp = tempfile.TemporaryDirectory()
         store = Store(Path(tmp.name) / "t.db")
         m = mon.NetMonitor(store, poll_fn=lambda: [], pidmap_fn=lambda: {},
                            dns_fn=lambda: {})
-        with mock.patch.object(mon, "_run_ps",
-                               return_value='{"RemoteAddress":"10.0.0.9",'
-                                           '"RemotePort":443,"OwningProcess":3}'):
+        out = ("  UDP    0.0.0.0:50122          10.0.0.9:443                   3\n")
+        with mock.patch.object(mon, "_run_ps", return_value=out):
             conns = mon.poll_udp_endpoints()
         self.assertEqual(conns[0]["protocol"], "udp")
         m._catalog_ip_cache = {"10.0.0.9": "deepseek.com"}
