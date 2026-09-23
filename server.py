@@ -274,7 +274,10 @@ def _on_new_ai_event(ev: dict) -> None:
     visto). El motor de reglas por umbral llega en v2.1; esto es la base."""
     if not _cfg.get("alerts_enabled") or alerts is None:
         return
-    dest = f"{ev.get('dest_host') or ev.get('dest_ip')}:{ev.get('dest_port')}"
+    # SNI y catalogo son definitivos; la IP cruda es el ultimo refugio.
+    host = (ev.get("sni_domain") or ev.get("catalog_domain")
+            or ev.get("dest_host") or ev.get("dest_ip"))
+    dest = f"{host}:{ev.get('dest_port')}"
     layer = ev.get("ai_layer") or "?"
     alerts.push(
         "new_ai_destination",

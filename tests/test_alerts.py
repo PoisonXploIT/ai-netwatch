@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import alerts  # noqa: E402
+import server  # noqa: E402
 
 
 class TestAlertLog(unittest.TestCase):
@@ -85,6 +86,51 @@ class TestAlertLog(unittest.TestCase):
         self.log.webhook_url = "http://127.0.0.1:1/alert"
         item = self.log.push("k", "m")
         self.assertEqual(item["kind"], "k")
+
+
+class TestNewAiEventMessage(unittest.TestCase):
+    """El mensaje prefiere SNI/catalogo antes que la IP cruda."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.log = alerts.AlertLog(Path(self.tmp.name) / "alerts.log")
+        self._cfg = dict(server._cfg)
+        self._alerts = server.alerts
+        server._cfg["alerts_enabled"] = True
+        server.alerts = self.log
+
+    def tearDown(self):
+        server._cfg.clear()
+        server._cfg.update(self._cfg)
+        server.alerts = self._alerts
+        self.tmp.cleanup()
+
+
+    def test_prefers_catalog_domain_over_raw_ip(self):
+        ev = {"id": 1, "process": "python.exe",
+             "dest_ip": "2600:9000::1", "dest_port": 443,
+             "sni_domain": None,
+             "catalog_domain": "huggingface.co"}
+        server._on_new_ai_event(ev)
+        row = self.log.list()[-1]
+        self.assertIn("huggingface.co:443", row["message"])
+        self.assertNotIn("2600:9000", row["message"])
+
+    def test_sni_beats_catalog(self):
+        ev = {"id": 2, "process": "x.exe",
+             "dest_ip": "1.2.3.4", "dest_port": 443,
+             "sni_domain": "api.openai.com",
+             "catalog_domain": "openai.com"}
+        server._on_new_ai_event(ev)
+        row = self.log.list()[-1]
+        self.assertIn("api.openai.com:443", row["message"])
+
+    def test_raw_ip_is_last_resort(self):
+        ev = {"id": 3, "process": "x.exe",
+             "dest_ip": "1.2.3.4", "dest_port": 443}
+        server._on_new_ai_event(ev)
+        row = self.log.list()[-1]
+        self.assertIn("1.2.3.4:443", row["message"])
 
 
 if __name__ == "__main__":
