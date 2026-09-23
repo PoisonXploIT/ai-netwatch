@@ -365,6 +365,17 @@ class NetMonitor(threading.Thread):
         if m:
             self._eid22_cache = m
 
+    def eid22_provider_map(self) -> dict[str, str]:
+        """v2.3: IP -> dominio IA resuelto por EID 22 (DnsQuery), desde el
+        conocimiento en memoria del monitor. Solo dominios clasificados IA;
+        el resto queda fuera para no atribuir trafico no-IA a un proveedor.
+        Cubre IPs sin conexion observada (que los eventos no mapean)."""
+        out: dict[str, str] = {}
+        for ip, dom in self._eid22_cache.items():
+            if classify_domain(dom).is_ai:
+                out[ip] = dom
+        return out
+
     def _sni_cycle(self) -> None:
         """Drena los SNI capturados y los asocia a eventos por (ip, puerto).
 

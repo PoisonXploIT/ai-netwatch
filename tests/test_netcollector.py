@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import alerts  # noqa: E402
+import monitor as monitor_mod  # noqa: E402
 import netcollector  # noqa: E402
 import rules  # noqa: E402
 import server  # noqa: E402
@@ -446,6 +447,84 @@ class TestEgressRule(NetBytesServerBase):
         r = {x["id"]: x for x in out}
         self.assertTrue(r["egress_volume_unapproved"]["available"])
         self.assertFalse(r["egress_volume_unapproved"]["fired"])
+
+
+class TestByProviderEid22Mapping(NetBytesServerBase):
+    """v2.3: by_provider mapea las IPs de net_bytes cruzando TODA la senal
+    (eventos + EID 22 en memoria del monitor), no solo los 500 eventos
+    recientes. Antes, una IP sin evento salia siempre 'desconocido'."""
+
+    @staticmethod
+    def _fake_monitor(m: dict) -> object:
+        class _M:
+            def eid22_provider_map(self):
+                return m
+        return _M()
+
+    def test_eid22_maps_ip_without_event(self):
+        # IP sin evento alguno: solo la resuelve el EID 22 del monitor.
+        self.store.ingest_net_bytes(
+            [{"dest_ip": "5.6.7.8", "dest_port": 443, "bytes": 1000}],
+            "2026-09-23T10:00:00")
+        old = server.monitor
+        server.monitor = self._fake_monitor({"5.6.7.8": "openai.com"})
+        try:
+            rows = server._egress_rows()
+        finally:
+            server.monitor = old
+        self.assertEqual(rows[0]["provider"], "openai.com")
+        self.assertFalse(rows[0]["unapproved"])  # openai esta en catalogo
+
+    def test_event_wins_over_eid22(self):
+        # El evento (SNI/catalogo) es definitivo: gana sobre el EID 22.
+        self.store.observe_connection("svc.exe", "5.6.7.8", 443, None, None)
+        self.store.conn.execute(
+            "UPDATE events SET catalog_domain='deepseek.com'"
+            " WHERE process='svc.exe'")
+        self.store.conn.commit()
+        self.store.ingest_net_bytes(
+            [{"dest_ip": "5.6.7.8", "dest_port": 443, "bytes": 2000}],
+            "2026-09-23T10:00:00")
+        old = server.monitor
+        server.monitor = self._fake_monitor({"5.6.7.8": "openai.com"})
+        try:
+            rows = server._egress_rows()
+        finally:
+            server.monitor = old
+        self.assertEqual(rows[0]["provider"], "deepseek.com")
+
+    def test_unresolved_ip_stays_desconocido(self):
+        self.store.ingest_net_bytes(
+            [{"dest_ip": "5.6.7.8", "dest_port": 443, "bytes": 1000}],
+            "2026-09-23T10:00:00")
+        rows = server._egress_rows()
+        self.assertEqual(rows[0]["provider"], "desconocido")
+        self.assertTrue(rows[0]["unapproved"])
+
+
+class TestEid22ProviderMap(unittest.TestCase):
+    """Monitor.eid22_provider_map (NetMonitor real): solo expone dominios
+    clasificados IA; el resto no se atribuye a ningun proveedor."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(Path(self.tmp.name) / "t.db")
+        self.m = monitor_mod.NetMonitor(self.store)
+        self.m._eid22_cache = {
+            "1.1.1.1": "api.openai.com",
+            "2.2.2.2": "example.com",
+            "3.3.3.3": "huggingface.co",
+        }
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_only_ai_domains_exposed(self):
+        m = self.m.eid22_provider_map()
+        self.assertEqual(m.get("1.1.1.1"), "api.openai.com")
+        self.assertEqual(m.get("3.3.3.3"), "huggingface.co")
+        self.assertNotIn("2.2.2.2", m)
 
 
 if __name__ == "__main__":

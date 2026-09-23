@@ -448,6 +448,16 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
         args.append(limit)
         return [dict(r) for r in self.conn.execute(q, args).fetchall()]
 
+    def ip_resolution_rows(
+            self) -> list[tuple[str, str, str, str]]:
+        """v2.3: (dest_ip, sni_domain, catalog_domain, dest_host) de TODOS
+        los eventos, mas reciente primero. Sirve para mapear las IPs de
+        net_bytes a proveedor aunque no salgan en la ventana reciente."""
+        return self.conn.execute(
+            "SELECT dest_ip, COALESCE(sni_domain,''),"
+            " COALESCE(catalog_domain,''), COALESCE(dest_host,'')"
+            " FROM events ORDER BY last_seen DESC").fetchall()
+
     def events_since(self, days: int) -> list[dict]:
         """Eventos vivos con last_seen dentro de `days` (panel)."""
         q = ("SELECT * FROM events WHERE last_seen >= ?"

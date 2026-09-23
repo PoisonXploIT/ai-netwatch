@@ -305,17 +305,34 @@ def _auto_classify_cycle() -> None:
         pass
 
 
+def _ip_provider_map() -> dict[str, str]:
+    """v2.3: dest_ip -> proveedor (dominio), cruzando TODA la senal:
+    eventos (SNI > catalogo > cache DNS; el mas reciente gana) + EID 22 en
+    memoria del monitor (solo dominios IA). Las IPs sin dominio resuelto
+    quedan fuera del mapa => 'desconocido' en by_provider."""
+    ev_map: dict[str, str] = {}
+    if store is not None:
+        for ip, sni, cat, host in store.ip_resolution_rows():
+            ip = str(ip or "")
+            if not ip:
+                continue
+            prov = _provider_of({"sni_domain": sni, "catalog_domain": cat,
+                                 "dest_host": host, "dest_ip": ip})
+            if prov and prov != ip.lower():
+                ev_map.setdefault(ip, prov)  # mas reciente gana
+    out: dict[str, str] = {}
+    if monitor is not None:
+        out.update(monitor.eid22_provider_map())
+    out.update(ev_map)  # los eventos son definitivos: ganan sobre EID 22
+    return out
+
+
 def _egress_rows() -> list[dict]:
-    """v2.2: bytes remotos por proveedor (net_bytes + mapeo IP->proveedor
-    via eventos, el mas reciente gana). Vacio si el colector elevado nunca
-    ha volcado datos."""
+    """v2.2: bytes remotos por proveedor (net_bytes + mapeo IP->proveedor).
+    Vacio si el colector elevado nunca ha volcado datos."""
     if store is None:
         return []
-    ip_prov: dict[str, str] = {}
-    for ev in store.list_events(limit=500):
-        ip = str(ev.get("dest_ip") or "")
-        if ip and ip not in ip_prov:
-            ip_prov[ip] = _provider_of(ev)
+    ip_prov = _ip_provider_map()
     out: list[dict] = []
     for r in store.net_bytes_sum():
         prov = ip_prov.get(str(r["dest_ip"]), "desconocido")
