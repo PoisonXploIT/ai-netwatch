@@ -282,6 +282,7 @@ def _auto_classify_loop() -> None:
 
 _shadow_alerted: set[str] = set()
 _autonomy_alerted: set[str] = set()  # R2: una alerta por proceso+proveedor
+_beacon_alerted: set[str] = set()    # D3: una alerta de beaconing por clave
 
 
 def _provider_of(ev: dict) -> str:
@@ -313,6 +314,38 @@ def _is_approved_provider(provider: str) -> bool:
         pass
     return any(provider == a or provider.endswith("." + a)
                for a in approved if a)
+
+
+def _on_beacon(key: tuple, stats: dict) -> None:
+    """D3: una clave IA acaba de pasar a beaconing (CV bajo, N>=5).
+    Corriendo en el hilo del monitor; fail-safe total."""
+    if not _cfg.get("alerts_enabled") or alerts is None:
+        return
+    try:
+        proc, ip, port = key
+        ev = store.get_event_by_key(proc, ip, port) if store else None
+        if ev is None:
+            return
+        if not (ev.get("catalog_domain") or ev.get("ai_layer")):
+            return  # solo IA: el beaconing de trafico no-IA no es alerta aqui
+        host = _provider_of(ev)
+        k = f"{proc}:{host}"
+        if k in _beacon_alerted:
+            return
+        _beacon_alerted.add(k)
+        alerts.push(
+            "beaconing_ai_call",
+            (f"Beaconing IA: {proc} -> {host}:{port} "
+             f"({stats['sessions']} sesiones, CV "
+             f"{stats['iat_cv']:.3f})"),
+            details={"process": proc, "provider": host,
+                     "dest_ip": ip, "dest_port": port,
+                     "sessions": stats["sessions"],
+                     "iat_cv": stats["iat_cv"],
+                     "beacon_score": stats["beacon_score"]},
+        )
+    except Exception:
+        pass
 
 
 def _on_new_ai_event(ev: dict) -> None:
@@ -416,7 +449,8 @@ def _start() -> None:
     monitor = NetMonitor(store, extra_hosts=list(_cfg["extra_hosts"]),
                          sysmon_fn=sm, eid22_fn=eid22, eid1_fn=eid1,
                          sni_fn=sni_fn, prune_fn=_prune_retention,
-                         on_new_event=_on_new_ai_event)
+                         on_new_event=_on_new_ai_event,
+                         on_beacon=_on_beacon)
     monitor.start()
     _auto_stop.clear()
     threading.Thread(target=_auto_classify_loop, daemon=True,
@@ -907,6 +941,7 @@ def reset(req: ResetRequest):
     # Sin eventos no hay dedup que conserve: re-alerta desde cero.
     _shadow_alerted.clear()
     _autonomy_alerted.clear()
+    _beacon_alerted.clear()
     return {**out, "daily_stats_kept": True}
 
 

@@ -2,14 +2,39 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## Sesiones y beaconing (F1/D3, v2.1) — episodios de conexion, no polls
+
+### Anadido
+- **F1 sesiones**: sesion = transicion ausente->presente por clave
+  (proceso, IP, puerto). Un keep-alive largo que sigue presente en cada
+  poll NO suma (sigue siendo 1); un reconnect si. Sysmon EID 3 y polling
+  alimentan el mismo set de presencia: sin doble conteo. Persistido:
+  `events.sessions` (acumulado) + tabla `sessions_log` (timestamps por
+  sesion; techo 50 por clave, prune con la retencion).
+- **D3 beaconing**: CV (coef. de variacion) de los inter-arrival sobre la
+  ventana de los ultimos 20 timestamps; beaconing si N>=5 y CV<=0.3
+  (periodicidad regular: beacon, no keep-alive). Persistido `iat_cv` +
+  `beacon_score`; `new_beaconing` solo en la transicion.
+- **Jev**: `sessions`, `iat_cv`, `beaconing` en el payload.
+- **Alerta `beaconing_ai_call`**: una por clave IA que transita a
+  beaconing; el reset limpia el dedup y re-alerta. No-IA no alerta.
+- **UI**: columna *Sesiones* (badge `beacon`) y *Polls* (antes *Veces*):
+  la diferencia entre muestras y episodios es visible.
+- Tests: aceptacion (sintetica cada 60 s -> CV~0 -> beaconing; keep-alive
+  -> sessions=1 sin beacon), transiciones ausente->presente, techo de
+  ventana, callback una sola vez, dedup de alerta / no-IA, payload Jev
+  (`tests/test_f1_d3.py`).
+
 ## Autonomía (R2, v2.1) — quién hace la salida a IA
 
 ### Añadido
 - **`autonomy.py`**: señales locales (ctypes/stdlib, fail-safe): idle global
-  (`GetLastInputInfo`) con auto-diagnóstico de vida (si el contador no
-  avanza — monitor en sesión de servicio/sesión 0 — degrada a `None`,
-  nunca a autonomía inventada), sesión bloqueada/pantalla apagada
-  (presencia de `LogonUI.exe`), foreground PID (`GetForegroundWindow`).
+  (`GetLastInputInfo`) con dos guardas de honestidad: idle > uptime →
+  `None` de inmediato (valor imposible — p. ej. sesión sin entrada
+  reportando un contador viejo), y auto-diagnóstico de vida (contador que
+  no avanza → `None`). Nunca inventa autonomía: `idle=None ⇒ unknown`,
+  nunca autonomous. Sesión bloqueada/pantalla apagada (presencia de
+  `LogonUI.exe`), foreground PID (`GetForegroundWindow`).
 - **Linaje de autonomía** vía Sysmon EID 1 (`poll_sysmon_process_creation`):
   padre servicio (`svchost`) o tarea programada (`schtasks`/Task Scheduler)
   → flags `service_parent` / `scheduled_task`.
@@ -19,6 +44,11 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   programado; usuario activo (<60 s) → user_driven; resto, unknown.
 - **Jev**: `user_active` ya no es siempre "unknown": lleva el veredicto
   persistido del evento.
+- **Veredictos y vida de la conexion**: el veredicto se recalcula en cada
+  observacion (se sobreescribe). Una conexion desaparecida conserva su
+  ultimo veredicto hasta que la conexion vuelva a ser observada; el reset
+  limpia todo. Sin re-evaluacion al arrancar: las senales del arranque
+  tienen la misma ventana de basura que cualquier otro momento.
 - **Alerta `autonomous_ai_call`**: una por (proceso, proveedor); el reset
   limpia el dedup y re-alerta.
 - **`GET /api/autonomy`**: señales globales del momento + eventos con

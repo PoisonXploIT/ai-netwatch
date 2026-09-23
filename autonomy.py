@@ -50,19 +50,35 @@ def _probe_ms() -> int | None:
         return None
 
 
+def _uptime_ms() -> int | None:
+    """Milisegundos desde el boot (GetTickCount64). None si no hay."""
+    try:
+        k32 = ctypes.windll.kernel32
+        v = int(k32.GetTickCount64())
+        return v if v > 0 else None
+    except Exception:
+        return None
+
+
 def get_idle_seconds() -> int | None:
     """Segundos desde la ultima entrada del usuario (global).
 
-    Auto-diagnostico de vida: si el contador no avanza con el tiempo real
-    (delta 0 entre probes), el monitor corre en una sesion sin entrada
-    (servicio/sesion 0) y el valor NO es confiable -> None. Nunca inventa:
-    una senal inutil degrada a unknown, no a autonomia falsa.
+    Dos guardas de honestidad (nunca inventar autonomia):
+    - idle > uptime es imposible: valor basura (p. ej. sesion sin entrada
+      reportando un contador viejo) -> None de inmediato.
+    - Auto-diagnostico de vida: si el contador no avanza con el tiempo
+      real (delta 0 entre probes), la senal no es confiable -> None.
     """
     if sys.platform != "win32":
         return None
     global _last_probe
     ms = _probe_ms()
     if ms is None:
+        return None
+    up = _uptime_ms()
+    if up is not None and ms > up:
+        # Imposible: mas idle que uptime. Basura -> no confiable.
+        _last_probe = (time.monotonic(), ms)
         return None
     now = time.monotonic()
     if _last_probe is not None:

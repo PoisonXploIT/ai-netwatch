@@ -92,6 +92,19 @@ uv pip install fastapi uvicorn
 
 Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar), toggle Sysmon y toggle tshark sobreviven al reinicio.
 
+## Sesiones y beaconing (F1/D3, v2.1)
+
+**Sesiones (F1)**: una sesión es una transición ausente→presente por clave
+(proceso, IP, puerto); un keep-alive largo que sigue presente en cada poll
+sigue siendo 1 sesión, un reconnect suma. `events.sessions` + tabla
+`sessions_log` (timestamps, prune con la retención). **Beaconing (D3)**: CV
+de los inter-arrival sobre la ventana de los últimos 20 timestamps;
+beaconing si N≥5 y CV≤0.3 (periodicidad regular → beacon, no keep-alive),
+con `iat_cv`/`beacon_score` persistidos, alerta `beaconing_ai_call` (una
+por clave IA) y badge `beacon` en la tabla de eventos (columna *Sesiones*;
+*Polls* es el antiguo *Veces*). Jev recibe `sessions`, `iat_cv`,
+`beaconing`.
+
 ## Autonomía (R2, v2.1)
 
 Detectar IA no dice **quién** decide la salida. R2 persiste por evento
@@ -141,7 +154,7 @@ Los tres exports se descargan (`Content-Disposition: attachment`) y se generan e
 
 ## Contrato Jev (exacto)
 
-Modelo pin `jev-1.13.0`, una llamada batch por triaje (cap 50 eventos). State por evento: `process, dest_ip, dest_port, dest_host, sni_domain, catalog_domain, seen_count, first_seen, last_seen, user_active="unknown"` (el titulo usa el dominio SNI si existe, porque es el real). Preguntas con criteria contrastivas:
+Modelo pin `jev-1.13.0`, una llamada batch por triaje (cap 50 eventos). State por evento: `process, dest_ip, dest_port, dest_host, sni_domain, catalog_domain, seen_count, first_seen, last_seen, user_active` (veredicto de autonomía R2), `sessions, iat_cv, beaconing` (F1/D3) (el titulo usa el dominio SNI si existe, porque es el real). Preguntas con criteria contrastivas:
 
 1. **Choice** — `expected_ai_use` / `background_exfil_suspect` / `telemetry_noise` / `unrelated`
 2. **Score 0-3** — criticidad de exfiltracion (0 esperado/sin datos; 1 telemetry baja sensibilidad; 2 background a destino ambiguo; 3 probable exfiltracion activa)

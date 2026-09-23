@@ -133,6 +133,13 @@ def _state_for(event: dict) -> dict:
         # R2: veredicto de autonomia persistido por evento (user_driven |
         # autonomous | scheduled); unknown si no hay senal.
         "user_active": str(event.get("autonomy_verdict") or "unknown"),
+        # F1/D3: sesiones (no polls) y beaconing (CV de inter-arrival).
+        "sessions": int(event.get("sessions") or 1),
+        "iat_cv": event.get("iat_cv"),
+        "beaconing": bool(
+            event.get("iat_cv") is not None
+            and float(event["iat_cv"]) <= 0.3
+            and int(event.get("sessions") or 0) >= 5),
     }
 
 

@@ -41,6 +41,15 @@ CREATE TABLE IF NOT EXISTS triages (
     model TEXT,
     payload TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS sessions_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    process TEXT NOT NULL,
+    dest_ip TEXT NOT NULL,
+    dest_port INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_key
+    ON sessions_log(process, dest_ip, dest_port, ts);
 CREATE TABLE IF NOT EXISTS domain_classifications (
     domain TEXT PRIMARY KEY,
     is_ai INTEGER NOT NULL,
@@ -55,6 +64,36 @@ CREATE TABLE IF NOT EXISTS domain_classifications (
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+
+
+# D3: umbral de beaconing. CV (coef. de variacion de inter-arrival)
+# <= 0.3 con >=5 sesiones = periodicidad regular (beacon), no keep-alive.
+_BEACON_CV_MAX = 0.3
+_BEACON_MIN_N = 5
+
+
+def _ts_to_epoch(ts: str) -> float | None:
+    try:
+        return datetime.strptime(
+            str(ts), "%Y-%m-%d %H:%M:%SZ"
+        ).replace(tzinfo=timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _cv_from_ts(ts_list: list[str]) -> float | None:
+    """CV (desv/ media) de los inter-arrival de timestamps de sesion
+    (orden ascendente). None si no hay datos suficientes."""
+    epochs = [e for e in (_ts_to_epoch(t) for t in ts_list)
+              if e is not None]
+    if len(epochs) < 2:
+        return None
+    iats = [b - a for a, b in zip(epochs, epochs[1:])]
+    mean = sum(iats) / len(iats)
+    if mean <= 0:
+        return None
+    var = sum((x - mean) ** 2 for x in iats) / len(iats)
+    return (var ** 0.5) / mean
 
 
 def _cutoff_ts(days: int) -> str:
@@ -209,6 +248,15 @@ class Store:
             if "autonomy_verdict" not in cols:
                 self.conn.execute(
                     "ALTER TABLE events ADD COLUMN autonomy_verdict TEXT")
+            # F1/D3: sesiones (no polls) y beaconing por clave.
+            if "sessions" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE events ADD COLUMN sessions INTEGER NOT NULL DEFAULT 1")
+            if "iat_cv" not in cols:
+                self.conn.execute("ALTER TABLE events ADD COLUMN iat_cv REAL")
+            if "beacon_score" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE events ADD COLUMN beacon_score INTEGER")
             self.conn.commit()
 
     def _today(self) -> str:
@@ -262,8 +310,8 @@ class Store:
                 cur = self.conn.execute(
                     "INSERT INTO events (ts, process, dest_ip, dest_port, dest_host,"
                     " catalog_domain, protocol, image, ai_layer, seen_count, first_seen, last_seen,"
-                    " autonomy_score, autonomy_flags, autonomy_verdict)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)",
+                    " autonomy_score, autonomy_flags, autonomy_verdict, sessions)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,0)",
                     (ts, process, dest_ip, dest_port, dest_host, catalog_domain,
                      protocol, image, ai_layer, ts, ts,
                      autonomy_score, autonomy_flags, autonomy_verdict),
@@ -399,6 +447,85 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
         return [dict(r) for r in
                 self.conn.execute(q, (_cutoff_ts(days),)).fetchall()]
 
+    def get_event_by_key(self, process: str, dest_ip: str,
+                         dest_port: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM events WHERE process=? AND dest_ip=? AND dest_port=?",
+            (process, dest_ip, dest_port)).fetchone()
+        return dict(row) if row else None
+
+    def record_session(self, process: str, dest_ip: str,
+                       dest_port: int) -> dict:
+        """F1/D3: inicio de sesion (transicion ausente->presente).
+
+        Incrementa events.sessions, guarda el timestamp en sessions_log y
+        recalcula beaconing con la ventana de los ultimos 20 timestamps:
+        CV = desv/ media de inter-arrival; beaconing si N>=5 y CV<=0.3.
+        Devuelve {sessions, iat_cv, beacon_score, beaconing,
+        new_beaconing} (new_beaconing = transicion a beaconing ahora).
+        """
+        out: dict[str, object] = {
+            "sessions": 0, "iat_cv": None, "beacon_score": None,
+               "beaconing": False, "new_beaconing": False}
+        with self._lock:
+            # Reconciliacion: el conteo acumulado es max(eventos, log);
+            # ambos avanzan juntos en produccion y esto cubre deriva o
+            # filas legacy (pre-F1, donde sessions no existia).
+            row = self.conn.execute(
+                "SELECT sessions FROM events"
+                " WHERE process=? AND dest_ip=? AND dest_port=?",
+                (process, dest_ip, dest_port)).fetchone()
+            log_n = self.conn.execute(
+                "SELECT COUNT(*) FROM sessions_log"
+                " WHERE process=? AND dest_ip=? AND dest_port=?",
+                (process, dest_ip, dest_port)).fetchone()[0]
+            n_prev = max(int(row["sessions"]) if row else 0, int(log_n))
+            n_new = n_prev + 1
+            prev = [r[0] for r in self.conn.execute(
+                "SELECT ts FROM sessions_log"
+                " WHERE process=? AND dest_ip=? AND dest_port=?"
+                " ORDER BY ts DESC LIMIT 19",
+                (process, dest_ip, dest_port))]
+            # Estado ANTES de esta sesion: sin el +1 (la transicion se
+            # detecta contra lo que ya habia, no contra lo nuevo).
+            old_cv = _cv_from_ts(sorted(prev)) if len(prev) >= 4 else None
+            old_n = len(prev)
+            old_beacon = bool(
+                old_cv is not None and old_cv <= _BEACON_CV_MAX
+                and old_n >= _BEACON_MIN_N)
+            self.conn.execute(
+                "INSERT INTO sessions_log (ts, process, dest_ip, dest_port)"
+                " VALUES (?,?,?,?)", (_now(), process, dest_ip, dest_port))
+            # Techo por clave: la ventana de stats solo usa 20; no dejar
+            # mas de 50 timestamps por (proceso, ip, puerto).
+            self.conn.execute(
+                "DELETE FROM sessions_log WHERE process=? AND dest_ip=?"
+                " AND dest_port=? AND id NOT IN ("
+                " SELECT id FROM sessions_log"
+                " WHERE process=? AND dest_ip=? AND dest_port=?"
+                " ORDER BY ts DESC, id DESC LIMIT 50)",
+                (process, dest_ip, dest_port,
+                 process, dest_ip, dest_port))
+            win = [r[0] for r in self.conn.execute(
+                "SELECT ts FROM sessions_log"
+                " WHERE process=? AND dest_ip=? AND dest_port=?"
+                " ORDER BY ts DESC LIMIT 20",
+                (process, dest_ip, dest_port))]
+            cv = _cv_from_ts(sorted(win)) if len(win) >= 4 else None
+            beaconing = bool(
+                cv is not None and cv <= _BEACON_CV_MAX
+                and n_new >= _BEACON_MIN_N)
+            score = int(round((1.0 - min(cv, 1.0)) * 100)) if cv is not None else None
+            self.conn.execute(
+                "UPDATE events SET sessions=?, iat_cv=?, beacon_score=?"
+                " WHERE process=? AND dest_ip=? AND dest_port=?",
+                (n_new, cv, score, process, dest_ip, dest_port))
+            self.conn.commit()
+        out.update({"sessions": n_new, "iat_cv": cv, "beacon_score": score,
+                    "beaconing": beaconing,
+                    "new_beaconing": beaconing and not old_beacon})
+        return out
+
     def autonomy_events(self, limit: int = 100) -> list[dict]:
         """Eventos con veredicto de autonomia autonomous/scheduled (R2)."""
         q = ("SELECT * FROM events"
@@ -455,11 +582,14 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
                 "DELETE FROM events WHERE last_seen < ?", (cut,)).rowcount
             tr = self.conn.execute(
                 "DELETE FROM triages WHERE ts < ?", (cut,)).rowcount
+            sl = self.conn.execute(
+                "DELETE FROM sessions_log WHERE ts < ?", (cut,)).rowcount
             # VACUUM no puede correr dentro de la transaccion del DELETE.
             self.conn.commit()
             self.conn.execute("VACUUM")
             self.conn.commit()
-        return {"events_removed": ev, "triages_removed": tr}
+        return {"events_removed": ev, "triages_removed": tr,
+                "sessions_removed": sl}
 
     def reset(self) -> dict:
         """Borra eventos y triajes vivos; daily_stats NO se toca (historico)."""
@@ -468,6 +598,7 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             tr = self.conn.execute("SELECT COUNT(*) FROM triages").fetchone()[0]
             self.conn.execute("DELETE FROM events")
             self.conn.execute("DELETE FROM triages")
+            self.conn.execute("DELETE FROM sessions_log")
             self.conn.commit()
         return {"events_removed": ev, "triages_removed": tr}
 

@@ -205,13 +205,18 @@
     </details>
 
     <details>
+      <summary>Sesiones y beaconing (F1/D3)</summary>
+      <p>La columna <b>Sesiones</b> cuenta episodios de conexión, no polls: una sesión es una transición ausente→presente por (proceso, IP, puerto). Un keep-alive largo que sigue presente sigue siendo 1; un reconnect suma. El badge <b>beacon</b> marca beaconing: periodicidad regular (CV de inter-arrival ≤0.3 con ≥5 sesiones) — patrón típico de C2, no de keep-alive. Dispara la alerta <span class="mono">beaconing_ai_call</span> (una por clave IA).</p>
+    </details>
+
+    <details>
       <summary>Autonomía (R2)</summary>
       <p>Cada evento IA lleva un veredicto persistido: <b>usuario</b>, <b>autónomo</b> o <b>programado</b>. Señales: sesión bloqueada/pantalla apagada, usuario inactivo, foreground y linaje del proceso (padre servicio/tarea programada vía Sysmon EID 1). El triaje Jev recibe el estado real del usuario (<span class="mono">user_active</span>), y una salida autónoma/programada dispara la alerta <span class="mono">autonomous_ai_call</span>. Sin señales disponibles, el veredicto queda <i>unknown</i>: nunca se inventa.</p>
     </details>
 
     <details>
       <summary>Panel</summary>
-      <p>El <b>Panel</b> agrega lo que ya existe (7 días): actividad diaria, top proveedores/procesos por presencia (<span class="mono">seen_count</span> = polls, no sesiones), reparto por capa, número de Shadow AI y LLM Inspector local (llamadas/tokens/bytes). <b>Bytes cloud: no disponible para TLS remoto</b> (requiere ETW/logman, v2.1); el egress en bytes sí se mide para el LLM local.</p>
+      <p>El <b>Panel</b> agrega lo que ya existe (7 días): actividad diaria, top proveedores/procesos por presencia (<span class="mono">seen_count</span> = polls; las sesiones son la columna <b>Sesiones</b> de eventos, F1), reparto por capa, número de Shadow AI y LLM Inspector local (llamadas/tokens/bytes). <b>Bytes cloud: no disponible para TLS remoto</b> (requiere ETW/logman, v2.1); el egress en bytes sí se mide para el LLM local.</p>
     </details>
 
     <details>

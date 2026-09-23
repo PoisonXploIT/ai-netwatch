@@ -174,7 +174,7 @@ class NetMonitor(threading.Thread):
                  pidmap_fn=poll_pid_map, dns_fn=poll_dns_cache,
                  udp_fn=poll_udp_endpoints, catalog_fn=poll_catalog_ips,
                  sysmon_fn=None, sni_fn=None, eid22_fn=None, eid1_fn=None,
-                 prune_fn=None, on_new_event=None,
+                 prune_fn=None, on_new_event=None, on_beacon=None,
                  interval: float = _POLL_S, extra_hosts: list[str] | None = None):
         super().__init__(daemon=True, name="ai-netwatch-monitor")
         self.store = store
@@ -191,8 +191,13 @@ class NetMonitor(threading.Thread):
         # con cache corta (las llamadas Win32 son baratas pero no gratis).
         self._lineage: dict[str, dict] = {}
         self._aut_cache: tuple[float, dict] | None = None
+        # F1: presencia por clave (proceso, ip, puerto) entre ciclos; la
+        # transicion ausente->presente es una sesion nueva (no un poll).
+        self._seen_iter: set[tuple[str, str, int]] = set()
+        self._prev_present: set[tuple[str, str, int]] = set()
         self._prune = prune_fn
         self._on_new_event = on_new_event
+        self._on_beacon = on_beacon
         self._eid22_cache: dict[str, str] = {}
         self._sm_last_recid = 0
         self._catalog_ip_cache: dict[str, str] = {}
@@ -241,6 +246,7 @@ class NetMonitor(threading.Thread):
             autonomy_flags=",".join(aut["flags"]) or None,
             autonomy_verdict=aut["verdict"],
         )
+        self._seen_iter.add((proc, ip, port))
         if is_new and self._on_new_event is not None:
             self._on_new_event(ev)
 
@@ -321,6 +327,21 @@ class NetMonitor(threading.Thread):
                     "parent_cmdline": e.get("parent_cmdline"),
                 }
 
+    def _session_cycle(self) -> None:
+        """F1/D3: sesion nueva = transicion ausente->presente por clave.
+
+        Un keep-alive largo que sigue presente en cada poll NO suma
+        sesiones (sigue siendo 1); un reconnect si. Sysmon EID 3 y polling
+        alimentan el mismo set, sin doble conteo. _prev_present SIEMPRE
+        se actualiza (incluso a vacio): una clave ausente deja de estar
+        presente y su regreso es sesion nueva."""
+        new_keys = self._seen_iter - self._prev_present
+        for key in new_keys:
+            stats = self.store.record_session(*key)
+            if stats.get("new_beaconing") and self._on_beacon is not None:
+                self._on_beacon(key, stats)
+        self._prev_present = set(self._seen_iter)
+
     def _eid22_cycle(self) -> None:
         """Refresca IP -> dominio desde Sysmon EID 22 (DnsQuery).
 
@@ -384,6 +405,7 @@ catalog_domain solo si estaba vacio.
                 self._cycle(conns)
                 self._sysmon_cycle()
                 self._eid1_cycle()
+                self._session_cycle()
                 self._sni_cycle()
             except Exception as e:  # fail-safe: el monitor nunca rompe el server
                 self.errors.append(f"{time.strftime('%H:%M:%S')} {type(e).__name__}: {e}")

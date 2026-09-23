@@ -114,6 +114,22 @@ class TestIdleLiveness(unittest.TestCase):
                 autonomy, "_probe_ms", return_value=1234):
             self.assertEqual(autonomy.get_idle_seconds(), 1)
 
+    def test_idle_exceeding_uptime_is_none_immediately(self):
+        # Guard inmediato: idle > uptime es imposible -> None sin esperar
+        # a que el contador se congele (primera llamada ya).
+        autonomy._last_probe = None
+        # 10^9 ms (~11.5 dias) > uptime de 1 dia: imposible -> None.
+        with unittest.mock.patch.object(
+                autonomy, "_probe_ms", return_value=10**9), \
+             unittest.mock.patch.object(
+                 autonomy, "_uptime_ms", return_value=86_400_000):
+            self.assertIsNone(autonomy.get_idle_seconds())
+
+    def test_idle_none_never_autonomous(self):
+        # idle=None (senal no confiable) => unknown, nunca autonomous.
+        r = autonomy.evaluate("x.exe", idle_seconds=None, locked=False)
+        self.assertEqual(r["verdict"], autonomy.UNKNOWN)
+
 
 class TestSignalsSmoke(unittest.TestCase):
     """Las señales Win32 devuelven el tipo correcto y nunca lanzan."""

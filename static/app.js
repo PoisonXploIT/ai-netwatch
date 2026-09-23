@@ -66,6 +66,13 @@ function aiLayerHtml(layer) {
   return `<span title="${esc(pair[1])}">${esc(pair[0])}</span>`;
 }
 
+function beaconBadge(e) {
+  if (e.iat_cv == null || !e.sessions || e.sessions < 5) return "";
+  const cv = Number(e.iat_cv);
+  if (!(cv <= 0.3)) return "";
+  return ` <span class="badge-bad" title="Beaconing: ${e.sessions} sesiones con CV ${cv.toFixed(3)} (<=0.3 = periodicidad regular)">beacon</span>`;
+}
+
 function autonomyBadge(verdict, score) {
   const map = {
     user_driven: ["usuario", "El usuario estaba activo (entrada reciente, sin bloqueo)."],
@@ -95,12 +102,13 @@ function eventsTableHtml(events) {
     <td>${esc(e.catalog_domain || "")}</td>
     <td>${aiLayerHtml(e.ai_layer)}</td>
     <td>${autonomyBadge(e.autonomy_verdict, e.autonomy_score)}</td>
+    <td class="num">${e.sessions ?? 1}${beaconBadge(e)}</td>
     <td class="num">${e.seen_count}</td>
     <td class="mono small">${esc(e.first_seen)}</td>
     <td class="mono small">${esc(e.last_seen)}</td>
   </tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th>IA (capa)</th><th>Autonomía</th><th class="num">Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th title="Sesiones = transiciones ausente→presente (F1); Polls = muestras de presencia.">IA (capa)</th><th>Autonomía</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Primera vez</th><th>Última vez</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
