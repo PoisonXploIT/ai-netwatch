@@ -4,9 +4,25 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
 ## Proximo
 
-Nada pendiente de v2.3; el siguiente hito se define tras su cierre/tag.
+Nada pendiente de v2.4 salvo la verificacion e2e y el tag.
 
-Hecho en v2.3 (sin tag aun):
+Hecho en v2.4 (sin tag aun):
+- fix prob_falso_positivo: ahora es 1 - conf para TODOS los veredictos
+  (la confianza es sobre el veredicto elegido; antes, con veredictos
+  sospechosos, salia la confianza cruda, que es lo contrario).
+- Investigar con LLM local por evento (asesoria, NO re-puntuacion):
+  `POST /api/investigate {event_id}`. Contexto truncado y sin secretos:
+  evento + veredicto Jev del ultimo triaje (si existe) + sesiones/iat_cv/
+  beaconing + autonomia + provider/kind + SDK del proceso + bytes locales
+  del LLM de ese proceso. Respuesta JSON estricto {evaluacion:
+  confirm|refuta|insuficiente, porque, evidencia_faltante} (campos
+  truncados). Display-only: no altera veredictos ni aprobaciones; Jev
+  sigue siendo el juez. Sin LLM configurado degrada a 'no disponible'
+  (fail-safe); SSRF cubierto por llm_base_url (solo loopback). Boton
+  "Investigar con LLM local" en la fila del evento, visible solo si
+  llm_enabled; resultado en bloque debajo de la fila.
+
+Hecho en v2.3 (tag v2.3):
 - Evidence exportable: cadena de hashes + bundle STIX 2.1 (`evidence`,
   modulo puro, sin librerias externas). Cadena: cada fila liga indice +
   hash anterior + evento (genesis fijo); alterar cualquier fila rompe el

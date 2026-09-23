@@ -35,7 +35,8 @@ import evidence
 import rules
 import secret_store
 from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
-from llm_local import explain_events, is_loopback_url
+from llm_local import (explain_events, investigate_event,
+                       is_loopback_url)
 from llm_proxy import LlmProxy
 from pdf_export import build_report_pdf
 from monitor import NetMonitor
@@ -825,6 +826,10 @@ class TriageRequest(BaseModel):
     event_ids: list[int] | None = None
 
 
+class InvestigateRequest(BaseModel):
+    event_id: int
+
+
 class TestRequest(BaseModel):
     target: str  # jev | llm
 
@@ -1109,6 +1114,93 @@ def latest_triage():
     if not t:
         raise HTTPException(404, "sin triajes")
     return t
+
+
+def _jev_verdict_for_event(event_id: int) -> dict | None:
+    """Veredicto Jev del ultimo triaje para ese evento (None si no hay).
+    El payload guarda el indice i de cada evento en la lista triada; los
+    veredictos van por str(i)."""
+    t = _req_store().latest_triage()
+    if not t:
+        return None
+    payload = t.get("payload") or {}
+    evs = payload.get("events") or []
+    verdicts = (payload.get("jev") or {}).get("verdicts") or {}
+    for i, e in enumerate(evs):
+        if int(e.get("id") or -1) == int(event_id):
+            v = verdicts.get(str(i))
+            return v if isinstance(v, dict) else None
+    return None
+
+
+def _investigate_context(e: dict) -> dict:
+    """v2.4: contexto (truncado, sin secretos) para la asesoria LLM local.
+    Display-only: no se guarda nada; Jev sigue siendo el juez."""
+    provider = _provider_of(e)
+    sdk_map = monitor.sdk_fingerprint_map() if monitor is not None else {}
+    fp = sdk_map.get(str(e.get("image") or ""))
+    proc = str(e.get("process") or "")
+    bytes_local: int | None = None
+    calls = llm_calls.list_calls(limit=100) if llm_calls else []
+    for c in calls:
+        if str(c.get("client_process") or "") == proc:
+            b = int(c.get("request_bytes") or 0) + \
+                int(c.get("response_bytes") or 0)
+            bytes_local = (bytes_local or 0) + b
+    iat_cv = e.get("iat_cv")
+    return {
+        "evento": {
+            "process": str(proc)[:80],
+            "image": str(e.get("image") or "")[:200],
+            "dest_ip": str(e.get("dest_ip") or ""),
+            "dest_port": int(e.get("dest_port") or 0),
+            "dest_host": str(e.get("dest_host") or "")[:120],
+            "sni_domain": str(e.get("sni_domain") or "")[:120],
+            "catalog_domain": str(e.get("catalog_domain") or ""),
+            "ai_layer": e.get("ai_layer"),
+            "seen_count": int(e.get("seen_count") or 1),
+            "first_seen": str(e.get("first_seen") or ""),
+            "last_seen": str(e.get("last_seen") or ""),
+        },
+        # Veredicto Jev como DATO (el LLM opina sobre el; nunca lo cambia).
+        "jev": _jev_verdict_for_event(int(e["id"])),
+        "sesiones": int(e.get("sessions") or 1),
+        "iat_cv": iat_cv,
+        "beaconing": bool(iat_cv is not None and float(iat_cv) <= 0.3
+                          and int(e.get("sessions") or 0) >= 5),
+        "autonomia": {
+            "verdict": e.get("autonomy_verdict"),
+            "score": e.get("autonomy_score"),
+            "flags": str(e.get("autonomy_flags") or "")[:200],
+        },
+        "destino": {"provider": provider,
+                    "kind": destination_kind(provider)},
+        # None si no hay artefacto verificable (degradacion honesta).
+        "sdk_proceso": fp,
+        # Bytes egress hacia el LLM local de este proceso (si aplica).
+        "bytes_llm_local_proceso": bytes_local,
+    }
+
+
+@app.post("/api/investigate")
+def investigate(req: InvestigateRequest):
+    """v2.4: asesoria LLM local por evento (display-only, NO re-puntuacion).
+
+    Jev sigue siendo el juez: esto no altera veredictos ni aprobaciones;
+    solo opina sobre el contexto del evento. Sin LLM configurado degrada
+    a 'no disponible' (fail-safe). SSRF ya cubierto por llm_base_url."""
+    st = _req_store()
+    e = st.get_event(req.event_id)
+    if not e:
+        raise HTTPException(404, "evento no existe")
+    if not (_cfg.get("llm_enabled") and _cfg.get("llm_base_url")
+            and _cfg.get("llm_model")):
+        return {"status": "unavailable", "reason": "llm_no_configurado"}
+    base = _effective_llm_base().strip()
+    if not is_loopback_url(base):
+        return {"status": "unavailable", "reason": "not_loopback"}
+    return investigate_event(
+        base, str(_cfg["llm_model"]), _investigate_context(e))
 
 
 def _pid_by_local_ports(ports: set[int]) -> dict[int, int]:

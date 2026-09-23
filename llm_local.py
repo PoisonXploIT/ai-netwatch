@@ -64,6 +64,48 @@ def _parse_json(content: str) -> dict | None:
         return None
 
 
+INVESTIGATE_EVALS = ("confirm", "refuta", "insuficiente")
+
+
+def investigate_event(base_url: str, model: str, context: dict) -> dict:
+    """v2.4: asesoria LLM local sobre un evento (display-only).
+
+    Jev sigue siendo el juez: esto NO re-puntua ni altera veredictos ni
+    aprobaciones; el LLM solo opina sobre el contexto que recibe.
+    Devuelve {status: ok, evaluacion: confirm|refuta|insuficiente,
+    porque, evidencia_faltante} (campos truncados) o
+    {status: unavailable, reason} (fail-safe)."""
+    if not base_url or not model:
+        return {"status": "unavailable", "reason": "llm_no_configurado"}
+    if not is_loopback_url(base_url):
+        return {"status": "unavailable", "reason": "not_loopback"}
+    system = (
+        "Eres un analista de ciberseguridad local que ASESORA sobre un"
+        " evento de red ya clasificado por Jev. Jev sigue siendo el juez:"
+        " tu papel es advisory y no modifica ningun veredicto ni aprobacion."
+        " Compara el contexto con el veredicto Jev (si existe) y responde"
+        " SOLO con JSON estricto {evaluacion, porque, evidencia_faltante}"
+        " donde evaluacion es 'confirm' (el contexto respalda el veredicto),"
+        " 'refuta' (hay senales claras en contra) o 'insuficiente' (no hay"
+        " datos bastantes para opinar). Max 120 palabras por campo, espanol."
+    )
+    try:
+        content = _chat(base_url, model, system,
+                        json.dumps(context, ensure_ascii=False), timeout=120)
+    except Exception as ex:
+        return {"status": "unavailable",
+                "reason": f"{type(ex).__name__}: {ex}"[:160]}
+    d = _parse_json(content)
+    if not d or d.get("evaluacion") not in INVESTIGATE_EVALS:
+        return {"status": "unavailable", "reason": "bad_json"}
+    return {
+        "status": "ok",
+        "evaluacion": str(d["evaluacion"])[:20],
+        "porque": str(d.get("porque") or "")[:400],
+        "evidencia_faltante": str(d.get("evidencia_faltante") or "")[:400],
+    }
+
+
 def explain_events(base_url: str, model: str, events: list[dict],
                    verdicts: dict | None = None) -> list[dict]:
     """Explicaciones tecnicas (espanol) de hasta MAX_EXPLAIN eventos.

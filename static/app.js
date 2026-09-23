@@ -120,7 +120,7 @@ function eventsTableHtml(events, grouped) {
   if (grouped) return groupedEventsTableHtml(events);
   if (!events.length) return `<div class="hint">Sin eventos todavía (monitor activo).</div>`;
   const rows = events.map((e) => `<tr>
-    <td>${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}</td>
+    <td>${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}${LLM_ENABLED ? `<div class="small"><button class="small" data-investigate="${e.id}">Investigar con LLM local</button></div>` : ""}</td>
     <td class="mono">${esc(e.dest_host || e.dest_ip)}:${e.dest_port}</td>
     <td>${esc(e.protocol || "tcp")}</td>
     <td class="mono">${esc(e.sni_domain || "")}</td>
@@ -222,8 +222,53 @@ function eventsQuery() {
 async function refreshEvents() {
   try {
     const d = await api("/api/events?" + eventsQuery());
-    document.getElementById("events-wrap").innerHTML = eventsTableHtml(d.events, d.grouped);
+    const wrap = document.getElementById("events-wrap");
+    wrap.innerHTML = eventsTableHtml(d.events, d.grouped);
+    wireInvestigate(wrap);
   } catch (e) { /* server caído */ }
+}
+
+function wireInvestigate(wrap) {
+  // v2.4: asesoria LLM local por evento (display-only; Jev sigue siendo el
+  // juez). Solo si llm_enabled; el resultado se inserta como fila debajo.
+  if (!LLM_ENABLED) return;
+  wrap.querySelectorAll("button[data-investigate]").forEach((b) => {
+    b.onclick = async () => {
+      const id = Number(b.dataset.investigate);
+      b.disabled = true;
+      const old = b.textContent;
+      b.textContent = "Investigando...";
+      try {
+        const r = await api("/api/investigate", { method: "POST", body: JSON.stringify({ event_id: id }) });
+        if (r.status === "ok") {
+          const badge = r.evaluacion === "confirm"
+            ? `<span class="badge-ok">${esc(r.evaluacion)}</span>`
+            : r.evaluacion === "refuta"
+              ? `<span class="badge-warn">${esc(r.evaluacion)}</span>`
+              : `<span class="hint">${esc(r.evaluacion)}</span>`;
+          const tr = b.closest("tr");
+          if (tr) {
+            const row = document.createElement("tr");
+            row.innerHTML = `<td colspan="11"><details open>
+              <summary>Asesoría LLM local — ${badge}</summary>
+              <p><b>Porque:</b> ${esc(r.porque || "")}</p>
+              <p><b>Evidencia faltante:</b> ${esc(r.evidencia_faltante || "—")}</p>
+              <p class="hint">Asesoría display-only: no altera veredictos ni aprobaciones; Jev sigue siendo el juez.</p>
+            </details></td>`;
+            tr.insertAdjacentElement("afterend", row);
+          }
+        } else {
+          b.disabled = false;
+          b.textContent = old;
+          toast(`Investigación no disponible (${r.reason || ""})`, "err");
+        }
+      } catch (e2) {
+        b.disabled = false;
+        b.textContent = old;
+        toast(e2.message, "err");
+      }
+    };
+  });
 }
 
 function llmCallsHtml(calls) {
@@ -254,6 +299,7 @@ async function refreshLlmCalls() {
   } catch (e) { /* server caído */ }
 }
 
+let LLM_ENABLED = false;
 let lastAlertId = 0;
 async function refreshAlerts() {
   try {
@@ -386,6 +432,7 @@ async function refreshDashboard() {
 async function loadConfig() {
   try {
     const c = await api("/api/config");
+    LLM_ENABLED = !!c.llm_enabled;
     document.getElementById("jev-key").value = c.jev_api_key || "";
     document.getElementById("llm-url").value = c.llm_base_url || "";
     document.getElementById("llm-model").value = c.llm_model || "";
