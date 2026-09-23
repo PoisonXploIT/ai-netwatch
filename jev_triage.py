@@ -130,7 +130,9 @@ def _state_for(event: dict) -> dict:
         "seen_count": int(event.get("seen_count") or 1),
         "first_seen": str(event.get("first_seen") or ""),
         "last_seen": str(event.get("last_seen") or ""),
-        "user_active": "unknown",
+        # R2: veredicto de autonomia persistido por evento (user_driven |
+        # autonomous | scheduled); unknown si no hay senal.
+        "user_active": str(event.get("autonomy_verdict") or "unknown"),
     }
 
 

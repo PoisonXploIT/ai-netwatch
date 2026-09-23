@@ -141,6 +141,58 @@ def poll_sysmon_dns(max_events: int = 300) -> list[dict]:
     return sorted(events, key=lambda e: e["record_id"])
 
 
+_PS_CMD_EID1 = (
+    "$ev = Get-WinEvent -LogName 'Microsoft-Windows-Sysmon/Operational'"
+    " -MaxEvents 300 -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq 1 };"
+    " $ev | ForEach-Object { @{ RecordId = [string]$_.RecordId; Xml = $_.ToXml() } }"
+    " | ConvertTo-Json -Compress"
+)
+
+
+def poll_sysmon_process_creation(max_events: int = 300) -> list[dict]:
+    """Eventos EventID 1 (ProcessCreate): linaje proceso -> padre (R2).
+
+    Cada evento: {record_id, ts, image, process, pid, parent_image,
+    parent_process, parent_cmdline}. Fallo de Sysmon/PS -> [] (fail-safe;
+    el resto del monitor sigue vivo).
+    """
+    out = _run_ps(_PS_CMD_EID1, timeout=45)
+    text = (out or "").strip()
+    if not text:
+        return []
+    try:
+        rows = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(rows, dict):  # PS 5.1: un solo objeto, no array
+        rows = [rows]
+    events: list[dict] = []
+    for r in rows:
+        fields = _xml_fields(r.get("Xml") or "")
+        try:
+            rec = int(r.get("RecordId") or 0)
+            image = str(fields.get("Image") or "")
+            proc = str(fields.get("ProcessName") or "")
+            pid = int(fields.get("ProcessId") or 0)
+            parent_image = str(fields.get("ParentImage") or "")
+        except (TypeError, ValueError):
+            continue
+        if not (rec and image and proc):
+            continue
+        events.append({
+            "record_id": rec,
+            "ts": str(fields.get("UtcTime") or ""),
+            "image": image,
+            "process": proc,
+            "pid": pid,
+            "parent_image": parent_image,
+            "parent_process": parent_image.rsplit("\\", 1)[-1]
+            .rsplit("/", 1)[-1],
+            "parent_cmdline": str(fields.get("ParentCommandLine") or ""),
+        })
+    return sorted(events, key=lambda e: e["record_id"])
+
+
 def _xml_fields(xml: str) -> dict[str, str]:
     """Data Name=... de un evento Sysmon -> {name: value} (tolerante)."""
     if not xml:

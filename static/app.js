@@ -66,6 +66,18 @@ function aiLayerHtml(layer) {
   return `<span title="${esc(pair[1])}">${esc(pair[0])}</span>`;
 }
 
+function autonomyBadge(verdict, score) {
+  const map = {
+    user_driven: ["usuario", "El usuario estaba activo (entrada reciente, sin bloqueo)."],
+    autonomous: ["autónomo", "Salida a IA con el usuario ausente/bloqueado o linaje de servicio."],
+    scheduled: ["programado", "Linaje indica tarea programada / Task Scheduler."],
+  };
+  const pair = map[verdict];
+  if (!pair) return "";
+  const s = score != null ? ` · score ${score}` : "";
+  return `<span title="${esc(pair[1])}${s}">${esc(pair[0])}</span>`;
+}
+
 function fmtBytes(n) {
   if (n == null) return "?";
   if (n < 1024) return n + " B";
@@ -82,12 +94,13 @@ function eventsTableHtml(events) {
     <td class="mono">${esc(e.sni_domain || "")}</td>
     <td>${esc(e.catalog_domain || "")}</td>
     <td>${aiLayerHtml(e.ai_layer)}</td>
+    <td>${autonomyBadge(e.autonomy_verdict, e.autonomy_score)}</td>
     <td class="num">${e.seen_count}</td>
     <td class="mono small">${esc(e.first_seen)}</td>
     <td class="mono small">${esc(e.last_seen)}</td>
   </tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th>IA (capa)</th><th class="num">Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th>IA (capa)</th><th>Autonomía</th><th class="num">Veces</th><th>Primera vez</th><th>Última vez</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -220,6 +233,27 @@ async function refreshShadow() {
         refreshShadow();
       };
     });
+  } catch (e) { /* sin datos aún */ }
+}
+
+async function refreshAutonomy() {
+  const wrap = document.getElementById("autonomy-wrap");
+  if (!wrap) return;
+  try {
+    const a = await api("/api/autonomy");
+    const sig = a.signals || {};
+    const lockedTxt = sig.locked == null ? "?" : (sig.locked ? "bloqueada" : "activa");
+    const idleTxt = sig.idle_seconds != null ? `${sig.idle_seconds} s` : "?";
+    let html = `<p class="hint">Sesión: <b>${esc(lockedTxt)}</b> · usuario inactivo: <b>${esc(idleTxt)}</b> · foreground PID: <b>${sig.foreground_pid != null ? esc(String(sig.foreground_pid)) : "?"}</b></p>`;
+    if (!a.events.length) {
+      html += '<p class="hint">Sin salidas IA autónomas/programadas registradas.</p>';
+    } else {
+      html += a.events.map(e => `<div class="row">
+        <span class="mono">${esc(e.process)} → ${esc(e.dest_host || e.dest_ip)}:${e.dest_port}</span>
+        <span class="hint">${esc(e.autonomy_verdict)} · score ${e.autonomy_score ?? "?"} · flags ${esc(e.autonomy_flags || "")} · último ${esc(e.last_seen)}</span>
+      </div>`).join("");
+    }
+    wrap.innerHTML = html;
   } catch (e) { /* sin datos aún */ }
 }
 
@@ -424,12 +458,14 @@ function bind() {
   refreshStats();
   refreshLlmCalls();
   refreshShadow();
+  refreshAutonomy();
   refreshDashboard();
   setInterval(refreshEvents, 5000);
   setInterval(refreshStats, 60000);
   setInterval(refreshLlmCalls, 10000);
   setInterval(refreshAlerts, 10000);
   setInterval(refreshShadow, 15000);
+  setInterval(refreshAutonomy, 15000);
   setInterval(refreshDashboard, 60000);
 }
 

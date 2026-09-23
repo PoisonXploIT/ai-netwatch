@@ -35,7 +35,8 @@ from pdf_export import build_report_pdf
 from monitor import NetMonitor
 from store import LlmCallStore, Store
 from sysmon_source import (poll_sysmon_dns, poll_sysmon_events,
-                           sysmon_available)
+                           poll_sysmon_process_creation, sysmon_available)
+import autonomy
 from tshark_source import (SniCapture, find_active_interface, sni_available,
                           tshark_path)
 
@@ -280,6 +281,7 @@ def _auto_classify_loop() -> None:
 
 
 _shadow_alerted: set[str] = set()
+_autonomy_alerted: set[str] = set()  # R2: una alerta por proceso+proveedor
 
 
 def _provider_of(ev: dict) -> str:
@@ -343,6 +345,24 @@ def _on_new_ai_event(ev: dict) -> None:
                      "provider": host, "dest_ip": ev.get("dest_ip"),
                      "dest_port": ev.get("dest_port"), "ai_layer": layer},
         )
+    # R2: salida a IA con veredicto autonomous/scheduled. Una alerta por
+    # (proceso, proveedor); el reset limpia el dedup y re-alerta.
+    verdict = str(ev.get("autonomy_verdict") or "")
+    if verdict in ("autonomous", "scheduled") and host:
+        key = f"{ev.get('process')}:{host}"
+        if key not in _autonomy_alerted:
+            _autonomy_alerted.add(key)
+            alerts.push(
+                "autonomous_ai_call",
+                (f"Autonomía: {ev.get('process')} -> {dest} "
+                 f"(veredicto {verdict}, score "
+                 f"{ev.get('autonomy_score')})"),
+                details={"event_id": ev.get("id"),
+                         "process": ev.get("process"), "provider": host,
+                         "verdict": verdict,
+                         "score": ev.get("autonomy_score"),
+                         "flags": str(ev.get("autonomy_flags") or "")},
+            )
 
 
 def _prune_retention() -> None:
@@ -383,6 +403,7 @@ def _start() -> None:
         _set_llm_proxy(True)
     sm = poll_sysmon_events if (_cfg["sysmon_enabled"] and sysmon_available()) else None
     eid22 = poll_sysmon_dns if sm else None  # mismo canal Sysmon que EID 3
+    eid1 = poll_sysmon_process_creation if sm else None  # R2: linaje
     sni_fn = None
     if _cfg["tshark_enabled"]:
         path = tshark_path()
@@ -393,8 +414,8 @@ def _start() -> None:
                 sni_capture.start()
                 sni_fn = sni_capture.poll_records
     monitor = NetMonitor(store, extra_hosts=list(_cfg["extra_hosts"]),
-                         sysmon_fn=sm, eid22_fn=eid22, sni_fn=sni_fn,
-                         prune_fn=_prune_retention,
+                         sysmon_fn=sm, eid22_fn=eid22, eid1_fn=eid1,
+                         sni_fn=sni_fn, prune_fn=_prune_retention,
                          on_new_event=_on_new_ai_event)
     monitor.start()
     _auto_stop.clear()
@@ -802,6 +823,17 @@ def shadow_providers() -> dict:
     return {"shadow": items, "count": len(items)}
 
 
+@app.get("/api/autonomy")
+def autonomy_state() -> dict:
+    """R2: senales globales de autonomia + eventos con veredicto
+    autonomous/scheduled. Las senales son del momento (no historico)."""
+    st = _req_store()
+    sig = {"idle_seconds": autonomy.get_idle_seconds(),
+           "locked": autonomy.is_session_locked(),
+           "foreground_pid": autonomy.get_foreground_pid()}
+    return {"signals": sig, "events": st.autonomy_events(limit=100)}
+
+
 @app.get("/api/dashboard")
 def dashboard(days: int = 7) -> dict:
     """Panel (v2.0): agrega lo que ya existe — actividad diaria, top
@@ -872,6 +904,9 @@ def reset(req: ResetRequest):
     if not req.confirm:
         raise HTTPException(400, "se requiere {\"confirm\": true}")
     out = _req_store().reset()
+    # Sin eventos no hay dedup que conserve: re-alerta desde cero.
+    _shadow_alerted.clear()
+    _autonomy_alerted.clear()
     return {**out, "daily_stats_kept": True}
 
 

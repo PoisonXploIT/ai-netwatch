@@ -199,6 +199,16 @@ class Store:
                 self.conn.execute("ALTER TABLE events ADD COLUMN sni_domain TEXT")
             if "ai_layer" not in cols:
                 self.conn.execute("ALTER TABLE events ADD COLUMN ai_layer TEXT")
+            # R2: autonomia por evento (score/flags/veredicto).
+            if "autonomy_score" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE events ADD COLUMN autonomy_score INTEGER")
+            if "autonomy_flags" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE events ADD COLUMN autonomy_flags TEXT")
+            if "autonomy_verdict" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE events ADD COLUMN autonomy_verdict TEXT")
             self.conn.commit()
 
     def _today(self) -> str:
@@ -220,6 +230,9 @@ class Store:
         catalog_domain: str | None, dest_host: str | None,
         protocol: str = "tcp", image: str | None = None,
         ai_layer: str | None = None,
+        autonomy_score: int | None = None,
+        autonomy_flags: str | None = None,
+        autonomy_verdict: str | None = None,
     ) -> dict:
         """Registra una conexion establecida a un destino AI.
 
@@ -233,20 +246,27 @@ class Store:
                 (process, dest_ip, dest_port),
             ).fetchone()
             if row:
+                # Autonomia se recalcula en cada observacion: overwrite.
                 self.conn.execute(
                     "UPDATE events SET seen_count=seen_count+1, last_seen=?, ts=?,"
                     " image=COALESCE(?, image),"
-                    " ai_layer=COALESCE(?, ai_layer) WHERE id=?",
-                    (ts, ts, image, ai_layer, row["id"]),
+                    " ai_layer=COALESCE(?, ai_layer),"
+                    " autonomy_score=?, autonomy_flags=?, autonomy_verdict=?"
+                    " WHERE id=?",
+                    (ts, ts, image, ai_layer,
+                     autonomy_score, autonomy_flags, autonomy_verdict,
+                     row["id"]),
                 )
                 event_id = row["id"]
             else:
                 cur = self.conn.execute(
                     "INSERT INTO events (ts, process, dest_ip, dest_port, dest_host,"
-                    " catalog_domain, protocol, image, ai_layer, seen_count, first_seen, last_seen)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,1,?,?)",
+                    " catalog_domain, protocol, image, ai_layer, seen_count, first_seen, last_seen,"
+                    " autonomy_score, autonomy_flags, autonomy_verdict)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)",
                     (ts, process, dest_ip, dest_port, dest_host, catalog_domain,
-                     protocol, image, ai_layer, ts, ts),
+                     protocol, image, ai_layer, ts, ts,
+                     autonomy_score, autonomy_flags, autonomy_verdict),
                 )
                 event_id = cur.lastrowid
             self._bump_daily("events")
@@ -378,6 +398,14 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
              " ORDER BY last_seen DESC")
         return [dict(r) for r in
                 self.conn.execute(q, (_cutoff_ts(days),)).fetchall()]
+
+    def autonomy_events(self, limit: int = 100) -> list[dict]:
+        """Eventos con veredicto de autonomia autonomous/scheduled (R2)."""
+        q = ("SELECT * FROM events"
+             " WHERE autonomy_verdict IN ('autonomous', 'scheduled')"
+             " ORDER BY last_seen DESC LIMIT ?")
+        return [dict(r) for r in
+                self.conn.execute(q, (limit,)).fetchall()]
 
     def ai_events(self) -> list[dict]:
         """Eventos clasificados como IA (ai_layer != none)."""

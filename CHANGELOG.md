@@ -2,6 +2,32 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## Autonomía (R2, v2.1) — quién hace la salida a IA
+
+### Añadido
+- **`autonomy.py`**: señales locales (ctypes/stdlib, fail-safe): idle global
+  (`GetLastInputInfo`) con auto-diagnóstico de vida (si el contador no
+  avanza — monitor en sesión de servicio/sesión 0 — degrada a `None`,
+  nunca a autonomía inventada), sesión bloqueada/pantalla apagada
+  (presencia de `LogonUI.exe`), foreground PID (`GetForegroundWindow`).
+- **Linaje de autonomía** vía Sysmon EID 1 (`poll_sysmon_process_creation`):
+  padre servicio (`svchost`) o tarea programada (`schtasks`/Task Scheduler)
+  → flags `service_parent` / `scheduled_task`.
+- **Derivado por evento, persistido**: `autonomy_score` 0–100 +
+  `autonomy_flags` + veredicto `user_driven | autonomous | scheduled |
+  unknown`. Reglas: bloqueo o idle ≥5 min → autónomo; linaje schtasks →
+  programado; usuario activo (<60 s) → user_driven; resto, unknown.
+- **Jev**: `user_active` ya no es siempre "unknown": lleva el veredicto
+  persistido del evento.
+- **Alerta `autonomous_ai_call`**: una por (proceso, proveedor); el reset
+  limpia el dedup y re-alerta.
+- **`GET /api/autonomy`**: señales globales del momento + eventos con
+  veredicto autónomo/programado. UI: tarjeta *Autonomía* + columna de
+  veredicto en la tabla de eventos.
+- Tests: evaluate (reglas y caps), señales smoke, persistencia/overwrite,
+  filtro `autonomy_events`, payload Jev, dedup de alertas, linaje EID 1
+  (`tests/test_autonomy.py`).
+
 ## Panel / dashboard (v2.0) — actividad agregada, sin F1
 
 ### Añadido

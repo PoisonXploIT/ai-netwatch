@@ -96,6 +96,12 @@
     <div id="shadow-wrap"></div>
   </section>
 
+  <section class="card" id="autonomy-card">
+    <h2>Autonom&iacute;a (R2)</h2>
+    <p class="hint">Qu&eacute;n decide la salida a IA: <b>usuario</b> (user_driven), <b>aut&oacute;nomo</b> (autonomous) o <b>programado</b> (scheduled). Se&ntilde;ales: sesi&oacute;n bloqueada, usuario inactivo, foreground y linaje del proceso (padre servicio/tarea programada v&iacute;a Sysmon EID 1). Cada evento lleva su veredicto persistido; una salida IA aut&oacute;noma o programada dispara la alerta <span class="mono">autonomous_ai_call</span>.</p>
+    <div id="autonomy-wrap"></div>
+  </section>
+
   <section class="card">
     <h2>Estadísticas (últimos 7 días)</h2>
     <p class="hint">El reset borra los eventos y triajes vivos, pero el histórico diario se conserva para la estadística.</p>
@@ -196,6 +202,11 @@
         <li><b>Límite honesto</b>: solo cubre el LLM local. Un proveedor remoto (TLS) no se puede descifrar pasivamente; de él se ve la conexión (eventos de red) pero no el contenido.</li>
         <li><b>Privacidad</b>: prompts y respuestas quedan en claro en <span class="mono">data/llm_calls.db</span>. Si un prompt lleva una API key o datos sensibles, esa información queda en ese fichero: borra las llamadas cuando termines (botón de la tarjeta).</li>
       </ul>
+    </details>
+
+    <details>
+      <summary>Autonomía (R2)</summary>
+      <p>Cada evento IA lleva un veredicto persistido: <b>usuario</b>, <b>autónomo</b> o <b>programado</b>. Señales: sesión bloqueada/pantalla apagada, usuario inactivo, foreground y linaje del proceso (padre servicio/tarea programada vía Sysmon EID 1). El triaje Jev recibe el estado real del usuario (<span class="mono">user_active</span>), y una salida autónoma/programada dispara la alerta <span class="mono">autonomous_ai_call</span>. Sin señales disponibles, el veredicto queda <i>unknown</i>: nunca se inventa.</p>
     </details>
 
     <details>

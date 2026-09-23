@@ -15,6 +15,7 @@ import threading
 import time
 from pathlib import Path
 
+import autonomy
 from ai_catalog import KNOWN_AI_DOMAINS, match_domain
 from ai_classifier import classify_domain
 from store import Store
@@ -172,8 +173,8 @@ class NetMonitor(threading.Thread):
     def __init__(self, store: Store, poll_fn=poll_connections,
                  pidmap_fn=poll_pid_map, dns_fn=poll_dns_cache,
                  udp_fn=poll_udp_endpoints, catalog_fn=poll_catalog_ips,
-                 sysmon_fn=None, sni_fn=None, eid22_fn=None, prune_fn=None,
-                 on_new_event=None,
+                 sysmon_fn=None, sni_fn=None, eid22_fn=None, eid1_fn=None,
+                 prune_fn=None, on_new_event=None,
                  interval: float = _POLL_S, extra_hosts: list[str] | None = None):
         super().__init__(daemon=True, name="ai-netwatch-monitor")
         self.store = store
@@ -185,6 +186,11 @@ class NetMonitor(threading.Thread):
         self._sysmon = sysmon_fn
         self._sni_poll = sni_fn
         self._eid22 = eid22_fn
+        self._eid1 = eid1_fn
+        # R2: linaje proceso -> padre (Sysmon EID 1) y senales de autonomia
+        # con cache corta (las llamadas Win32 son baratas pero no gratis).
+        self._lineage: dict[str, dict] = {}
+        self._aut_cache: tuple[float, dict] | None = None
         self._prune = prune_fn
         self._on_new_event = on_new_event
         self._eid22_cache: dict[str, str] = {}
@@ -226,10 +232,14 @@ class NetMonitor(threading.Thread):
         proc = name or pidmap.get(pid, f"pid:{pid}")
         cls = classify_domain(dom[6:] if dom.startswith("extra:") else dom)
         is_new = not self.store.has_event(proc, ip, port)
+        aut = self._autonomy_for(name, pid)
         ev = self.store.observe_connection(
             process=proc, dest_ip=ip, dest_port=port,
             catalog_domain=dom, dest_host=dns.get(ip),
             protocol=protocol, image=image, ai_layer=cls.layer,
+            autonomy_score=aut["score"],
+            autonomy_flags=",".join(aut["flags"]) or None,
+            autonomy_verdict=aut["verdict"],
         )
         if is_new and self._on_new_event is not None:
             self._on_new_event(ev)
@@ -263,6 +273,53 @@ class NetMonitor(threading.Thread):
         for e in new:
             self._process_conn(e["dest_ip"], e["dest_port"], e["pid"],
                                e.get("protocol", "tcp"), e.get("image") or None)
+
+    def _autonomy_for(self, name: str | None, pid: int) -> dict:
+        """Veredicto de autonomia (R2) para un proceso. Fail-safe: si las
+        senales no estan, queda unknown sin romper el pipeline."""
+        sig = self._autonomy_signals()
+        lin = self._lineage.get((name or "").lower())
+        try:
+            return autonomy.evaluate(
+                name or "", pid,
+                idle_seconds=sig["idle_seconds"],
+                locked=sig["locked"],
+                foreground_pid=sig["foreground_pid"],
+                parent_image=(lin or {}).get("parent_image"),
+                parent_process=(lin or {}).get("parent_process"),
+                parent_cmdline=(lin or {}).get("parent_cmdline"),
+            )
+        except Exception:
+            return {"score": 0, "flags": [], "verdict": autonomy.UNKNOWN}
+
+    def _autonomy_signals(self) -> dict:
+        now = time.monotonic()
+        if self._aut_cache and now - self._aut_cache[0] < 5.0:
+            return self._aut_cache[1]
+        st = {"idle_seconds": autonomy.get_idle_seconds(),
+              "locked": autonomy.is_session_locked(),
+              "foreground_pid": autonomy.get_foreground_pid()}
+        self._aut_cache = (now, st)
+        return st
+
+    def _eid1_cycle(self) -> None:
+        """Linaje proceso -> padre desde Sysmon EID 1 (R2).
+
+        Sin watermark: toma los 300 mas recientes y el ultimo gana por
+        proceso (idempotente, como el cache de EID 22)."""
+        if self._eid1 is None:
+            return
+        evs = self._eid1()
+        if not evs:
+            return
+        for e in evs:  # de antiguo a reciente: el ultimo gana
+            proc = str(e.get("process") or "").strip().lower()
+            if proc:
+                self._lineage[proc] = {
+                    "parent_image": e.get("parent_image"),
+                    "parent_process": e.get("parent_process"),
+                    "parent_cmdline": e.get("parent_cmdline"),
+                }
 
     def _eid22_cycle(self) -> None:
         """Refresca IP -> dominio desde Sysmon EID 22 (DnsQuery).
@@ -326,6 +383,7 @@ catalog_domain solo si estaba vacio.
                 self._eid22_cycle()
                 self._cycle(conns)
                 self._sysmon_cycle()
+                self._eid1_cycle()
                 self._sni_cycle()
             except Exception as e:  # fail-safe: el monitor nunca rompe el server
                 self.errors.append(f"{time.strftime('%H:%M:%S')} {type(e).__name__}: {e}")

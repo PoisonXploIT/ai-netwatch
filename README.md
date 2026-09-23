@@ -92,6 +92,17 @@ uv pip install fastapi uvicorn
 
 Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar), toggle Sysmon y toggle tshark sobreviven al reinicio.
 
+## Autonomía (R2, v2.1)
+
+Detectar IA no dice **quién** decide la salida. R2 persiste por evento
+`autonomy_score` (0–100) + flags + veredicto `user_driven | autonomous |
+scheduled | unknown`, derivado de: sesión bloqueada/pantalla apagada
+(LogonUI), usuario inactivo (`GetLastInputInfo`), foreground PID y linaje
+del proceso vía Sysmon EID 1 (padre servicio/tarea programada). Jev recibe
+`user_active` real; una salida autónoma/programada dispara la alerta
+`autonomous_ai_call`. `GET /api/autonomy` expone señales del momento +
+eventos con veredicto.
+
 ## Panel (v2.0)
 
 `GET /api/dashboard?days=7` (clamp 1..365) agrega lo que ya existe: actividad
@@ -118,6 +129,7 @@ IA detectada cuyo proveedor no esta aprobado:
 - `GET /api/events?limit=&process=&dest=`
 - `GET /api/shadow` (IA detectada no aprobada, agrupado por proveedor)
 - `GET /api/dashboard?days=7` (panel: actividad, tops, capas, shadow, LLM local)
+- `GET /api/autonomy` (R2: señales globales + eventos autónomos/programados)
 - `POST /api/triage` (`{"event_ids": [...]}` opcional; sin ids = todos)
 - `GET /api/triages/latest`
 - `GET/POST /api/config` (key Jev maskeda en lecturas; incluye `llm_proxy_enabled/port/target`, `catalog_approved`, `approved_providers`)
