@@ -250,6 +250,14 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             self.conn.commit()
             return cur.rowcount
 
+    def has_event(self, process: str, dest_ip: str,
+                  dest_port: int) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM events WHERE process=? AND dest_ip=? AND dest_port=?",
+            (process, dest_ip, dest_port),
+        ).fetchone()
+        return row is not None
+
     def get_event(self, event_id: int) -> dict | None:
         row = self.conn.execute(
             "SELECT * FROM events WHERE id=?", (event_id,)

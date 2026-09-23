@@ -182,6 +182,17 @@ async function refreshLlmCalls() {
   } catch (e) { /* server caído */ }
 }
 
+let lastAlertId = 0;
+async function refreshAlerts() {
+  try {
+    const d = await api(`/api/alerts?since_id=${lastAlertId}`);
+    for (const a of d.alerts) {
+      lastAlertId = Math.max(lastAlertId, a.id);
+      toast(`ALERTA ${a.kind}: ${a.message}`, "err");
+    }
+  } catch (e) { /* server caído */ }
+}
+
 async function loadConfig() {
   try {
     const c = await api("/api/config");
@@ -192,6 +203,8 @@ async function loadConfig() {
     document.getElementById("llm-proxy-target").value = c.llm_proxy_target || "127.0.0.1:8099";
     const pt = document.getElementById("llm-proxy-toggle");
     pt.checked = !!c.llm_proxy_enabled;
+    document.getElementById("alerts-toggle").checked = !!c.alerts_enabled;
+    document.getElementById("alert-webhook").value = c.alert_webhook_url || "";
     document.getElementById("retention-days").value = c.retention_days || 90;
     document.getElementById("sysmon-toggle").checked = !!c.sysmon_enabled;
     const t = document.getElementById("tshark-toggle");
@@ -288,6 +301,14 @@ function bind() {
       toast("Config del proxy inspector guardada (persistente).", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
+  $("btn-save-alerts").addEventListener("click", async () => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({
+        alerts_enabled: $("alerts-toggle").checked,
+        alert_webhook_url: $("alert-webhook").value.trim() }) });
+      toast("Config de alertas guardada.", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
   $("btn-save-retention").addEventListener("click", async () => {
     const days = parseInt($("retention-days").value, 10);
     try {
@@ -337,6 +358,7 @@ function bind() {
   setInterval(refreshEvents, 5000);
   setInterval(refreshStats, 60000);
   setInterval(refreshLlmCalls, 10000);
+  setInterval(refreshAlerts, 10000);
 }
 
 document.addEventListener("DOMContentLoaded", bind);

@@ -173,6 +173,7 @@ class NetMonitor(threading.Thread):
                  pidmap_fn=poll_pid_map, dns_fn=poll_dns_cache,
                  udp_fn=poll_udp_endpoints, catalog_fn=poll_catalog_ips,
                  sysmon_fn=None, sni_fn=None, eid22_fn=None, prune_fn=None,
+                 on_new_event=None,
                  interval: float = _POLL_S, extra_hosts: list[str] | None = None):
         super().__init__(daemon=True, name="ai-netwatch-monitor")
         self.store = store
@@ -185,6 +186,7 @@ class NetMonitor(threading.Thread):
         self._sni_poll = sni_fn
         self._eid22 = eid22_fn
         self._prune = prune_fn
+        self._on_new_event = on_new_event
         self._eid22_cache: dict[str, str] = {}
         self._sm_last_recid = 0
         self._catalog_ip_cache: dict[str, str] = {}
@@ -223,11 +225,14 @@ class NetMonitor(threading.Thread):
         name = image.rsplit("\\", 1)[-1].rsplit("/", 1)[-1] if image else None
         proc = name or pidmap.get(pid, f"pid:{pid}")
         cls = classify_domain(dom[6:] if dom.startswith("extra:") else dom)
-        self.store.observe_connection(
+        is_new = not self.store.has_event(proc, ip, port)
+        ev = self.store.observe_connection(
             process=proc, dest_ip=ip, dest_port=port,
             catalog_domain=dom, dest_host=dns.get(ip),
             protocol=protocol, image=image, ai_layer=cls.layer,
         )
+        if is_new and self._on_new_event is not None:
+            self._on_new_event(ev)
 
     def _cycle(self, conns: list[dict] | None = None) -> None:
         if conns is None:

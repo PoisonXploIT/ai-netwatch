@@ -18,6 +18,11 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   persistida). Prune de eventos/triajes/llm_calls mas antiguos que N dias +
   `VACUUM`; corre en el arranque y cada 24 h desde el monitor. El historico
   diario (`daily_stats`) se conserva. Input visible en Ajustes.
+- **Alertas (O3)**: `alerts.py` — cola en memoria acotada + log JSONL
+  (`data/alerts.log`) + webhook opcional (solo loopback, SSRF-check). Primer
+  trigger: `new_ai_destination` (pareja proceso->destino IA no vista antes).
+  Toast en la UI (poll `/api/alerts`). Toggle y webhook en Ajustes. El motor de
+  reglas por umbral llega en v2.1.
 
 ### Cambiado
 - Eventos: nueva columna `ai_layer`. LLM calls: nuevas columnas

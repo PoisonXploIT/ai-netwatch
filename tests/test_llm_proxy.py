@@ -197,7 +197,8 @@ def _fresh_cfg() -> dict:
         "llm_proxy_enabled": False, "llm_proxy_port": 8098,
         "llm_proxy_target": "127.0.0.1:8099",
         "extra_hosts": [], "sysmon_enabled": True,
-        "retention_days": 90,
+        "retention_days": 90, "alerts_enabled": True,
+        "alert_webhook_url": "",
     }
 
 
@@ -420,6 +421,20 @@ class TestProxyConfig(ConfigBase):
         server.set_config(server.ConfigRequest(llm_proxy_enabled=False))
         self.assertIsNone(server.llm_proxy)
         self.assertEqual(server.get_config()["llm_proxy_running"], False)
+
+    def test_alerts_config_validation(self):
+        server.set_config(server.ConfigRequest(
+            alerts_enabled=False,
+            alert_webhook_url="http://127.0.0.1:9000/alert"))
+        self.assertFalse(server._cfg["alerts_enabled"])
+        self.assertEqual(
+            server._cfg["alert_webhook_url"], "http://127.0.0.1:9000/alert")
+        # SSRF: un webhook no loopback se rechaza.
+        with self.assertRaises(HTTPException):
+            server.set_config(server.ConfigRequest(
+                alert_webhook_url="http://8.8.8.8:9000/alert"))
+        self.assertEqual(
+            server._cfg["alert_webhook_url"], "http://127.0.0.1:9000/alert")
 
     def test_retention_days_validated_and_persisted(self):
         server.set_config(server.ConfigRequest(retention_days=30))

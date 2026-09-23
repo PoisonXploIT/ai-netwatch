@@ -139,6 +139,18 @@ class TestMonitor(unittest.TestCase):
         self.assertEqual(events[0]["process"], "pid:1")
         self._cleanup(tmp, store)
 
+    def test_on_new_event_fires_once_per_pair(self):
+        tmp, store, m = self._mk([
+            {"remote_ip": "api.typesafe.ai", "remote_port": 443, "pid": 1},
+        ])
+        seen = []
+        m._on_new_event = seen.append
+        m._cycle()
+        m._cycle()  # misma pareja: no vuelve a alertar
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["process"], "pid:1")
+        self._cleanup(tmp, store)
+
     def test_extra_host_match(self):
         tmp, store, m = self._mk([{"remote_ip": "10.9.8.7", "remote_port": 443, "pid": 5}])
         m.extra_hosts = ["10.9.8.7"]

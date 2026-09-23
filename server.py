@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from alerts import AlertLog
 from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
 from llm_local import explain_events, is_loopback_url
 from llm_proxy import LlmProxy
@@ -55,6 +56,8 @@ _cfg: dict = {
     "sysmon_enabled": True,
     "tshark_enabled": True,
     "retention_days": 90,
+    "alerts_enabled": True,
+    "alert_webhook_url": "",
 }
 
 
@@ -109,13 +112,20 @@ def _load_config() -> None:
     for k in ("jev_enabled", "jev_api_key", "llm_enabled", "llm_base_url",
               "llm_model", "llm_proxy_enabled", "llm_proxy_port",
               "llm_proxy_target", "extra_hosts", "sysmon_enabled",
-              "tshark_enabled", "retention_days"):
+              "tshark_enabled", "retention_days", "alerts_enabled",
+              "alert_webhook_url"):
         if k in data:
             _cfg[k] = data[k]
     rd = _cfg.get("retention_days")
     if not isinstance(rd, int) or isinstance(rd, bool) \
             or not (1 <= rd <= 3650):
         _cfg["retention_days"] = 90
+    if not isinstance(_cfg.get("alerts_enabled"), bool):
+        _cfg["alerts_enabled"] = True
+    # Webhook: solo loopback; un archivo editado a mano no lo apunta fuera.
+    wh = str(_cfg.get("alert_webhook_url") or "")
+    if wh and not is_loopback_url(wh):
+        _cfg["alert_webhook_url"] = ""
     url = str(_cfg.get("llm_base_url") or "")
     if url and not is_loopback_url(url):
         _cfg["llm_base_url"] = ""
@@ -140,6 +150,7 @@ llm_calls: LlmCallStore | None = None
 monitor: NetMonitor | None = None
 sni_capture: SniCapture | None = None
 llm_proxy: LlmProxy | None = None
+alerts: AlertLog | None = None
 
 
 def _set_sni_capture(enabled: bool) -> None:
@@ -191,6 +202,23 @@ def _set_llm_proxy(enabled: bool) -> bool:
 
 
 @app.on_event("startup")
+def _on_new_ai_event(ev: dict) -> None:
+    """Alerta (O3): aparece un destino IA nuevo (proceso->destino antes no
+    visto). El motor de reglas por umbral llega en v2.1; esto es la base."""
+    if not _cfg.get("alerts_enabled") or alerts is None:
+        return
+    dest = f"{ev.get('dest_host') or ev.get('dest_ip')}:{ev.get('dest_port')}"
+    layer = ev.get("ai_layer") or "?"
+    alerts.push(
+        "new_ai_destination",
+        f"Nuevo destino IA: {ev.get('process')} -> {dest} (capa {layer})",
+        details={"event_id": ev.get("id"), "process": ev.get("process"),
+                 "dest_ip": ev.get("dest_ip"), "dest_port": ev.get("dest_port"),
+                 "catalog_domain": ev.get("catalog_domain"),
+                 "ai_layer": layer},
+    )
+
+
 def _prune_retention() -> None:
     """Retencion (F7): eventos/triajes/llm_calls > retention_days. Fail-safe:
     un fallo de prune nunca rompe el arranque ni el ciclo del monitor."""
@@ -206,9 +234,11 @@ def _prune_retention() -> None:
 
 @app.on_event("startup")
 def _start() -> None:
-    global store, monitor, sni_capture, llm_calls
+    global store, monitor, sni_capture, llm_calls, alerts
     store = Store(DATA_DIR / "events.db")
     llm_calls = LlmCallStore(DATA_DIR / "llm_calls.db")
+    alerts = AlertLog(DATA_DIR / "alerts.log",
+                      webhook_url=str(_cfg.get("alert_webhook_url") or ""))
     _prune_retention()
     if _cfg["llm_proxy_enabled"]:
         _set_llm_proxy(True)
@@ -224,7 +254,8 @@ def _start() -> None:
             sni_fn = sni_capture.poll_records
     monitor = NetMonitor(store, extra_hosts=list(_cfg["extra_hosts"]),
                          sysmon_fn=sm, eid22_fn=eid22, sni_fn=sni_fn,
-                         prune_fn=_prune_retention)
+                         prune_fn=_prune_retention,
+                         on_new_event=_on_new_ai_event)
     monitor.start()
 
 
@@ -251,6 +282,8 @@ def _mask(cfg: dict) -> dict:
 
 
 class ConfigRequest(BaseModel):
+    alerts_enabled: bool | None = None
+    alert_webhook_url: str | None = None
     jev_enabled: bool | None = None
     jev_api_key: str | None = None
     llm_enabled: bool | None = None
@@ -287,6 +320,17 @@ def get_config():
 
 @app.post("/api/config")
 def set_config(req: ConfigRequest):
+    if req.alerts_enabled is not None:
+        _cfg["alerts_enabled"] = bool(req.alerts_enabled)
+    if req.alert_webhook_url is not None:
+        url = (req.alert_webhook_url or "").strip()
+        if url and not is_loopback_url(url):
+            raise HTTPException(
+                400, "alert_webhook_url: solo http(s) loopback"
+                    " (p. ej. http://127.0.0.1:9000/alert)")
+        _cfg["alert_webhook_url"] = url
+        if alerts is not None:
+            alerts.webhook_url = url
     if req.jev_enabled is not None:
         _cfg["jev_enabled"] = req.jev_enabled
     if req.jev_api_key is not None:
@@ -557,6 +601,12 @@ def reset_llm_calls(req: ResetRequest):
         raise HTTPException(400, 'se requiere {"confirm": true}')
     n = llm_calls.clear() if llm_calls else 0
     return {"calls_removed": n}
+
+
+@app.get("/api/alerts")
+def list_alerts(since_id: int = 0):
+    return {"alerts": alerts.list(since_id) if alerts else [],
+            "enabled": bool(_cfg.get("alerts_enabled"))}
 
 
 @app.get("/api/stats")
