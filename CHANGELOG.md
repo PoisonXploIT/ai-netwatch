@@ -2,6 +2,24 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## Fix colector elevado (v2.2) — B1/B2/B3 + stop -ets
+
+Correccion del camino elevado tras verificacion e2e en escritorio
+(tres bugs independientes, todos en `netcollector.py`):
+- **B1 keyword**: 0x8000... es el canal *Analytic* del provider, no IP.
+  Ahora 0x30 = IPV4|IPV6 (verificado).
+- **B2 glob ETL**: con `-ets` el fichero sale `{base}.etl` (sin sufijo
+  `_000001`); el glob `{base}*.etl` cubre ambos casos.
+- **B3 esquema XML**: tracerpt emite `<Event>` con `<System><Task>/`<EventID>
+  y `<EventData><Data Name=...>`, no `<TraceEvent>/<Header>`. El parser
+  busca por nombre local (inmune a namespaces). Fixture de test con el
+  esquema real (incluye un evento namespaced): se caza sin admin.
+- `logman stop <name> -ets` (sin `-ets` la sesion no se cierra).
+- **Linea meta de diagnostico** en el JSONL: `{events_seen, rows,
+  xml_ok, etl_found}`. El servidor la lee como estado (no bytes) y la
+  expone como `last_meta` en `cloud_bytes`: distingue "corrio y no hubo
+  trafico" de "fallo".
+
 ## Bytes remotos (v2.2) — "cuanto sale" con ETW Kernel-Network
 
 ### Anadido

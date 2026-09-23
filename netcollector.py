@@ -11,6 +11,11 @@ Mapa EventID verificado en maquina real (task 10 = TCPIP, 11 = UDPIP):
 - 11 = datos UDP.
 - El resto (handshake, connect/accept, DNS) se ignora.
 
+Keyword del provider: 0x30 = IPV4|IPV6 (verificado). 0x8000... es el
+canal Analytic: no captura eventos de IP. Esquema XML de tracerpt:
+<Event> con <System><Task>/<EventID> y <EventData><Data Name=...>;
+el parser busca por nombre local (inmune a namespaces).
+
 Honestidad: cualquier fallo (sin admin, logman/tracerpt ausentes, sin
 eventos) => sin fichero o vacio; el servidor degrada a "no disponible"
 con motivo. Nunca numeros inventados.
@@ -29,16 +34,38 @@ _TCP_DATA_IDS = frozenset({10, 18, 26, 27, 34})
 _UDP_DATA_IDS = frozenset({11})
 
 
-def _data_map(ev: ET.Element) -> dict[str, str]:
-    """Todos los <Data Name="X">valor</Data> del evento (robusto al
-    anidamiento): {name: texto}. Sin valor => omitido."""
-    out: dict[str, str] = {}
-    for d in ev.iter():
-        if d.tag == "Data":
-            name = d.get("Name")
-            if name is not None:
-                out[name] = (d.text or "").strip()
-    return out
+def _local(tag: str) -> str:
+    """Nombre local de un tag (ignora namespace)."""
+    return tag.rsplit("}", 1)[-1]
+
+
+def _event_fields(ev: ET.Element) -> tuple[int | None, int | None,
+                                              dict[str, str]]:
+    """(task, eventid, data_map) de un elemento <Event> de tracerpt.
+
+    Esquema real: <Event><System><Task>/<EventID></System>
+    <EventData><Data Name=...>...</EventData>. Busqueda por nombre
+    local (inmune a namespaces)."""
+    task: int | None = None
+    eid: int | None = None
+    data: dict[str, str] = {}
+    for el in ev.iter():
+        name = _local(el.tag)
+        if name == "Task" and task is None:
+            try:
+                task = int((el.text or "").strip())
+            except ValueError:
+                pass
+        elif name == "EventID" and eid is None:
+            try:
+                eid = int((el.text or "").strip())
+            except ValueError:
+                pass
+        elif name == "Data":
+            dname = el.get("Name")
+            if dname is not None:
+                data[dname] = (el.text or "").strip()
+    return task, eid, data
 
 
 def parse_xml(path: Path) -> list[dict]:
@@ -47,28 +74,30 @@ def parse_xml(path: Path) -> list[dict]:
     Devuelve [{pid, dest_ip, dest_port, bytes}]. IPv4 e IPv6. Fallos de
     parseo o fichero ausente => lista vacia (degradacion honesta).
     """
+    rows, _ = parse_xml_with_stats(path)
+    return rows
+
+
+def parse_xml_with_stats(path: Path) -> tuple[list[dict], dict]:
+    """parse_xml + stats de diagnostico: {events_seen, rows, xml_ok}.
+    Distingue 'corrio y no hubo trafico' de 'fallo' (meta del JSONL)."""
     out: list[dict] = []
+    stats = {"events_seen": 0, "rows": 0, "xml_ok": False}
     try:
         root = ET.parse(str(path)).getroot()
     except (ET.ParseError, OSError):
-        return out
-    for ev in root.iter("TraceEvent"):
-        header = ev.find("Header")
-        if header is None:
+        return out, stats
+    stats["xml_ok"] = True
+    for ev in root.iter():
+        if _local(ev.tag) != "Event":
             continue
-        task_el = header.find("Task")
-        eid_el = header.find("EventID")
-        if task_el is None or eid_el is None:
-            continue
-        try:
-            task = int((task_el.text or "").strip())
-            eid = int((eid_el.text or "").strip())
-        except ValueError:
+        stats["events_seen"] += 1
+        task, eid, data = _event_fields(ev)
+        if task is None or eid is None:
             continue
         if not ((task == 10 and eid in _TCP_DATA_IDS)
                 or (task == 11 and eid in _UDP_DATA_IDS)):
             continue
-        data = _data_map(ev)
         try:
             size = int(data.get("size", ""))
         except ValueError:
@@ -92,7 +121,8 @@ def parse_xml(path: Path) -> list[dict]:
             continue
         out.append({"pid": pid, "dest_ip": str(dest_ip_obj),
                     "dest_port": dport, "bytes": size})
-    return out
+        stats["rows"] += 1
+    return out, stats
 
 
 def aggregate(rows: list[dict]) -> dict[tuple[str, int], int]:
@@ -113,18 +143,22 @@ def run_trace(base_name: str, duration_s: int, workdir: Path) -> Path | None:
     """
     base = workdir / f"{base_name}.etl"
     xml_path = workdir / f"{base_name}.xml"
+    # Keyword 0x30 = IPV4|IPV6 (verificado). 0x8000... es el canal
+    # Analytic: no captura eventos de IP.
     cmd_start = ["logman", "create", "trace", base_name,
                  "-p", "Microsoft-Windows-Kernel-Network",
-                 "0x8000000000000000", "-o", str(base), "-ets"]
+                 "0x0000000000000030", "-o", str(base), "-ets"]
     try:
         subprocess.run(cmd_start, capture_output=True, timeout=30,
                        check=False)
         # Sin admin/UAC denegada el ETL nunca aparece: no esperar la
         # duracion entera (degradacion rapida y honesta).
+        # Con -ets el ETL sale como {base}.etl (sin sufijo _000001);
+        # sin -ets seria {base}_000001.etl. El glob cubre ambos.
         t0 = time.monotonic()
         etl = None
         while time.monotonic() - t0 < 15:
-            etls = sorted(workdir.glob(f"{base_name}_*.etl"))
+            etls = sorted(workdir.glob(f"{base_name}*.etl"))
             if etls:
                 etl = etls[0]
                 break
@@ -134,7 +168,8 @@ def run_trace(base_name: str, duration_s: int, workdir: Path) -> Path | None:
         elapsed = time.monotonic() - t0
         remaining = max(0, int(duration_s) - int(elapsed))
         time.sleep(remaining)
-        subprocess.run(["logman", "stop", base_name],
+        # -ets: la sesion solo se cierra con stop -ets.
+        subprocess.run(["logman", "stop", base_name, "-ets"],
                        capture_output=True, timeout=30, check=False)
         conv = ["tracerpt", "-of", "XML", "-o", str(xml_path), str(etl)]
         subprocess.run(conv, capture_output=True, timeout=120, check=False)
@@ -149,6 +184,16 @@ def run_trace(base_name: str, duration_s: int, workdir: Path) -> Path | None:
     return xml_path if xml_path.exists() else None
 
 
+def write_jsonl(out_path: Path, rows: list[dict], meta: dict) -> None:
+    """JSONL de salida: una linea por destino + una linea de diagnostico
+    {"meta": {...}} al final. Distingue 'corrio y no hubo trafico' de
+    'fallo' (el servidor la ingesta aparte, como estado, no como bytes)."""
+    with open(out_path, "w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        f.write(json.dumps({"meta": meta}, ensure_ascii=False) + "\n")
+
+
 def main(argv: list[str]) -> int:
     """Uso elevado: netcollector.py <duracion_s> <ruta_jsonl_salida>."""
     import autonomy
@@ -161,8 +206,9 @@ def main(argv: list[str]) -> int:
     workdir = out_path.parent
     xml_path = run_trace(base_name, duration_s, workdir)
     rows: list[dict] = []
+    stats: dict = {"events_seen": 0, "rows": 0, "xml_ok": False}
     if xml_path is not None:
-        rows = parse_xml(xml_path)
+        rows, stats = parse_xml_with_stats(xml_path)
         try:
             xml_path.unlink()
         except OSError:
@@ -170,16 +216,21 @@ def main(argv: list[str]) -> int:
     pids = autonomy.pid_name_map()
     agg = aggregate(rows)
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
-    with open(out_path, "w", encoding="utf-8") as f:
-        for (dest_ip, dest_port), total in sorted(agg.items()):
-            pset = {r["pid"] for r in rows
-                    if (str(r["dest_ip"]), int(r["dest_port"])) == (
-                        dest_ip, dest_port)}
-            procs = sorted({pids.get(p, f"pid:{p}") for p in pset})
-            f.write(json.dumps({
-                "ts": now, "dest_ip": dest_ip, "dest_port": dest_port,
-                "bytes": total, "processes": procs,
-            }, ensure_ascii=False) + "\n")
+    enriched: list[dict] = []
+    for (dest_ip, dest_port), total in sorted(agg.items()):
+        pset = {r["pid"] for r in rows
+                if (str(r["dest_ip"]), int(r["dest_port"])) == (
+                    dest_ip, dest_port)}
+        procs = sorted({pids.get(p, f"pid:{p}") for p in pset})
+        enriched.append({
+            "ts": now, "dest_ip": dest_ip, "dest_port": dest_port,
+            "bytes": total, "processes": procs,
+        })
+    meta = {"events_seen": stats["events_seen"],
+            "rows": stats["rows"],
+            "xml_ok": stats["xml_ok"],
+            "etl_found": xml_path is not None}
+    write_jsonl(out_path, enriched, meta)
     return 0
 
 

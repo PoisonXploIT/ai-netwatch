@@ -113,8 +113,11 @@ solo lee el JSONL resultante y lo acumula en `net_bytes`; nunca
 interpreta ETLs. Config: `net_bytes_enabled` (off por defecto),
 `net_bytes_duration_s`, `net_bytes_cycle_s`. Con datos, el dashboard
 muestra `cloud_bytes` real (total + top proveedores); sin admin o sin
-datos, "no disponible" con motivo — nunca un cero que engane. Cada ciclo
-elevado pide UAC; es opt-in y visible a propósito.
+datos, "no disponible" con motivo — nunca un cero que engane. El
+colector escribe una linea meta de diagnostico (`events_seen`, `rows`,
+`xml_ok`, `etl_found`) que el panel expone como `last_meta`: distingue
+"corrio y no hubo trafico" de "fallo". Cada ciclo elevado pide UAC; es
+opt-in y visible a propósito.
 
 ## Sesiones y beaconing (F1/D3, v2.1)
 

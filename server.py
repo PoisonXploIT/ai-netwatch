@@ -359,6 +359,7 @@ def _auto_classify_loop() -> None:
 
 
 _net_stop = threading.Event()
+_net_last_meta: dict | None = None  # diagnostico del ultimo colector
 
 
 def _spawn_netcollector(duration_s: int, out_path: Path) -> None:
@@ -372,6 +373,24 @@ def _spawn_netcollector(duration_s: int, out_path: Path) -> None:
           " -Verb RunAs")
     subprocess.Popen(["powershell", "-NoProfile", "-Command", ps],
                      creationflags=0x0800)  # CREATE_NO_WINDOW
+
+
+def _read_netjsonl(out_path: Path) -> tuple[list[dict], dict | None]:
+    """Lee el JSONL del colector: filas de bytes + linea meta (diagnostico,
+    no bytes). Devuelve (rows, meta)."""
+    rows: list[dict] = []
+    meta: dict | None = None
+    with open(out_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            if "meta" in obj:
+                meta = dict(obj["meta"])
+                continue
+            rows.append(obj)
+    return rows, meta
 
 
 def _netbytes_cycle() -> None:
@@ -389,13 +408,11 @@ def _netbytes_cycle() -> None:
         _net_stop.wait(5)
     if not out_path.exists():
         return  # sin admin / UAC denegado / fallo: no hay datos
+    global _net_last_meta
     try:
-        rows = []
-        with open(out_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    rows.append(json.loads(line))
+        rows, meta = _read_netjsonl(out_path)
+        if meta is not None:
+            _net_last_meta = meta
         store.ingest_net_bytes(rows, time.strftime("%Y-%m-%dT%H:%M:%S"))
     except (OSError, ValueError):
         return
@@ -1095,10 +1112,12 @@ def _cloud_bytes() -> dict:
         return {"available": False,
                 "reason": ("bytes remotos: colector elevado sin datos "
                            "(ETW Kernel-Network requiere admin; activar en "
-                           "config net_bytes_enabled)")}
+                           "config net_bytes_enabled)"),
+                "last_meta": _net_last_meta}
     total = sum(r["bytes"] for r in egress)
     return {"available": True,
             "total_bytes": total,
+            "last_meta": _net_last_meta,
             "window": ("acumulado desde inicio del colector elevado"
                        " (ventanas sin solapes)"),
             "by_provider": [{"provider": r["provider"],
