@@ -2,6 +2,17 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## Proximo (v2.3) — Evidencia y fingerprinting
+
+- Evidencia exportable: cadena de hashes + export STIX.
+- Fingerprinting de SDK (identificar el cliente IA por patron).
+- Label API / web / CDN por hostname (heuristica display; reduce el
+  ruido "no parece IA" sin tocar la deteccion).
+- `cloud_bytes.by_provider`: mapear los bytes "desconocido" (IPs sin
+  evento que las mapee) a proveedor cruzando con dominios resueltos por
+  EID22/SNI, no solo con `catalog_domain` de eventos. Convierte
+  "desconocido" en proveedor real.
+
 ## v2.2.1 — Elevacion sin prompt: tarea programada (bytes remotos)
 
 El colector elevado quedo verificado (B1/B2/B3), pero el spawn desde el
