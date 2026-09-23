@@ -92,12 +92,25 @@ uv pip install fastapi uvicorn
 
 Abrir `http://127.0.0.1:8790`. La config es **persistente** (`data/config.json`): key Jev, LLM local (URL loopback + modelo), hosts extra (IP o dominio propios que quieras vigilar), toggle Sysmon y toggle tshark sobreviven al reinicio.
 
+## Shadow AI (v2.0)
+
+Detectar IA (catalogo + capas) no es lo mismo que aprobarla. **Shadow AI** =
+IA detectada cuyo proveedor no esta aprobado:
+
+- Proveedor de un evento: `sni_domain > catalog_domain > dest_host > dest_ip`.
+- Aprobado = catalogo (si `catalog_approved`, por defecto) union
+  `approved_providers` (match por sufijo de dominio; IPs, exacto).
+- UI: tarjeta *Shadow AI* con boton *Aprobar proveedor* por item.
+- Alerta `shadow_ai`: una por proveedor no aprobado (ademas de
+  `new_ai_destination`, que sigue siendo "destino IA nuevo", aprobado o no).
+
 ## Endpoints
 
 - `GET /api/events?limit=&process=&dest=`
+- `GET /api/shadow` (IA detectada no aprobada, agrupado por proveedor)
 - `POST /api/triage` (`{"event_ids": [...]}` opcional; sin ids = todos)
 - `GET /api/triages/latest`
-- `GET/POST /api/config` (key Jev maskeda en lecturas; incluye `llm_proxy_enabled/port/target`)
+- `GET/POST /api/config` (key Jev maskeda en lecturas; incluye `llm_proxy_enabled/port/target`, `catalog_approved`, `approved_providers`)
 - `POST /api/test` (`{"target": "jev"|"llm"}`)
 - `GET /api/llm/calls?limit=`, `GET /api/llm/calls/{id}`, `POST /api/llm/calls/reset`
 - `GET /api/export/json`, `GET /api/export/csv`, `GET /api/export/pdf`

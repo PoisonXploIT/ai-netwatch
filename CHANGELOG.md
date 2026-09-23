@@ -2,6 +2,24 @@
 
 Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
+## Shadow AI (v2.0) — detectar vs aprobar
+
+### Añadido
+- **Shadow AI**: IA detectada que no esta aprobada. Proveedor de un evento =
+  `sni_domain > catalog_domain > dest_host > dest_ip` (mismo orden que las
+  alertas). Aprobado = catalogo (si `catalog_approved`, por defecto True) union
+  `approved_providers` (match por sufijo de dominio; IPs, exacto).
+- **`GET /api/shadow`**: agrupado por proveedor — procesos, capas,
+  first/last seen, seen_count, event_ids. Solo lo no aprobado.
+- **UI**: tarjeta *Shadow AI* con lista y boton *Aprobar proveedor* por item
+  (desaparece al aprobar; se guarda en `approved_providers`).
+- **Alerta `shadow_ai`**: una por proveedor no aprobado, distinta de
+  `new_ai_destination` (que sigue siendo "destino IA nuevo", aprobado o no).
+  Se reevalua al cambiar `catalog_approved`/`approved_providers`.
+- Config: `catalog_approved: bool = True`, `approved_providers: list[str] = []`.
+- Tests: proveedor, sufijo/IP exacto, agrupacion, config persistente, dedup de
+  alerta (`tests/test_shadow.py`).
+
 ## Puerta de publicacion v2.0 (2026-09-23) — DPAPI, CI, LICENSE, SECURITY, mypy
 
 ### Seguridad

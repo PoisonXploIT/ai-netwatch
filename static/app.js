@@ -193,6 +193,36 @@ async function refreshAlerts() {
   } catch (e) { /* server caído */ }
 }
 
+let approvedProviders = [];
+
+async function refreshShadow() {
+  const wrap = document.getElementById("shadow-wrap");
+  if (!wrap) return;
+  try {
+    const s = await api("/api/shadow");
+    if (!s.shadow.length) {
+      wrap.innerHTML = '<p class="hint">Sin shadow AI: todo lo detectado está aprobado.</p>';
+      return;
+    }
+    wrap.innerHTML = s.shadow.map(g => `
+      <div class="row">
+        <span class="mono">${esc(g.provider)}</span>
+        <span class="hint">capa ${g.layers.join("/")} · ${g.processes.length} proceso(s) · ${g.seen_count} veces · último ${esc(g.last_seen)}</span>
+        <button data-approve="${esc(g.provider)}" class="primary small">Aprobar proveedor</button>
+      </div>`).join("");
+    wrap.querySelectorAll("button[data-approve]").forEach(b => {
+      b.onclick = async () => {
+        const p = b.dataset.approve;
+        const list = [...new Set([...approvedProviders, p])].filter(Boolean);
+        await api("/api/config", { method: "POST", body: JSON.stringify({ approved_providers: list }) });
+        approvedProviders = list;
+        toast(`Proveedor ${p} aprobado`);
+        refreshShadow();
+      };
+    });
+  } catch (e) { /* sin datos aún */ }
+}
+
 async function loadConfig() {
   try {
     const c = await api("/api/config");
@@ -208,6 +238,7 @@ async function loadConfig() {
     document.getElementById("retention-days").value = c.retention_days || 90;
     document.getElementById("retention-llm-days").value = c.retention_days_llm || 30;
     document.getElementById("llm-content-store").checked = !!c.llm_store_content;
+    approvedProviders = c.approved_providers || [];
     document.getElementById("sysmon-toggle").checked = !!c.sysmon_enabled;
     const t = document.getElementById("tshark-toggle");
     t.checked = !!c.tshark_enabled;
@@ -365,10 +396,12 @@ function bind() {
   refreshEvents();
   refreshStats();
   refreshLlmCalls();
+  refreshShadow();
   setInterval(refreshEvents, 5000);
   setInterval(refreshStats, 60000);
   setInterval(refreshLlmCalls, 10000);
   setInterval(refreshAlerts, 10000);
+  setInterval(refreshShadow, 15000);
 }
 
 document.addEventListener("DOMContentLoaded", bind);

@@ -357,6 +357,13 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
         args.append(limit)
         return [dict(r) for r in self.conn.execute(q, args).fetchall()]
 
+    def ai_events(self) -> list[dict]:
+        """Eventos clasificados como IA (ai_layer != none)."""
+        q = ("SELECT * FROM events"
+             " WHERE ai_layer IS NOT NULL AND ai_layer != 'none'"
+             " ORDER BY last_seen DESC")
+        return [dict(r) for r in self.conn.execute(q).fetchall()]
+
     def save_triage(self, status: str, model: str | None, payload: dict) -> int:
         with self._lock:
             cur = self.conn.execute(

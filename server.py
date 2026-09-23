@@ -10,6 +10,7 @@ Arranque:  python -m uvicorn server:app --host 127.0.0.1 --port 8790
 from __future__ import annotations
 
 import csv
+import ipaddress
 import io
 import json
 import os
@@ -23,6 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from ai_catalog import KNOWN_AI_DOMAINS
 from alerts import AlertLog
 import auto_classify
 import secret_store
@@ -126,7 +128,8 @@ def _load_config() -> None:
               "llm_proxy_target", "extra_hosts", "sysmon_enabled",
               "tshark_enabled", "retention_days", "retention_days_llm",
               "llm_store_content", "alerts_enabled",
-              "alert_webhook_url"):  # noqa: E128
+              "alert_webhook_url", "catalog_approved",
+              "approved_providers"):  # noqa: E128
         if k in data:
             _cfg[k] = data[k]
     for key, default in (("retention_days", 90),
@@ -139,6 +142,13 @@ def _load_config() -> None:
         _cfg["llm_store_content"] = True
     if not isinstance(_cfg.get("alerts_enabled"), bool):
         _cfg["alerts_enabled"] = True
+    if not isinstance(_cfg.get("catalog_approved"), bool):
+        _cfg["catalog_approved"] = True
+    ap = _cfg.get("approved_providers")
+    if not isinstance(ap, list):
+        ap = []
+    _cfg["approved_providers"] = [str(p).strip().lower() for p in ap
+                                  if str(p).strip()]
     # Webhook: solo loopback; un archivo editado a mano no lo apunta fuera.
     wh = str(_cfg.get("alert_webhook_url") or "")
     if wh and not is_loopback_url(wh):
@@ -269,14 +279,47 @@ def _auto_classify_loop() -> None:
         _auto_stop.wait(60)
 
 
+_shadow_alerted: set[str] = set()
+
+
+def _provider_of(ev: dict) -> str:
+    """Proveedor de un evento: sni > catalogo > cache DNS > IP (mismo
+    orden que el mensaje de alertas). 'extra:' se quita (hosts extra)."""
+    host = (str(ev.get("sni_domain") or ev.get("catalog_domain")
+                or ev.get("dest_host") or ev.get("dest_ip") or "")
+            .strip().lower())
+    if host.startswith("extra:"):
+        host = host[len("extra:"):]
+    return host
+
+
+def _is_approved_provider(provider: str) -> bool:
+    """Shadow AI: aprobado = catalogo (si catalog_approved) union
+    approved_providers. Match por sufijo de dominio; IPs, exacto."""
+    provider = (provider or "").strip().lower()
+    if not provider:
+        return False
+    approved: list[str] = []
+    if _cfg.get("catalog_approved", True):
+        approved.extend(d.lower() for d in KNOWN_AI_DOMAINS)
+    approved.extend(str(p).strip().lower()
+                    for p in _cfg.get("approved_providers") or [])
+    try:
+        ipaddress.ip_address(provider)
+        return provider in set(approved)
+    except ValueError:
+        pass
+    return any(provider == a or provider.endswith("." + a)
+               for a in approved if a)
+
+
 def _on_new_ai_event(ev: dict) -> None:
     """Alerta (O3): aparece un destino IA nuevo (proceso->destino antes no
     visto). El motor de reglas por umbral llega en v2.1; esto es la base."""
     if not _cfg.get("alerts_enabled") or alerts is None:
         return
     # SNI y catalogo son definitivos; la IP cruda es el ultimo refugio.
-    host = (ev.get("sni_domain") or ev.get("catalog_domain")
-            or ev.get("dest_host") or ev.get("dest_ip"))
+    host = _provider_of(ev)
     dest = f"{host}:{ev.get('dest_port')}"
     layer = ev.get("ai_layer") or "?"
     alerts.push(
@@ -287,6 +330,19 @@ def _on_new_ai_event(ev: dict) -> None:
                  "catalog_domain": ev.get("catalog_domain"),
                  "ai_layer": layer},
     )
+    # Shadow AI: IA detectada que no esta aprobada. Una alerta por
+    # proveedor; se reevalua al cambiar la aprobacion (set_config).
+    if host and not _is_approved_provider(host) \
+            and host not in _shadow_alerted:
+        _shadow_alerted.add(host)
+        alerts.push(
+            "shadow_ai",
+            (f"Shadow AI: {ev.get('process')} -> {dest} "
+             f"(capa {layer}, proveedor no aprobado)"),
+            details={"event_id": ev.get("id"), "process": ev.get("process"),
+                     "provider": host, "dest_ip": ev.get("dest_ip"),
+                     "dest_port": ev.get("dest_port"), "ai_layer": layer},
+        )
 
 
 def _prune_retention() -> None:
@@ -386,6 +442,8 @@ class ConfigRequest(BaseModel):
     retention_days: int | None = None
     retention_days_llm: int | None = None
     llm_store_content: bool | None = None
+    catalog_approved: bool | None = None
+    approved_providers: list[str] | None = None
 
 
 class TriageRequest(BaseModel):
@@ -486,6 +544,17 @@ def set_config(req: ConfigRequest):
             _cfg[key] = v
     if req.llm_store_content is not None:
         _cfg["llm_store_content"] = bool(req.llm_store_content)
+    if req.catalog_approved is not None or req.approved_providers is not None:
+        # Cambia la aprobacion: reevaluar alertas shadow (los que queden
+        # sin aprobar vuelven a alertar al reaparecer).
+        _shadow_alerted.clear()
+        if req.catalog_approved is not None:
+            _cfg["catalog_approved"] = bool(req.catalog_approved)
+        if req.approved_providers is not None:
+            _cfg["approved_providers"] = [
+                p.strip().lower() for p in req.approved_providers
+                if p and p.strip()
+            ]
     _save_config()
     return _mask(_cfg)
 
@@ -697,6 +766,40 @@ def reset_llm_calls(req: ResetRequest):
         raise HTTPException(400, 'se requiere {"confirm": true}')
     n = llm_calls.clear() if llm_calls else 0
     return {"calls_removed": n}
+
+
+@app.get("/api/shadow")
+def shadow_providers() -> dict:
+    """Shadow AI: IA detectada que no esta aprobada, agrupado por
+    proveedor. Aprobado = catalogo (si catalog_approved) + approved."""
+    st = _req_store()
+    groups: dict[str, dict] = {}
+    for r in st.ai_events():
+        prov = _provider_of(r)
+        if not prov or _is_approved_provider(prov):
+            continue
+        g = groups.get(prov)
+        if g is None:
+            g = groups[prov] = {
+                "provider": prov, "processes": [], "layers": [],
+                "seen_count": 0, "first_seen": r["first_seen"],
+                "last_seen": r["last_seen"], "event_ids": [],
+            }
+        if r["process"] not in g["processes"]:
+            g["processes"].append(r["process"])
+        layer = str(r.get("ai_layer") or "?")
+        if layer not in g["layers"]:
+            g["layers"].append(layer)
+        g["seen_count"] += int(r.get("seen_count") or 1)
+        g["first_seen"] = min(g["first_seen"], r["first_seen"])
+        g["last_seen"] = max(g["last_seen"], r["last_seen"])
+        if len(g["event_ids"]) < 100:
+            g["event_ids"].append(r["id"])
+    for g in groups.values():
+        g["processes"].sort()
+        g["layers"].sort()
+    items = sorted(groups.values(), key=lambda g: -g["seen_count"])
+    return {"shadow": items, "count": len(items)}
 
 
 @app.get("/api/alerts")
