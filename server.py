@@ -14,6 +14,7 @@ import io
 import json
 import os
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from alerts import AlertLog
+import auto_classify
 from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
 from llm_local import explain_events, is_loopback_url
 from llm_proxy import LlmProxy
@@ -160,6 +162,7 @@ monitor: NetMonitor | None = None
 sni_capture: SniCapture | None = None
 llm_proxy: LlmProxy | None = None
 alerts: AlertLog | None = None
+_auto_stop = threading.Event()
 
 
 def _set_sni_capture(enabled: bool) -> None:
@@ -208,6 +211,27 @@ def _set_llm_proxy(enabled: bool) -> bool:
     proxy.start()
     llm_proxy = proxy
     return True
+
+
+def _auto_classify_cycle() -> None:
+    """Clasificador automatico (v2.0): LLM local rellena incognitas 0.5.
+    No-op sin LLM local configurado (fail-safe); nunca lanza."""
+    if not (_cfg.get("llm_enabled") and _cfg.get("llm_base_url")
+            and _cfg.get("llm_model") and store is not None):
+        return
+    try:
+        auto_classify.run_cycle(
+            store, _effective_llm_base(), str(_cfg["llm_model"]))
+    except Exception:
+        pass
+
+
+def _auto_classify_loop() -> None:
+    """Hilo daemon del clasificador: 60 s entre ciclos. Deliberadamente NO en
+    el hilo del monitor (una llamada LLM lenta no bloquea el poll de 5 s)."""
+    while not _auto_stop.is_set():
+        _auto_classify_cycle()
+        _auto_stop.wait(60)
 
 
 def _on_new_ai_event(ev: dict) -> None:
@@ -278,10 +302,14 @@ def _start() -> None:
                          prune_fn=_prune_retention,
                          on_new_event=_on_new_ai_event)
     monitor.start()
+    _auto_stop.clear()
+    threading.Thread(target=_auto_classify_loop, daemon=True,
+                     name="ai-netwatch-auto-classify").start()
 
 
 @app.on_event("shutdown")
 def _stop() -> None:
+    _auto_stop.set()
     if llm_proxy:
         llm_proxy.stop()
     if sni_capture:

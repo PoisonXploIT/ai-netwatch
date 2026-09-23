@@ -23,6 +23,17 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   trigger: `new_ai_destination` (pareja proceso->destino IA no vista antes).
   Toast en la UI (poll `/api/alerts`). Toggle y webhook en Ajustes. El motor de
   reglas por umbral llega en v2.1.
+- **Clasificador automatico** (`auto_classify.py`): job periodico del server
+  (hilo daemon, 60 s; fuera del monitor) que resuelve los dominios en capa 0.5
+  con el LLM local. Prompt JSON estricto `{is_ai, provider, category,
+  confidence}` con criterios contrastivos y ejemplos; contexto = dominio +
+  proceso. Cache persistente `domain_classifications` (TTL 30 d), rate-limit
+  10 s entre dominios, backoff si el LLM cae. Resultado: eventos pasan de
+  `heuristic` a `llm`; el catalogo nunca se pisa; sin LLM = no-op.
+- **Retencion separada para llm_calls** (`retention_days_llm`, default 30 d;
+  eventos siguen a 90 d): el contenido en claro lleva vida mas corta. Opcion
+  `llm_store_content`: apagado, solo se persisten metadatos y bytes.
+- **Rotacion de `alerts.log`** por tamano (1 MiB, una generacion `.1`).
 
 ### Cambiado
 - Eventos: nueva columna `ai_layer`. LLM calls: nuevas columnas
@@ -31,6 +42,10 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   solo si el clasificador lo marca IA (no inundar con trafico no-IA).
 
 ### Corregido
+- Arranque roto por `@app.on_event("startup")` sobre `_on_new_ai_event`
+  (FastAPI lo invocaba sin args -> TypeError en el startup; la suite no lo
+  cubria porque no ejecuta el lifespan). Test de regresion sobre los
+  handlers de arranque.
 - `response_bytes`: ahora es un contador total (`total += len(chunk)`) en el
   bucle de recv, independiente del buffer de parseo limitado a `MAX_PARSE_BUF`
   (2 MB). Antes subcontaba respuestas >2 MB (generaciones largas, audio).

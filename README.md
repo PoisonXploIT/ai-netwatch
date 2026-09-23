@@ -50,7 +50,7 @@ Un catalogo de ~20 dominios no es cobertura: cualquier proveedor nuevo o SDK no 
 - **Clasificador en 3 capas** (`ai_classifier.py`), por evidencia y no por heuristica sola:
   1. **Catalogo** (evidencia directa): dominio del catalogo -> proveedor conocido, confianza 1.0.
   2. **Heuristica** (senal de revision, NO evidencia): token IA o TLD `.ai` en el dominio -> se muestra para revisar, confianza 0.5, no se afirma.
-  3. **LLM local** (opcional, bajo demanda, con cache por dominio y fail-safe): para confirmar dominios limpios que ni catalogo ni heuristica deciden. No corre en el bucle caliente.
+  3. **LLM local** (opcional, con cache persistente por dominio y fail-safe): para resolver los dominios que quedan en 0.5. Corre **automaticamente** como job periodico del server (hilo propio, no del monitor: una llamada lenta no bloquea el poll de 5 s), con rate-limit entre dominios, backoff si el LLM cae y TTL de reclasificacion (30 d). Sin LLM local configurado es no-op: el dominio queda en 0.5, visible. El catalogo (1.0) siempre gana; el clasificador solo rellena incognitas.
 
 Cada evento lleva su capa (`ai_layer`: catalog/heuristic/llm/unlisted) visible en la UI (columna *IA (capa)*). Un dominio que no cae en ninguna capa queda **"sin clasificar"**: visible, nunca oculto. Para no inundar con trafico no-IA de internet, un dominio aprendido solo por EID 22 se registra **solo si el clasificador lo marca como IA**.
 

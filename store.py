@@ -41,6 +41,15 @@ CREATE TABLE IF NOT EXISTS triages (
     model TEXT,
     payload TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS domain_classifications (
+    domain TEXT PRIMARY KEY,
+    is_ai INTEGER NOT NULL,
+    provider TEXT,
+    category TEXT,
+    confidence REAL,
+    source TEXT,
+    ts TEXT NOT NULL
+);
 """
 
 
@@ -249,6 +258,69 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             )
             self.conn.commit()
             return cur.rowcount
+
+    # --- Clasificador automatico (cache por dominio) -------------------
+
+    def upsert_classification(
+            self, domain: str, is_ai: bool, provider: str | None,
+            category: str | None, confidence: float, source: str,
+    ) -> None:
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO domain_classifications"
+                " (domain, is_ai, provider, category, confidence, source, ts)"
+                " VALUES (?,?,?,?,?,?,?)"
+                " ON CONFLICT(domain) DO UPDATE SET"
+                " is_ai=excluded.is_ai, provider=excluded.provider,"
+                " category=excluded.category, confidence=excluded.confidence,"
+                " source=excluded.source, ts=excluded.ts",
+                (domain.lower(), int(bool(is_ai)), provider, category,
+                 float(confidence), source, _now()),
+            )
+            self.conn.commit()
+
+    def get_classification(self, domain: str) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM domain_classifications WHERE domain=?",
+            (domain.lower(),),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def pending_heuristic_domains(self, limit: int = 10,
+                                  ttl_days: int = 30) -> list[str]:
+        """Dominios en capa 0.5 sin clasificar (o con clase mas antigua que el
+        TTL). Solo catalog_domain: es la clave canonica del dominio."""
+        cut = _cutoff_ts(ttl_days)
+        rows = self.conn.execute(
+            "SELECT e.catalog_domain AS domain FROM events e"
+            " LEFT JOIN domain_classifications dc ON dc.domain=e.catalog_domain"
+            " WHERE e.ai_layer='heuristic' AND e.catalog_domain IS NOT NULL"
+            " AND e.catalog_domain != ''"
+            " AND (dc.domain IS NULL OR dc.ts < ?)"
+            " GROUP BY e.catalog_domain ORDER BY MAX(e.last_seen) DESC LIMIT ?",
+            (cut, limit),
+        ).fetchall()
+        return [r["domain"] for r in rows]
+
+    def apply_classification_layer(self, domain: str, layer: str) -> int:
+        """Pasa eventos de 'heuristic' a la capa nueva. El catalogo NUNCA se
+        pisa (la capa 1.0 siempre gana). Devuelve filas actualizadas."""
+        with self._lock:
+            cur = self.conn.execute(
+                "UPDATE events SET ai_layer=? WHERE catalog_domain=?"
+                " AND ai_layer='heuristic'",
+                (layer, domain.lower()),
+            )
+            self.conn.commit()
+            return cur.rowcount
+
+    def process_for_domain(self, domain: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT process FROM events WHERE catalog_domain=?"
+            " ORDER BY seen_count DESC LIMIT 1",
+            (domain.lower(),),
+        ).fetchone()
+        return row["process"] if row else None
 
     def has_event(self, process: str, dest_ip: str,
                   dest_port: int) -> bool:
