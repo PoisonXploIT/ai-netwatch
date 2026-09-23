@@ -185,6 +185,7 @@ def poll_sysmon_process_creation(max_events: int = 300) -> list[dict]:
             "image": image,
             "process": proc,
             "pid": pid,
+            "cmdline": str(fields.get("CommandLine") or ""),
             "parent_image": parent_image,
             "parent_process": parent_image.rsplit("\\", 1)[-1]
             .rsplit("/", 1)[-1],

@@ -5,10 +5,18 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 ## Proximo (v2.3) — Evidencia y fingerprinting
 
 - Evidencia exportable: cadena de hashes + export STIX.
-- Fingerprinting de SDK (identificar el cliente IA por patron).
 
 Hecho en v2.3 (sin tag aun):
-
+- Fingerprinting de SDK IA por proceso + artefactos (`sdk_fingerprint`,
+  display-only; no toca deteccion ni aprobaciones): python/node con SDKs
+  instalados en su arbol (site-packages / node_modules) -> label
+  `python-sdk(...)`/`node-sdk(...)` sin depender del dominio destino.
+  Alimentado por Sysmon EID1 (imagen + CommandLine). Superficie:
+  `GET /api/processes` (ficha por imagen), label `sdk` en
+  `top_processes` del dashboard y bloque "Procesos con SDK IA" en el
+  panel. Sin artefacto verificable -> None, nunca inventa. JA3/JA4
+  queda fuera a proposito: huella TLS compartida con navegadores,
+  solo confirmacion, y stdlib no parsea TLS.
 - `cloud_bytes.by_provider`: mapear los bytes "desconocido" (IPs sin
   evento que las mapee) a proveedor cruzando con dominios resueltos por
   EID22/SNI, no solo con `catalog_domain` de eventos.

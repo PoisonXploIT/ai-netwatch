@@ -1214,6 +1214,17 @@ def autonomy_state() -> dict:
     return {"signals": sig, "events": st.autonomy_events(limit=100)}
 
 
+@app.get("/api/processes")
+def processes_fichas() -> dict:
+    """v2.3: ficha de proceso por fingerprint de SDK IA (display; no toca
+    deteccion ni aprobaciones). Vacia si no hay monitor."""
+    out: list[dict] = []
+    if monitor is not None:
+        m = monitor.sdk_fingerprint_map()
+        out = [{"image": img, **fp} for img, fp in sorted(m.items())]
+    return {"processes": out}
+
+
 @app.get("/api/dashboard")
 def dashboard(days: int = 7) -> dict:
     """Panel (v2.0): agrega lo que ya existe — actividad diaria, top
@@ -1239,11 +1250,22 @@ def dashboard(days: int = 7) -> dict:
         return [{"name": k, "seen_count": v}
                 for k, v in sorted(d.items(), key=lambda kv: -kv[1])[:10]]
 
+    # v2.3: label de SDK IA por nombre de proceso (display; la ficha
+    # completa esta en /api/processes).
+    sdk_map: dict[str, dict] = (monitor.sdk_fingerprint_map()
+                                if monitor is not None else {})
+    proc_sdk: dict[str, str] = {}
+    for img in sorted(sdk_map):
+        base = img.rsplit("\\", 1)[-1].rsplit("/", 1)[-1].lower()
+        proc_sdk.setdefault(base, sdk_map[img]["label"])
+    top_procs = _top(processes)
+    for row in top_procs:
+        row["sdk"] = proc_sdk.get(str(row["name"]).lower(), "")
     return {
         "days": days,
         "daily": st.stats(days=days),
         "top_providers": _top(providers),
-        "top_processes": _top(processes),
+        "top_processes": top_procs,
         "layers": [{"layer": k, "seen_count": v}
                    for k, v in sorted(layers.items(),
                                       key=lambda kv: -kv[1])],

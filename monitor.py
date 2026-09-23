@@ -18,6 +18,7 @@ from pathlib import Path
 import autonomy
 from ai_catalog import KNOWN_AI_DOMAINS, match_domain
 from ai_classifier import classify_domain
+import sdk_fingerprint
 from store import Store
 
 _POLL_S = 5.0
@@ -190,6 +191,10 @@ class NetMonitor(threading.Thread):
         # R2: linaje proceso -> padre (Sysmon EID 1) y senales de autonomia
         # con cache corta (las llamadas Win32 son baratas pero no gratis).
         self._lineage: dict[str, dict] = {}
+        # v2.3: fingerprint de SDK IA por imagen (ruta del proceso).
+        # Aditivo como _lineage: se recalcula cada ciclo para las imagenes
+        # en ventana; una que sale de la ventana conserva su ultimo valor.
+        self._sdk_fp: dict[str, dict] = {}
         self._aut_cache: tuple[float, dict] | None = None
         # F1: presencia por clave (proceso, ip, puerto) entre ciclos; la
         # transicion ausente->presente es una sesion nueva (no un poll).
@@ -320,12 +325,31 @@ class NetMonitor(threading.Thread):
             return
         for e in evs:  # de antiguo a reciente: el ultimo gana
             proc = str(e.get("process") or "").strip().lower()
-            if proc:
-                self._lineage[proc] = {
-                    "parent_image": e.get("parent_image"),
-                    "parent_process": e.get("parent_process"),
-                    "parent_cmdline": e.get("parent_cmdline"),
-                }
+            if not proc:
+                continue
+            self._lineage[proc] = {
+                "parent_image": e.get("parent_image"),
+                "parent_process": e.get("parent_process"),
+                "parent_cmdline": e.get("parent_cmdline"),
+            }
+        # v2.3: fingerprint de SDK por imagen (una vez por imagen unica,
+        # el ultimo gana; barato: unas pocas comprobaciones de directorio).
+        imgs: dict[str, tuple[str, str]] = {}
+        for e in evs:
+            img = str(e.get("image") or "").strip()
+            proc = str(e.get("process") or "").strip().lower()
+            if img and proc in sdk_fingerprint.RUNTIME_NAMES:
+                imgs[img] = (proc, str(e.get("cmdline") or ""))
+        for img, (proc, cmdline) in imgs.items():
+            fp = sdk_fingerprint.fingerprint_process(proc, img, cmdline)
+            if fp is not None:
+                self._sdk_fp[img] = fp
+
+    def sdk_fingerprint_map(self) -> dict[str, dict]:
+        """v2.3: imagen (ruta completa del proceso) -> fingerprint de SDK
+        IA ({runtime, venv, sdks, label}). Display-only: no toca deteccion
+        ni aprobaciones."""
+        return {k: dict(v) for k, v in self._sdk_fp.items()}
 
     def _session_cycle(self) -> None:
         """F1/D3: sesion nueva = transicion ausente->presente por clave.
