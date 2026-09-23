@@ -1,6 +1,6 @@
 # AI NetWatch (v2.0-alpha)
 
-Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad + dominio real por SNI** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
+Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad + dominio real por SNI, en TLS TCP y QUIC/HTTP-3** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
 
 - Solo loopback (`127.0.0.1`), puerto 8790.
 - **Jev (TypeSafe)** como juez de criticidad, a demanda (boton *Triar eventos con Jev*): clasificacion `expected_ai_use / background_exfil_suspect / telemetry_noise / unrelated`, criticidad 0-3, accion inmediata y **probabilidad de falso positivo** derivada.
@@ -16,7 +16,7 @@ Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, An
 
 ## tshark: dominio real por SNI (v1.1)
 
-Con `tshark` instalado (Wireshark, `C:\Program Files\Wireshark\tshark.exe`), AI NetWatch arranca una captura continua en la interfaz activa y filtra **ClientHello** (`tls.handshake.type==1` sobre `tcp port 443`): por cada handshake extrae `ip.dst/ipv6.dst + tcp.dstport + SNI` y lo **anexa al evento ya registrado con ese IP:puerto** (columna *Dominio (SNI)*; si el evento no tenia catalogo, se completa con el dominio real).
+Con `tshark` instalado (Wireshark, `C:\Program Files\Wireshark\tshark.exe`), AI NetWatch arranca una captura continua en la interfaz activa y filtra **ClientHello** (TLS TCP y paquete Initial de QUIC/HTTP-3; `tls.handshake.type==1` sobre `udp port 443 or tcp port 443`): por cada handshake extrae `ip.dst/ipv6.dst + puerto (tcp o udp) + SNI` y lo **anexa al evento ya registrado con ese IP:puerto** (columna *Dominio (SNI)*; si el evento no tenia catalogo, se completa con el dominio real).
 
 - Deteccion de interfaz automatica (probe en paralelo; descarta VMware/Bluetooth/VirtualBox en la primera pasada). IPv4 e IPv6.
 - Fail-safe: sin tshark o sin interfaz activa, el monitor funciona igual sin SNI. El checkbox *tshark* de la config se desactiva solo si no hay binario.

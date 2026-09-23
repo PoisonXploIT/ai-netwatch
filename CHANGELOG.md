@@ -4,9 +4,20 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
 ## Proximo
 
-Nada pendiente de v2.4 salvo la verificacion e2e y el tag.
+v2.5(1) N1 — QUIC/HTTP-3: SNI del paquete Initial (en construccion, sin tag):
+- Un solo proceso tshark captura TCP+UDP 443 a la vez (`udp port 443 or
+  tcp port 443` + `tls.handshake.type==1`): el CRYPTO del paquete Initial
+  de QUIC se descompone como TLS y el SNI sale en los mismos campos;
+  el puerto llega en `udp.dstport`. Cierra el punto ciego HTTP/3 (el
+  trafico H3 moderno se veia como conexion UDP 443 sin dominio).
+- BPF/Npcap: `(tcp or udp) port 443` NO se parsea; lo valido es
+  `udp port 443 or tcp port 443` (medido en vivo).
+- Probe verificado en esta maquina (tshark 4.6.6): SNI real de H3
+  (`www.google.com`, `www.cloudflare.com`) con Edge headless; el resto del
+  pipeline (eventos, attach por IP:puerto, clasificador) ya era
+  protocol-aware (polling UDP + Sysmon EID3).
 
-Hecho en v2.4 (sin tag aun):
+Hecho en v2.4 (tag v2.4):
 - fix prob_falso_positivo: ahora es 1 - conf para TODOS los veredictos
   (la confianza es sobre el veredicto elegido; antes, con veredictos
   sospechosos, salia la confianza cruda, que es lo contrario).

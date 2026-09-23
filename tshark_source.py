@@ -5,6 +5,13 @@ dominio "mejor esfuerzo"; el SNI es lo que el cliente dice realmente en el
 handshake, y funciona incluso con CNAME/CDN (api.deepseek.com sobre una
 IP de CloudFront).
 
+v2.5 (N1): tambien cubre QUIC/HTTP-3. El primer paquete Initial de QUIC
+va cifrado con clave fija derivable, asi que tshark 4.x descompone su
+frame CRYPTO como TLS y el SNI sale en los mismos campos
+(`tls.handshake.*`). Un solo proceso captura TCP+UDP 443 a la vez.
+Nota BPF/Npcap: `(tcp or udp) port 443` NO se parsea; lo valido es
+`udp port 443 or tcp port 443` (medido).
+
 Hechos medidos en esta maquina (tshark 4.6.6, Npcap):
 - Captura SIN elevar en la interfaz fisica (Wi-Fi/Ethernet).
 - tshark escribe STDOUT en UTF-16LE al redirigir (Windows); se decodifica
@@ -115,20 +122,23 @@ def _decode_maybe_utf16(raw: bytes) -> str:
 
 
 def parse_sni_line(line: str) -> dict | None:
-    """Una linea `t_rel, ip4_dst, ip6_dst, dstport, sni` -> record o None.
+    """Una linea `t_rel, ip4_dst, ipv6_dst, tcpport, udpport, sni` -> record.
 
-    Campos vacios (p. ej. destino IPv6 sin ip4) se toleran; si falta el IP de
-    destino o el SNI, la linea no aporta nada y se descarta.
+    Campos vacios (p. ej. destino IPv6 sin ip4; TCP sin udpport o QUIC sin
+tcpport) se toleran: el puerto de destino es el primero no vacio. Si falta
+el IP de destino, un puerto valido o el SNI, la linea no aporta nada y se
+descarta.
     """
     parts = [p.strip() for p in line.split(",")]
-    if len(parts) < 5:
+    if len(parts) < 6:
         return None
-    t_rel, ip4, ip6, port, sni = parts[:5]
+    t_rel, ip4, ip6, tcp_port, udp_port, sni = parts[:6]
     dst_ip = ip4 or ip6
     if not dst_ip or not sni:
         return None
+    port_raw = tcp_port or udp_port
     try:
-        port_i = int(port)
+        port_i = int(port_raw)
     except ValueError:
         return None
     return {"t_rel": float(t_rel) if t_rel else 0.0,
@@ -138,10 +148,14 @@ def parse_sni_line(line: str) -> dict | None:
 class SniCapture(threading.Thread):
     """Proceso tshark continuo que emite records {dst_ip, dst_port, sni}.
 
-    Comando (medido y verificado en vivo):
-      tshark -i <iface> -f "tcp port 443" -Y "tls.handshake.type==1" -l
+    Comando (medido y verificado en vivo; TCP TLS + QUIC/HTTP-3):
+      tshark -i <iface> -f "udp port 443 or tcp port 443"
+             -Y "tls.handshake.type==1" -l
              -T fields -E separator=, -e frame.time_relative -e ip.dst
-             -e ipv6.dst -e tcp.dstport -e tls.handshake.extensions_server_name
+             -e ipv6.dst -e tcp.dstport -e udp.dstport
+             -e tls.handshake.extensions_server_name
+    En QUIC el SNI sale del paquete Initial (CRYPTO descompuesto como
+    TLS) y el puerto llega en udp.dstport.
     """
 
     def __init__(self, tshark: str, iface: int):
@@ -158,11 +172,12 @@ class SniCapture(threading.Thread):
     def _spawn(self) -> subprocess.Popen:
         return subprocess.Popen(
             [self._tshark, "-i", str(self._iface),
-             "-f", "tcp port 443",
+             "-f", "udp port 443 or tcp port 443",
              "-Y", "tls.handshake.type==1",
              "-l", "-T", "fields", "-E", "separator=,",
              "-e", "frame.time_relative",
-             "-e", "ip.dst", "-e", "ipv6.dst", "-e", "tcp.dstport",
+             "-e", "ip.dst", "-e", "ipv6.dst",
+             "-e", "tcp.dstport", "-e", "udp.dstport",
              "-e", "tls.handshake.extensions_server_name"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 

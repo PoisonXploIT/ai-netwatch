@@ -21,32 +21,57 @@ from tshark_source import (  # noqa: E402
 
 
 class TestParseSniLine(unittest.TestCase):
-    def test_ipv4_full(self):
-        r = parse_sni_line("21.227114000,3.173.21.63,443,api.deepseek.com")
-        # 4 campos (formato antiguo sin ipv6) -> None: se exige el nuevo de 5.
-        self.assertIsNone(r)
+    # Formato (6 campos): t_rel, ip4_dst, ipv6_dst, tcpport, udpport, sni.
+    # TCP TLS llena tcpport; QUIC/HTTP-3 llena udpport (N1).
 
-    def test_ipv4_new_format(self):
-        r = parse_sni_line("21.227114000,3.173.21.63,,443,api.deepseek.com")
+    def test_old_format_skipped(self):
+        # 4 y 5 campos (formatos antiguos) -> None: se exige el de 6.
+        self.assertIsNone(
+            parse_sni_line("21.227114000,3.173.21.63,443,api.deepseek.com"))
+        self.assertIsNone(
+            parse_sni_line("21.227114000,3.173.21.63,,443,api.deepseek.com"))
+
+    def test_tcp_ipv4(self):
+        r = parse_sni_line(
+            "21.227114000,3.173.21.63,,443,,api.deepseek.com")
         self.assertEqual(r["dst_ip"], "3.173.21.63")
         self.assertEqual(r["dst_port"], 443)
         self.assertEqual(r["sni"], "api.deepseek.com")
 
-    def test_ipv6_dst(self):
+    def test_tcp_ipv6_dst(self):
         # huggingface.co via IPv6: ip.dst vacio, ipv6.dst lleno.
         r = parse_sni_line(
-            "28.208196000,,2600:9000:24de:2c00::1,443,huggingface.co")
+            "28.208196000,,2600:9000:24de:2c00::1,443,,huggingface.co")
         self.assertEqual(r["dst_ip"], "2600:9000:24de:2c00::1")
         self.assertEqual(r["sni"], "huggingface.co")
 
+    def test_quic_udp_port(self):
+        # Muestra real del probe (Edge headless -> H3): tcpport vacio,
+        # udpport=443, SNI extraido del paquete Initial.
+        r = parse_sni_line(
+            "1.404107000,,2001:4860:482c:7700::,,443,www.google.com")
+        self.assertEqual(r["dst_ip"], "2001:4860:482c:7700::")
+        self.assertEqual(r["dst_port"], 443)
+        self.assertEqual(r["sni"], "www.google.com")
+
+    def test_quic_ipv4(self):
+        r = parse_sni_line("5.0,1.2.3.4,,,443,example.com")
+        self.assertEqual(r["dst_ip"], "1.2.3.4")
+        self.assertEqual(r["dst_port"], 443)
+
     def test_missing_sni_skipped(self):
-        self.assertIsNone(parse_sni_line("1.0,1.2.3.4,,443,"))
+        self.assertIsNone(parse_sni_line("1.0,1.2.3.4,,443,,"))
 
     def test_missing_dst_skipped(self):
-        self.assertIsNone(parse_sni_line("1.0,,,443,example.com"))
+        self.assertIsNone(parse_sni_line("1.0,,,443,,example.com"))
 
     def test_bad_port_skipped(self):
-        self.assertIsNone(parse_sni_line("1.0,1.2.3.4,,abc,example.com"))
+        self.assertIsNone(
+            parse_sni_line("1.0,1.2.3.4,,abc,,example.com"))
+
+    def test_no_port_skipped(self):
+        # Sin tcpport ni udpport no hay con que casar el evento.
+        self.assertIsNone(parse_sni_line("1.0,1.2.3.4,,,,example.com"))
 
     def test_short_line_skipped(self):
         self.assertIsNone(parse_sni_line("1.0,1.2.3.4"))
@@ -54,7 +79,7 @@ class TestParseSniLine(unittest.TestCase):
     def test_crlf_tolerated_by_caller(self):
         # parse_sni_line recibe la linea ya sin \r (lo hace el bucle);
         # pero un \r colado en el SNI no debe romper nada:
-        r = parse_sni_line("1.0,1.2.3.4,,443,example.com\r")
+        r = parse_sni_line("1.0,1.2.3.4,,443,,example.com\r")
         self.assertEqual(r["sni"], "example.com")
 
 
