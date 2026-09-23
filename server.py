@@ -311,11 +311,9 @@ def _ip_host_map() -> dict[str, str]:
     eventos (SNI > catalogo > cache DNS; el mas reciente gana) + resoluciones
     EID 22 persistidas. Sirve para etiquetar y mostrar el destino aunque el
     proveedor quede 'desconocido'."""
-    out: dict[str, str] = {}
+    ev: dict[str, str] = {}
     if store is None:
-        return out
-    for ip, dom in store.dns_resolution_map().items():
-        out[ip] = dom
+        return ev
     for ip, sni, cat, host in store.ip_resolution_rows():
         ip = str(ip or "")
         if not ip:
@@ -323,7 +321,11 @@ def _ip_host_map() -> dict[str, str]:
         prov = _provider_of({"sni_domain": sni, "catalog_domain": cat,
                              "dest_host": host, "dest_ip": ip})
         if prov and prov != ip.lower():
-            out.setdefault(ip, prov)  # eventos definitivos; mas reciente gana
+            ev.setdefault(ip, prov)  # mas reciente gana
+    out: dict[str, str] = {}
+    for ip, dom in store.dns_resolution_map().items():
+        out[ip] = dom
+    out.update(ev)  # eventos definitivos: ganan sobre DNS persistido
     return out
 
 

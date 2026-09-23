@@ -546,7 +546,8 @@ class TestByProviderEid22Mapping(NetBytesServerBase):
         self.assertEqual(row["kind"], "cdn")
 
     def test_event_wins_over_persisted_dns(self):
-        # v2.3: el evento (SNI/catalogo) es definitivo sobre la tabla DNS.
+        # v2.3: el evento (SNI/catalogo) es definitivo sobre la tabla DNS,
+        # tanto para el provider como para el hostname mostrado.
         self.store.record_dns_resolution("5.6.7.8", "openrouter.ai")
         self.store.observe_connection("svc.exe", "5.6.7.8", 443, None, None)
         self.store.conn.execute(
@@ -558,6 +559,7 @@ class TestByProviderEid22Mapping(NetBytesServerBase):
             "2026-09-23T10:00:00")
         rows = server._egress_rows()
         self.assertEqual(rows[0]["provider"], "deepseek.com")
+        self.assertEqual(rows[0]["host"], "deepseek.com")
 
 
 class TestEid22ProviderMap(unittest.TestCase):
