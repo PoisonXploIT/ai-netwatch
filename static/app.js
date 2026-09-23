@@ -305,6 +305,18 @@ async function refreshDashboard() {
       ? `llamadas: ${d.llm_calls.calls} · tokens: ${(d.llm_calls.prompt_tokens || 0) + (d.llm_calls.completion_tokens || 0)} · bytes locales: ${fmtBytes((d.llm_calls.request_bytes || 0) + (d.llm_calls.response_bytes || 0))}`
       : "inspector sin datos";
     const daily = d.daily.map(x => `${x.date}: ${x.events} ev / ${x.triages} tri`).join(" · ");
+    // v2.3: cloud_bytes disponible -> total + desglose por proveedor con
+    // label api/web/cdn y hostname resuelto cuando el provider es 'desconocido'.
+    const cb = d.cloud_bytes || {};
+    const kindLabel = { api: "API", web: "web", cdn: "CDN" };
+    const provRows = (cb.by_provider || []).map(p =>
+      `<div class="row"><span class="mono">${esc(p.provider)}</span>` +
+      (p.host && p.host !== p.provider ? ` <span class="hint">(${esc(p.host)})</span>` : "") +
+      (kindLabel[p.kind] ? ` <span class="hint">[${kindLabel[p.kind]}]</span>` : "") +
+      ` <span class="mono">${fmtBytes(p.bytes)}</span></div>`).join("");
+    const cloudLine = cb.available
+      ? `<div class="row"><b>Bytes cloud (TLS remoto)</b>: <span class="mono">${fmtBytes(cb.total_bytes || 0)}</span>${cb.spawn_method ? ` <span class="hint">(${esc(cb.spawn_method)})</span>` : ""}</div>${provRows}`
+      : `<div class="row"><span class="hint">Bytes cloud: no disponible para TLS remoto (${esc(cb.reason || "")}).</span></div>`;
     wrap.innerHTML = `
       <div class="row"><span class="hint">Actividad (7 días): ${daily || "sin datos"}</span></div>
       ${topList(d.top_providers, "Top proveedores por presencia")}
@@ -312,7 +324,7 @@ async function refreshDashboard() {
       <div class="row"><span class="hint">Capas: ${layers}</span></div>
       <div class="row"><a href="#shadow-card" class="hint">Shadow AI: ${d.shadow_count} proveedor(es) no aprobado(s)</a></div>
       <div class="row"><span class="hint">LLM Inspector (local): ${llm}</span></div>
-      <div class="row"><span class="hint">Bytes cloud: no disponible para TLS remoto (${esc(d.cloud_bytes.reason)}).</span></div>`;
+      ${cloudLine}`;
   } catch (e) { /* sin datos aún */ }
 }
 

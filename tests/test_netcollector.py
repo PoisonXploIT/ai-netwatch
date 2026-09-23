@@ -22,6 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import ai_classifier as classifier  # noqa: E402
 import alerts  # noqa: E402
 import monitor as monitor_mod  # noqa: E402
 import netcollector  # noqa: E402
@@ -501,6 +502,47 @@ class TestByProviderEid22Mapping(NetBytesServerBase):
         self.assertEqual(rows[0]["provider"], "desconocido")
         self.assertTrue(rows[0]["unapproved"])
 
+    def test_persisted_dns_maps_ai_ip(self):
+        # v2.3: resolucion EID22 persistida (sin evento, sin monitor vivo)
+        # mapea la IP a proveedor IA y el label sale del hostname.
+        self.store.record_dns_resolution("5.6.7.8", "openrouter.ai")
+        self.store.ingest_net_bytes(
+            [{"dest_ip": "5.6.7.8", "dest_port": 443, "bytes": 1000}],
+            "2026-09-23T10:00:00")
+        rows = server._egress_rows()
+        self.assertEqual(rows[0]["provider"], "openrouter.ai")
+        self.assertEqual(rows[0]["kind"], "api")  # TLD .ai
+        self.assertFalse(rows[0]["unapproved"])
+
+    def test_persisted_dns_non_ai_stays_desconocido_with_label(self):
+        # v2.3: dominio no-IA resuelto -> provider sigue 'desconocido' (no es
+        # proveedor IA) pero el hostname y el label SI se muestran.
+        self.store.record_dns_resolution(
+            "5.6.7.8", "d3bbv8sr76az5s.cloudfront.net")
+        self.store.ingest_net_bytes(
+            [{"dest_ip": "5.6.7.8", "dest_port": 443, "bytes": 1000}],
+            "2026-09-23T10:00:00")
+        rows = server._egress_rows()
+        self.assertEqual(rows[0]["provider"], "desconocido")
+        self.assertEqual(
+            rows[0]["host"], "d3bbv8sr76az5s.cloudfront.net")
+        self.assertEqual(rows[0]["kind"], "cdn")
+        self.assertTrue(rows[0]["unapproved"])
+
+    def test_event_wins_over_persisted_dns(self):
+        # v2.3: el evento (SNI/catalogo) es definitivo sobre la tabla DNS.
+        self.store.record_dns_resolution("5.6.7.8", "openrouter.ai")
+        self.store.observe_connection("svc.exe", "5.6.7.8", 443, None, None)
+        self.store.conn.execute(
+            "UPDATE events SET catalog_domain='deepseek.com'"
+            " WHERE process='svc.exe'")
+        self.store.conn.commit()
+        self.store.ingest_net_bytes(
+            [{"dest_ip": "5.6.7.8", "dest_port": 443, "bytes": 1000}],
+            "2026-09-23T10:00:00")
+        rows = server._egress_rows()
+        self.assertEqual(rows[0]["provider"], "deepseek.com")
+
 
 class TestEid22ProviderMap(unittest.TestCase):
     """Monitor.eid22_provider_map (NetMonitor real): solo expone dominios
@@ -525,6 +567,88 @@ class TestEid22ProviderMap(unittest.TestCase):
         self.assertEqual(m.get("1.1.1.1"), "api.openai.com")
         self.assertEqual(m.get("3.3.3.3"), "huggingface.co")
         self.assertNotIn("2.2.2.2", m)
+
+    def test_cycle_persists_resolutions(self):
+        # v2.3: el ciclo EID 22 persiste ip->dominio (cualquier dominio) en
+        # dns_resolutions, para que sobreviva el restart y cierre el hueco
+        # 'desconocido' de net_bytes.
+        evs = [
+            {"query_name": "api.openai.com", "ips": ["9.9.9.9"]},
+            {"query_name": "example.com", "ips": ["8.8.4.4"]},
+        ]
+        m2 = monitor_mod.NetMonitor(self.store, eid22_fn=lambda: evs)
+        m2._eid22_cycle()
+        d = self.store.dns_resolution_map()
+        self.assertEqual(d.get("9.9.9.9"), "api.openai.com")
+        self.assertEqual(d.get("8.8.4.4"), "example.com")  # no-IA tambien
+
+
+class TestDnsResolutionsStore(unittest.TestCase):
+    """v2.3: store.dns_resolutions (ip->dominio, el mas reciente gana)."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.store = Store(Path(self.tmp.name) / "t.db")
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self.tmp.cleanup()
+
+    def test_upsert_latest_wins(self):
+        self.store.record_dns_resolution("1.2.3.4", "a.com")
+        self.store.record_dns_resolution("1.2.3.4", "b.com")
+        self.assertEqual(
+            self.store.dns_resolution_map().get("1.2.3.4"), "b.com")
+
+    def test_blank_ignored(self):
+        self.store.record_dns_resolution("", "x.com")
+        self.store.record_dns_resolution("1.2.3.4", "")
+        self.assertEqual(self.store.dns_resolution_map(), {})
+
+    def test_reset_clears(self):
+        self.store.record_dns_resolution("1.2.3.4", "a.com")
+        out = self.store.reset()
+        self.assertEqual(out.get("dns_resolutions_removed"), 1)
+        self.assertEqual(self.store.dns_resolution_map(), {})
+
+    def test_prune_retention(self):
+        self.store.record_dns_resolution("1.2.3.4", "a.com")
+        # Envejecer la fila mas alla del corte de retencion.
+        self.store.conn.execute(
+            "UPDATE dns_resolutions SET last_seen='2000-01-01 00:00:00Z'")
+        self.store.conn.commit()
+        out = self.store.prune(30)
+        self.assertEqual(out.get("dns_resolutions_removed"), 1)
+        self.assertEqual(self.store.dns_resolution_map(), {})
+
+
+class TestDestinationKind(unittest.TestCase):
+    """v2.3: label api/web/cdn por hostname (heuristica de display)."""
+
+    def test_api_subdomain_and_tld(self):
+        self.assertEqual(
+            classifier.destination_kind("api.openai.com"), "api")
+        self.assertEqual(
+            classifier.destination_kind("api.typesafe.ai"), "api")
+        self.assertEqual(
+            classifier.destination_kind("openrouter.ai"), "api")  # .ai
+
+    def test_cdn_markers(self):
+        self.assertEqual(
+            classifier.destination_kind(
+                "d3bbv8sr76az5s.cloudfront.net"), "cdn")
+        self.assertEqual(
+            classifier.destination_kind("a248.e.akamai.net"), "cdn")
+        self.assertEqual(
+            classifier.destination_kind("assets.example-cdn.com"), "cdn")
+
+    def test_web_and_degraded(self):
+        self.assertEqual(
+            classifier.destination_kind("huggingface.co"), "web")
+        self.assertEqual(classifier.destination_kind(""), "")
+        self.assertEqual(classifier.destination_kind("1.2.3.4"), "")
+        self.assertEqual(
+            classifier.destination_kind("2001:db8::1"), "")
 
 
 if __name__ == "__main__":

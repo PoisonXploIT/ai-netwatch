@@ -364,6 +364,10 @@ class NetMonitor(threading.Thread):
                     m[ip] = dom
         if m:
             self._eid22_cache = m
+            # v2.3: persistir (cualquier dominio, IA o no): sobrevive el
+            # restart y cierra el hueco 'desconocido' de net_bytes.
+            for ip, dom in m.items():
+                self.store.record_dns_resolution(ip, dom)
 
     def eid22_provider_map(self) -> dict[str, str]:
         """v2.3: IP -> dominio IA resuelto por EID 22 (DnsQuery), desde el

@@ -16,6 +16,7 @@ layer="unlisted"): visible para el usuario, nunca descartado en silencio.
 """
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
 
 from ai_catalog import match_domain
@@ -96,3 +97,38 @@ def classify_domain(domain, llm_fn=None, cache=None) -> Classification:
 def is_ai(domain, llm_fn=None, cache=None) -> bool:
     """Atajo booleano de `classify_domain`."""
     return classify_domain(domain, llm_fn=llm_fn, cache=cache).is_ai
+
+
+# v2.3: marcadores de hostname para el label API/web/CDN (heuristica de
+# display; no afecta deteccion ni aprobaciones).
+_CDN_MARKERS: tuple[str, ...] = (
+    "cloudfront.net", "akamai", "fastly.net", "cloudflare",
+    "edgekey.net", "cdn.",
+)
+
+
+def destination_kind(host: str) -> str:
+    """v2.3 label de display por hostname: 'api' | 'web' | 'cdn' | ''.
+
+    Heuristica documentada (NO evidencia, no toca deteccion/aprobaciones):
+    - 'cdn': hostname de CDN (cloudfront/akamai/fastly/cloudflare/edgekey/cdn).
+    - 'api': subdominio 'api.*' o TLD .ai.
+    - 'web': cualquier otro hostname resuelto (apex, sitio web, descargas).
+    - '': IP cruda, vacio o no clasificable. Degrada a vacio, nunca inventa.
+    """
+    h = str(host or "").strip().lower()
+    if not h or ":" in h:
+        return ""
+    try:
+        ipaddress.ip_address(h)  # IP pura (v4/v6): sin etiqueta.
+        return ""
+    except ValueError:
+        pass
+    if any(mk in h for mk in _CDN_MARKERS):
+        return "cdn"
+    labels = [l for l in h.split(".") if l]
+    if "api" in labels:
+        return "api"
+    if len(labels) >= 2 and labels[-1] == "ai":
+        return "api"
+    return "web"

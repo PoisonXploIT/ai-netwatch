@@ -28,6 +28,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ai_catalog import KNOWN_AI_DOMAINS
+from ai_classifier import classify_domain, destination_kind
 from alerts import AlertLog
 import auto_classify
 import rules
@@ -305,11 +306,33 @@ def _auto_classify_cycle() -> None:
         pass
 
 
+def _ip_host_map() -> dict[str, str]:
+    """v2.3: dest_ip -> mejor hostname conocido (cualquier dominio, IA o no):
+    eventos (SNI > catalogo > cache DNS; el mas reciente gana) + resoluciones
+    EID 22 persistidas. Sirve para etiquetar y mostrar el destino aunque el
+    proveedor quede 'desconocido'."""
+    out: dict[str, str] = {}
+    if store is None:
+        return out
+    for ip, dom in store.dns_resolution_map().items():
+        out[ip] = dom
+    for ip, sni, cat, host in store.ip_resolution_rows():
+        ip = str(ip or "")
+        if not ip:
+            continue
+        prov = _provider_of({"sni_domain": sni, "catalog_domain": cat,
+                             "dest_host": host, "dest_ip": ip})
+        if prov and prov != ip.lower():
+            out.setdefault(ip, prov)  # eventos definitivos; mas reciente gana
+    return out
+
+
 def _ip_provider_map() -> dict[str, str]:
-    """v2.3: dest_ip -> proveedor (dominio), cruzando TODA la senal:
+    """v2.3: dest_ip -> proveedor (dominio IA), cruzando TODA la senal:
     eventos (SNI > catalogo > cache DNS; el mas reciente gana) + EID 22 en
-    memoria del monitor (solo dominios IA). Las IPs sin dominio resuelto
-    quedan fuera del mapa => 'desconocido' en by_provider."""
+    memoria del monitor + resoluciones EID 22 persistidas (sobreviven el
+    restart). Solo dominios IA. Las IPs sin dominio resuelto quedan fuera
+    => 'desconocido' en by_provider."""
     ev_map: dict[str, str] = {}
     if store is not None:
         for ip, sni, cat, host in store.ip_resolution_rows():
@@ -323,20 +346,30 @@ def _ip_provider_map() -> dict[str, str]:
     out: dict[str, str] = {}
     if monitor is not None:
         out.update(monitor.eid22_provider_map())
+    if store is not None:
+        for ip, dom in store.dns_resolution_map().items():
+            if classify_domain(dom).is_ai:
+                out.setdefault(ip, dom)
     out.update(ev_map)  # los eventos son definitivos: ganan sobre EID 22
     return out
 
 
 def _egress_rows() -> list[dict]:
     """v2.2: bytes remotos por proveedor (net_bytes + mapeo IP->proveedor).
-    Vacio si el colector elevado nunca ha volcado datos."""
+    Vacio si el colector elevado nunca ha volcado datos. v2.3: cada fila
+    lleva 'host' (mejor hostname conocido) y 'kind' (label api/web/cdn)."""
     if store is None:
         return []
     ip_prov = _ip_provider_map()
+    ip_host = _ip_host_map()
     out: list[dict] = []
     for r in store.net_bytes_sum():
-        prov = ip_prov.get(str(r["dest_ip"]), "desconocido")
-        out.append({"provider": prov,
+        ip = str(r["dest_ip"])
+        prov = ip_prov.get(ip, "desconocido")
+        host = ip_host.get(ip, "")
+        # label sobre el proveedor si hay; si no, sobre el hostname resuelto.
+        kind = destination_kind(ip_prov.get(ip) or host)
+        out.append({"provider": prov, "host": host, "kind": kind,
                     "bytes": int(r["bytes"]),
                     "unapproved": not _is_approved_provider(prov)})
     return out

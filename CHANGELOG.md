@@ -6,12 +6,20 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
 - Evidencia exportable: cadena de hashes + export STIX.
 - Fingerprinting de SDK (identificar el cliente IA por patron).
-- Label API / web / CDN por hostname (heuristica display; reduce el
-  ruido "no parece IA" sin tocar la deteccion).
+
+Hecho en v2.3 (sin tag aun):
+
 - `cloud_bytes.by_provider`: mapear los bytes "desconocido" (IPs sin
   evento que las mapee) a proveedor cruzando con dominios resueltos por
-  EID22/SNI, no solo con `catalog_domain` de eventos. Convierte
-  "desconocido" en proveedor real.
+  EID22/SNI, no solo con `catalog_domain` de eventos.
+- Tabla `dns_resolutions` persistida (ip->dominio desde el ciclo EID 22):
+  sobrevive el restart y cierra el hueco de resoluciones que ya salieron
+  de la ventana en memoria de los ultimos 300 DnsQuery.
+- Label API / web / CDN por hostname (`destination_kind`, heuristica de
+  display; no toca deteccion ni aprobaciones) + `host` resuelto en cada
+  fila de `by_provider` para identificar el destino aunque el proveedor
+  quede "desconocido". El panel dashboard lo renderiza (antes solo
+  mostraba la rama "no disponible").
 
 ## v2.2.1 — Elevacion sin prompt: tarea programada (bytes remotos)
 

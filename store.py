@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS domain_classifications (
     source TEXT,
     ts TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS dns_resolutions (
+    dest_ip TEXT PRIMARY KEY,
+    domain TEXT NOT NULL,
+    last_seen TEXT NOT NULL
+);
 """
 
 
@@ -458,6 +463,32 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             " COALESCE(catalog_domain,''), COALESCE(dest_host,'')"
             " FROM events ORDER BY last_seen DESC").fetchall()
 
+    def record_dns_resolution(self, ip: str, domain: str) -> None:
+        """v2.3: persiste una resolucion EID 22 (ip->dominio); el mas
+        reciente gana. Conocimiento que sobrevive el restart: cierra el
+        hueco de net_bytes 'desconocido' cuya resolucion ya salio de la
+        ventana en memoria de los ultimos 300 DnsQuery."""
+        ip = str(ip or "").strip()
+        domain = str(domain or "").strip().lower()
+        if not ip or not domain:
+            return
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO dns_resolutions(dest_ip, domain, last_seen)"
+                " VALUES(?,?,?)"
+                " ON CONFLICT(dest_ip) DO UPDATE SET"
+                " domain=excluded.domain, last_seen=excluded.last_seen",
+                (ip, domain, _now()))
+            self.conn.commit()
+
+    def dns_resolution_map(self) -> dict[str, str]:
+        """v2.3: dest_ip -> dominio desde las resoluciones EID 22
+        persistidas (cualquier dominio; el filtro IA se hace en el uso)."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT dest_ip, domain FROM dns_resolutions").fetchall()
+        return {str(r["dest_ip"]): str(r["domain"]) for r in rows}
+
     def events_since(self, days: int) -> list[dict]:
         """Eventos vivos con last_seen dentro de `days` (panel)."""
         q = ("SELECT * FROM events WHERE last_seen >= ?"
@@ -640,12 +671,16 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
                 "DELETE FROM sessions_log WHERE ts < ?", (cut,)).rowcount
             nb = self.conn.execute(
                 "DELETE FROM net_bytes WHERE last_seen < ?", (cut,)).rowcount
+            dr = self.conn.execute(
+                "DELETE FROM dns_resolutions WHERE last_seen < ?",
+                (cut,)).rowcount
             # VACUUM no puede correr dentro de la transaccion del DELETE.
             self.conn.commit()
             self.conn.execute("VACUUM")
             self.conn.commit()
         return {"events_removed": ev, "triages_removed": tr,
-                "sessions_removed": sl, "net_bytes_removed": nb}
+                "sessions_removed": sl, "net_bytes_removed": nb,
+                "dns_resolutions_removed": dr}
 
     def reset(self) -> dict:
         """Borra eventos y triajes vivos; daily_stats NO se toca (historico)."""
@@ -658,9 +693,12 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             self.conn.execute("DELETE FROM triages")
             self.conn.execute("DELETE FROM sessions_log")
             self.conn.execute("DELETE FROM net_bytes")
+            dr = self.conn.execute(
+                "SELECT COUNT(*) FROM dns_resolutions").fetchone()[0]
+            self.conn.execute("DELETE FROM dns_resolutions")
             self.conn.commit()
         return {"events_removed": ev, "triages_removed": tr,
-                "net_bytes_removed": nb}
+                "net_bytes_removed": nb, "dns_resolutions_removed": dr}
 
     def latest_triage(self) -> dict | None:
         row = self.conn.execute(
