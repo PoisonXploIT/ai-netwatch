@@ -29,11 +29,12 @@ if (-not $isAdmin) {
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$wrapper`""
 
+# On-demand start ya es el default (el inverso seria -DisallowDemandStart);
+# -StartWhenAvailable es un switch y su default (no iniciar) es lo que
+# queremos, asi que se omite.
 $settings = New-ScheduledTaskSettingsSet `
-    -AllowStartOnDemand `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
-    -MultipleInstancePolicy IgnoreNew `
-    -StartWhenAvailable $false
+    -MultipleInstances IgnoreNew
 
 # LogonType Interactive + RunLevel Highest = "Run with highest
 # privileges" con solo logon interactivo: el task engine eleva sin prompt.

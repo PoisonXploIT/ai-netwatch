@@ -133,6 +133,16 @@ consola interactiva). Opt-in (`net_bytes_enabled`) y visible a propósito;
 el panel muestra `spawn_method` (`task`/`uac`) para saber que camino
 corrio.
 
+**Diagnostico**: cada ciclo escribe lineas en `data/netbytes.log`
+(arranque del hilo, transiciones de `net_bytes_enabled`, inicio de ciclo
+con deteccion de tarea, metodo de spawn, ingesta o fallo). Si el panel
+dice "no disponible", ese fichero dice por que.
+
+**Config**: los cambios van por el panel / `POST /api/config` (o editar
+`config.json` y reiniciar): el servidor carga el config en memoria al
+arrancar; una edicion del fichero con el servidor vivo no se ve hasta
+el restart.
+
 ## Sesiones y beaconing (F1/D3, v2.1)
 
 **Sesiones (F1)**: una sesión es una transición ausente→presente por clave

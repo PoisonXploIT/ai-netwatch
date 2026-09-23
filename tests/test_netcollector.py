@@ -249,6 +249,15 @@ class TestSpawnNetCollector(NetBytesServerBase):
         self.assertEqual(cmd["out_path"], str(outp))
         self.assertIn("python", cmd["python"])
 
+    def test_netbytes_log_appends(self):
+        server._netbytes_log("ciclo inicio dur=30s tarea=si")
+        server._netbytes_log("spawn task")
+        lines = (server.DATA_DIR / "netbytes.log").read_text(
+            encoding="utf-8").strip().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertIn("ciclo inicio", lines[0])
+        self.assertIn("spawn task", lines[1])
+
 
 class TestTaskScripts(unittest.TestCase):
     """Los scripts de la tarea programada existen y son coherentes."""
@@ -260,6 +269,17 @@ class TestTaskScripts(unittest.TestCase):
         self.assertIn("netcollector_cmd.json", w)
         self.assertIn(server.NETBYTES_TASK_NAME, s)
         self.assertIn("RunLevel Highest", s)
+
+    def test_setup_uses_valid_settings_params(self):
+        # Regresion: los 3 parametros invalidos que rompian el registro
+        # (AllowStartOnDemand / MultipleInstancePolicy / StartWhenAvailable
+        # como valorado) no pueden volver.
+        root = Path(__file__).resolve().parent.parent
+        s = (root / "setup_netbytes_task.ps1").read_text(encoding="utf-8")
+        self.assertNotIn("AllowStartOnDemand", s)
+        self.assertNotIn("MultipleInstancePolicy", s)
+        self.assertNotIn("-StartWhenAvailable $false", s)
+        self.assertIn("-MultipleInstances IgnoreNew", s)
 
 
 class TestNetBytesStore(NetBytesServerBase):

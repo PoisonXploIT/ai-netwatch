@@ -418,6 +418,18 @@ def _spawn_netcollector(duration_s: int, out_path: Path) -> str:
     return "uac"
 
 
+def _netbytes_log(msg: str) -> None:
+    """Diagnostico append-only en data/netbytes.log: distingue 'el bucle
+    corre' de 'config false en memoria', y que camino de spawn se tomo.
+    Sin esto, un fallo del camino elevado es invisible desde fuera."""
+    try:
+        with open(DATA_DIR / "netbytes.log", "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%dT%H:%M:%S") + " "
+                    + msg + "\n")
+    except OSError:
+        pass
+
+
 def _read_netjsonl(out_path: Path) -> tuple[list[dict], dict | None]:
     """Lee el JSONL del colector: filas de bytes + linea meta (diagnostico,
     no bytes). Devuelve (rows, meta)."""
@@ -442,15 +454,21 @@ def _netbytes_cycle() -> None:
         return
     duration_s = int(_cfg.get("net_bytes_duration_s", 30))
     out_path = DATA_DIR / f"netprobe_{int(time.time())}.jsonl"
+    _netbytes_log(f"ciclo inicio dur={duration_s}s "
+                 f"tarea={'si' if _netbytes_task_exists() else 'no'}")
     global _netbytes_spawn_method
     try:
-        _netbytes_spawn_method = _spawn_netcollector(duration_s, out_path)
-    except (OSError, subprocess.SubprocessError):
+        method = _spawn_netcollector(duration_s, out_path)
+        _netbytes_spawn_method = method
+        _netbytes_log(f"spawn {method}")
+    except (OSError, subprocess.SubprocessError) as e:
+        _netbytes_log(f"spawn fallo: {e}")
         return
     deadline = time.monotonic() + duration_s + 90
     while not out_path.exists() and time.monotonic() < deadline:
         _net_stop.wait(5)
     if not out_path.exists():
+        _netbytes_log("sin JSONL (fallo elevado o timeout)")
         return  # sin admin / UAC denegado / fallo: no hay datos
     global _net_last_meta
     try:
@@ -458,7 +476,9 @@ def _netbytes_cycle() -> None:
         if meta is not None:
             _net_last_meta = meta
         store.ingest_net_bytes(rows, time.strftime("%Y-%m-%dT%H:%M:%S"))
-    except (OSError, ValueError):
+        _netbytes_log(f"ingesta rows={len(rows)} meta={meta}")
+    except (OSError, ValueError) as e:
+        _netbytes_log(f"lectura/ingesta fallo: {e}")
         return
     try:
         out_path.unlink()
@@ -468,13 +488,23 @@ def _netbytes_cycle() -> None:
 
 def _netbytes_loop() -> None:
     """Hilo daemon del colector elevado: cada net_bytes_cycle_s, si esta
-    activado. Desactivado => solo duerme (opt-in por diseño)."""
+    activado. Desactivado => solo duerme (opt-in por diseño). Log de
+    arranque y transiciones en data/netbytes.log."""
+    _netbytes_log("hilo netbytes iniciado")
+    enabled_prev: bool | None = None
     while not _net_stop.is_set():
-        if _cfg.get("net_bytes_enabled"):
+        enabled = bool(_cfg.get("net_bytes_enabled"))
+        if enabled != enabled_prev:
+            # El config se carga en memoria al arrancar: una edicion del
+            # fichero con el servidor vivo NO se ve hasta restart.
+            _netbytes_log(
+                f"net_bytes_enabled -> {str(enabled).lower()}")
+            enabled_prev = enabled
+        if enabled:
             try:
                 _netbytes_cycle()
-            except Exception:
-                pass
+            except Exception as e:
+                _netbytes_log(f"ciclo fallo inesperado: {e}")
         cycle = int(_cfg.get("net_bytes_cycle_s", 600))
         _net_stop.wait(max(30, min(cycle, 86400)))
 

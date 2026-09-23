@@ -22,6 +22,18 @@ sin prompt por ciclo, y funciona aunque el servidor corra oculto.
   `spawn_method` (`task`/`uac`) en `cloud_bytes`.
 - Tests: spawn task vs UAC, contenido del cmd file, coherencia de los
   scripts. Sin admin ni UAC reales (mocks).
+- **Fix setup**: `New-ScheduledTaskSettingsSet` no acepta
+  `-AllowStartOnDemand` (el on-demand ya es default),
+  `-MultipleInstancePolicy` (lo correcto: `-MultipleInstances`) ni
+  `-StartWhenAvailable $false` (es un switch; se omite, default false).
+  Con esos tres, el script tal cual nunca registraba la tarea.
+- **Log de ciclo** `data/netbytes.log`: arranque del hilo, transiciones
+  de `net_bytes_enabled`, inicio de ciclo con deteccion de tarea,
+  metodo de spawn, ingesta o fallo. Distingue 'el bucle corre' de
+  'config false en memoria'.
+- Documentado: el config se carga en memoria al arrancar; editar
+  `config.json` con el servidor vivo no tiene efecto hasta restart (los
+  cambios van por panel / `POST /api/config`).
 
 ## Fix colector elevado (v2.2) — B1/B2/B3 + stop -ets
 
