@@ -21,6 +21,12 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 - Monitor: nuevo ciclo EID 22; un dominio aprendido solo por EID 22 se registra
   solo si el clasificador lo marca IA (no inundar con trafico no-IA).
 
+### Corregido
+- `response_bytes`: ahora es un contador total (`total += len(chunk)`) en el
+  bucle de recv, independiente del buffer de parseo limitado a `MAX_PARSE_BUF`
+  (2 MB). Antes subcontaba respuestas >2 MB (generaciones largas, audio).
+  `request_bytes` ya era correcto.
+
 ### Limitaciones honestas
 - Bytes/payload del trafico TLS **remoto** siguen sin verse (requiere ETW
   `Kernel-Network` [pywin32/nativo, rompe "solo stdlib"], Npcap loopback

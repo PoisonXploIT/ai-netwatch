@@ -211,7 +211,7 @@ def _extract_response(path: str, resp_raw: bytes, streaming: bool,
 
 def _extract_record(method: str, path: str, status: int, req_body: bytes,
                     resp_raw: bytes, streaming: bool, latency_ms: float,
-                    client_addr: str) -> dict:
+                    client_addr: str, resp_total: int | None = None) -> dict:
     """Construye el registro de una llamada (prompt/respuesta truncados)."""
     prompt_text, model = _extract_prompt(path, req_body)
     resp_text, model, usage = _extract_response(path, resp_raw, streaming, model)
@@ -237,7 +237,10 @@ def _extract_record(method: str, path: str, status: int, req_body: bytes,
         # Egress real medido (no estimado): bytes del cuerpo que sale hacia el
         # LLM y bytes totales que vuelven. Base del dashboard de egress.
         "request_bytes": len(req_body),
-        "response_bytes": len(resp_raw),
+        # Counter total del bucle de recv (independiente de MAX_PARSE_BUF,
+        # que solo limita lo retenido para parsear). Sin el contador, las
+        # respuestas >2 MB se subcontaban.
+        "response_bytes": resp_total if resp_total is not None else len(resp_raw),
         "latency_ms": round(latency_ms, 1),
         "client_addr": client_addr,
         "prompt": prompt_text[:MAX_STORED_TEXT],
@@ -349,6 +352,7 @@ class LlmProxy(threading.Thread):
         out += b"Connection: close\r\n\r\n" + body
 
         resp_raw = b""
+        resp_total = 0
         status = 0
         streaming = False
         try:
@@ -358,6 +362,7 @@ class LlmProxy(threading.Thread):
                 if not chunk:
                     break
                 client.sendall(chunk)
+                resp_total += len(chunk)
                 if len(resp_raw) < MAX_PARSE_BUF:
                     resp_raw += chunk
             head, _, _rest = resp_raw.partition(b"\r\n\r\n")
@@ -380,6 +385,7 @@ class LlmProxy(threading.Thread):
                     method, path, status, body, resp_raw, streaming,
                     (time.monotonic() - t0) * 1000.0,
                     f"{addr[0]}:{addr[1]}" if isinstance(addr, tuple) else str(addr),
+                    resp_total,
                 ))
             except Exception:
                 pass  # el proxy nunca rompe por logging

@@ -468,6 +468,16 @@ class TestEgressBytes(unittest.TestCase):
         self.assertEqual(rec["request_bytes"], len(req))
         self.assertEqual(rec["response_bytes"], 0)
 
+    def test_response_bytes_counts_full_stream_over_parse_buf(self):
+        # Regresion: resp_raw se corta en MAX_PARSE_BUF; response_bytes debe
+        # usar el contador total del bucle de recv, no len(resp_raw).
+        big = b"x" * (llm_proxy.MAX_PARSE_BUF + 50_000)
+        truncated = big[:llm_proxy.MAX_PARSE_BUF]
+        rec = llm_proxy._extract_record(
+            "POST", "/v1/chat/completions", 200, b"{}", truncated,
+            True, 10.0, "127.0.0.1:1", len(big))
+        self.assertEqual(rec["response_bytes"], len(big))
+
     def test_bytes_persisted_to_store(self):
         tmp = tempfile.TemporaryDirectory()
         st = LlmCallStore(Path(tmp.name) / "c.db")
