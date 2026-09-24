@@ -238,6 +238,24 @@ async function refreshEvents() {
   } catch (e) { /* server caído */ }
 }
 
+async function loadFacets() {
+  try {
+    const d = await api("/api/facets");
+    const fill = (id, items, allLabel) => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const cur = sel.value;
+      sel.innerHTML = `<option value="">${allLabel}</option>` +
+        (items || []).map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+      if (cur) sel.value = cur;
+    };
+    fill("ev-process", d.processes, "Todos los procesos");
+    fill("ev-dest", d.destinations, "Todos los destinos");
+    fill("aut-process", d.processes, "Todos los procesos");
+    fill("aut-provider", d.providers, "Todos los proveedores");
+  } catch (e) { /* sin facets */ }
+}
+
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) =>
     t.classList.toggle("active", t.dataset.tab === name));
@@ -464,26 +482,75 @@ async function refreshAutonomy() {
     }
     if (!a.events.length) {
       html += '<p class="hint">Sin eventos con los filtros actuales.</p>';
+    } else if (a.grouped) {
+      // v2.6(4): colapsar por proveedor — un proveedor recibe de varios
+      // procesos (y de muchos pid:XXXX sin resolver); una fila por
+      // proveedor con el peor veredicto y la lista de procesos.
+      const byProv = new Map();
+      for (const e of a.events) {
+        const p = e.provider || "-";
+        let b = byProv.get(p);
+        if (!b) {
+          b = {provider: p, kind: e.kind, procs: new Set(),
+               verdict: "unknown", sessions: 0, polls: 0, last: ""};
+          byProv.set(p, b);
+        }
+        b.procs.add(e.process);
+        const v = e.autonomy_verdict || "unknown";
+        if (v === "autonomous" || v === "scheduled") b.verdict = v;
+        b.sessions += e.sessions || 0;
+        b.polls += e.seen_count || 0;
+        if ((e.last_seen || "") > b.last) b.last = e.last_seen || "";
+      }
+      const ordered = [...byProv.values()].sort(
+        (x, y) => (x.verdict === "unknown") - (y.verdict === "unknown"));
+      html += ordered.map((b) => {
+        const vb = autonomyBadge(b.verdict, null)
+          || '<span class="hint">desconocido</span>';
+        const procs = [...b.procs];
+        const shown = procs.slice(0, 6).join(", ");
+        const rest = procs.length - Math.min(6, procs.length);
+        return `<div class="row">
+        <span class="mono">${esc(b.provider)}${kindBadge(b.kind)}</span>
+        <span class="hint">${vb} · ${procs.length} proceso(s): ${esc(shown)}${rest > 0 ? ` (+${rest})` : ""} · ${b.sessions} sesiones · ${b.polls} polls · último ${esc(b.last)}</span>
+      </div>`;
+      }).join("");
     } else {
       html += a.events.map(e => {
-        // Las filas agrupadas no llevan dest (son (proceso, proveedor));
-        // la rama se decide por `grouped`, no por presencia de dest_port.
-        const left = a.grouped
-          ? `${esc(e.process)} → ${esc(e.provider || "-")}${kindBadge(e.kind)}`
-          : `${esc(e.process)} → ${esc(e.dest_host || e.dest_ip)}:${e.dest_port}`;
+        const left = `${esc(e.process)} → ${esc(e.dest_host || e.dest_ip)}:${e.dest_port}`;
         const vb = autonomyBadge(e.autonomy_verdict, e.autonomy_score)
           || '<span class="hint">desconocido</span>';
-        const extra = a.grouped
-          ? ` · ${e.seen_count ?? 0} polls · ${e.sessions ?? 0} sesiones`
-          : ` · score ${e.autonomy_score ?? "?"}`;
         return `<div class="row">
         <span class="mono">${left}</span>
-        <span class="hint">${vb} · flags ${esc(e.autonomy_flags || "")}${extra} · último ${esc(e.last_seen)}</span>
+        <span class="hint">${vb} · flags ${esc(e.autonomy_flags || "")} · score ${e.autonomy_score ?? "?"} · último ${esc(e.last_seen)}</span>
       </div>`;
       }).join("");
     }
     wrap.innerHTML = html;
   } catch (e) { /* sin datos aún */ }
+}
+
+// v2.6(4): colapsar eventos vivos que comparten (puerto, protocolo,
+// pre_score, flags) en una sola fila con recuento. Los proveedores
+// rotan IP anycast (p. ej. Cloudflare IPv6), asi que 100+ IPs distintas
+// del mismo proveedor darian 100+ filas identicas; la fila colapsada
+// muestra el recuento, una muestra de IPs y los flags una sola vez.
+function collapseCurrent(cur) {
+  const bySig = new Map();
+  for (const c of cur) {
+    const fsig = (c.pre_flags || []).map(f => f.flag).join(",");
+    const key = `${c.dest_port}|${c.protocol}|${c.pre_score}|${fsig}`;
+    let b = bySig.get(key);
+    if (!b) {
+      b = {count: 0, ips: [], pre_score: c.pre_score,
+           dest_port: c.dest_port, protocol: c.protocol,
+           pre_flags: c.pre_flags};
+      bySig.set(key, b);
+    }
+    b.count += 1;
+    b.ips.push(c.dest_ip);
+  }
+  return [...bySig.values()];
 }
 
 function baselineHtml(b) {
@@ -493,30 +560,39 @@ function baselineHtml(b) {
   }
   let rows = "";
   for (const g of groups) {
-    const cur = g.current || [];
-    const maxScore = cur.reduce((m, c) => Math.max(m, c.pre_score || 0), 0);
+    const cur = collapseCurrent(g.current || []);
+    const maxScore = (g.current || []).reduce(
+      (m, c) => Math.max(m, c.pre_score || 0), 0);
     const badge = maxScore >= 40 ? "badge-bad"
       : maxScore > 0 ? "badge-warn" : "";
-    const anom = (maxScore > 0
-      ? `<span class="badge ${badge}">${maxScore}</span>`
-      : "0") + cur.map(c =>
-        `<details><summary>${esc(c.dest_ip)}:${c.dest_port} (${esc(c.protocol)}) pre ${c.pre_score}</summary>` +
-        (c.pre_flags.length
-          ? c.pre_flags.map(f => `<p><b>${f.flag}</b>: ${esc(f.porque)}</p>`).join("")
-          : "<p>Sin flags: dentro de lo esperado.</p>") +
-        `</details>`).join("");
+    const score = maxScore > 0
+      ? `<span class="badge ${badge}">${maxScore}</span>` : "0";
+    const detail = cur.map(c => {
+      const many = c.count > 1;
+      const shown = c.ips.slice(0, 5).join(", ");
+      const rest = c.count - Math.min(5, c.count);
+      const flags = c.pre_flags.length
+        ? c.pre_flags.map(f => `${f.flag}: ${esc(f.porque)}`).join("; ")
+        : "sin flags (dentro de lo esperado)";
+      return `<div class="small mono">${many ? `${c.count} × ` : ""}` +
+        `${esc(c.ips[0])}:${c.dest_port} (${esc(c.protocol)}) — ${flags}` +
+        (many
+          ? ` · muestra: ${esc(shown)}${rest > 0 ? ` (+${rest} mas)` : ""}`
+          : "") +
+        `</div>`;
+    }).join("") || '<span class="hint">sin eventos vivos</span>';
     const typ = (g.typical_hours || []).length
       ? g.typical_hours.map(h => h + "h").join(", ") : "&mdash;";
     const rate = g.sessions_per_hour != null ? g.sessions_per_hour : "&mdash;";
     rows += `<tr>
-      <td>${esc(g.process)}</td>
+      <td><details><summary>${esc(g.process)}</summary>${detail}</details></td>
       <td>${esc(g.provider)} <span class="hint">${esc(g.kind || "")}</span></td>
       <td class="num">${g.first_seen ? g.first_seen.slice(0, 10) : "&mdash;"}</td>
       <td class="num">${g.sessions_total}</td>
       <td class="num">${rate}</td>
       <td class="num">${g.days_active}</td>
       <td>${typ}</td>
-      <td class="num">${anom}</td>
+      <td class="num">${score}</td>
     </tr>`;
   }
   return `<table class="tbl">
@@ -908,10 +984,7 @@ function bind() {
   });
   ["ev-process", "ev-dest"].forEach((id) => {
     const el = $(id);
-    if (el) el.addEventListener("input", () => {
-      clearTimeout(el._t);
-      el._t = setTimeout(evRefresh, 300);
-    });
+    if (el) el.addEventListener("change", evRefresh);
   });
   $("btn-ev-clear").addEventListener("click", () => {
     $("ev-group").checked = true;
@@ -930,16 +1003,13 @@ function bind() {
   });
   ["aut-process", "aut-provider"].forEach((id) => {
     const el = $(id);
-    if (el) el.addEventListener("input", () => {
-      clearTimeout(el._t);
-      el._t = setTimeout(refreshAutonomy, 300);
-    });
+    if (el) el.addEventListener("change", refreshAutonomy);
   });
   $("btn-aut-clear").addEventListener("click", () => {
     $("aut-verdict").value = "";
     $("aut-process").value = "";
     $("aut-provider").value = "";
-    $("aut-group").checked = false;
+    $("aut-group").checked = true;
     refreshAutonomy();
   });
   // A4: ventana del panel (1/7/30 dias).
@@ -968,6 +1038,7 @@ function bind() {
   document.querySelectorAll(".tab").forEach((t) =>
     t.addEventListener("click", () => showTab(t.dataset.tab)));
   showTab("resumen");
+  loadFacets();
 
   loadConfig();
   loadLatestTriage();

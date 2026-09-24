@@ -124,8 +124,8 @@
       </select>
       <label class="check"><input type="checkbox" id="ev-shadow"> Solo no aprobados</label>
       <label class="check"><input type="checkbox" id="ev-hide-cdn"> Ocultar CDN</label>
-      <input id="ev-process" placeholder="proceso" style="width:120px">
-      <input id="ev-dest" placeholder="destino" style="width:160px">
+      <select id="ev-process"><option value="">Todos los procesos</option></select>
+      <select id="ev-dest"><option value="">Todos los destinos</option></select>
       <button id="btn-ev-clear">Limpiar</button>
     </div>
     <div id="events-wrap" class="table-wrap"></div>
@@ -149,9 +149,9 @@
         <option value="user_driven">usuario</option>
         <option value="unknown">desconocido</option>
       </select>
-      <input id="aut-process" placeholder="proceso" style="width:120px">
-      <input id="aut-provider" placeholder="proveedor" style="width:140px">
-      <label class="check"><input type="checkbox" id="aut-group"> Agrupar por proveedor</label>
+      <select id="aut-process"><option value="">Todos los procesos</option></select>
+      <select id="aut-provider"><option value="">Todos los proveedores</option></select>
+      <label class="check"><input type="checkbox" id="aut-group" checked> Agrupar por proveedor</label>
       <button id="btn-aut-clear">Limpiar</button>
     </div>
     <p id="autonomy-counters" class="hint"></p>

@@ -1948,6 +1948,21 @@ def findings():
     return {"findings": out}
 
 
+@app.get("/api/facets")
+def facets():
+    """v2.6: valores existentes para los filtros (procesos, proveedores y
+    destinos) desde los eventos vivos. Display-only, para los desplegables."""
+    events = [{**e, "provider": _provider_of(e)}
+              for e in _req_store().list_events(limit=1000)]
+    procs = sorted({str(e.get("process") or "") for e in events
+                    if e.get("process")})
+    provs = sorted({str(e["provider"]) for e in events if e.get("provider")})
+    dests = sorted({str(e.get("dest_host") or e.get("dest_ip") or "")
+                    for e in events
+                    if (e.get("dest_host") or e.get("dest_ip"))})
+    return {"processes": procs, "providers": provs, "destinations": dests}
+
+
 @app.get("/api/alerts")
 def list_alerts(since_id: int = 0):
     return {"alerts": alerts.list(since_id) if alerts else [],
