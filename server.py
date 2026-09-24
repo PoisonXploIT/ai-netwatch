@@ -32,6 +32,7 @@ from ai_classifier import classify_domain, destination_kind
 from alerts import AlertLog
 import auto_classify
 import baseline
+import mitre_map
 import evidence
 import rules
 import secret_store
@@ -1101,6 +1102,7 @@ def list_events(limit: int = 200, process: str | None = None,
             proc_first.get(str(e.get("process") or "")))
         e["pre_score"] = s["pre_score"]
         e["pre_flags"] = s["pre_flags"]
+        e["mitre"] = mitre_map.map_event(e, s["pre_flags"])
     if shadow:
         rows = [e for e in rows if e["provider"]
                 and not _is_approved_provider(e["provider"])]
@@ -1119,6 +1121,7 @@ def list_events(limit: int = 200, process: str | None = None,
                        default=None)
             g["pre_score"] = int((best or {}).get("pre_score") or 0)
             g["pre_flags"] = (best or {}).get("pre_flags") or []
+            g["mitre"] = mitre_map.union_mitre([e["mitre"] for e in members])
         rows = agg[:limit]
     return {"events": rows, "grouped": grouped}
 
@@ -1810,10 +1813,12 @@ def findings():
         pre_score, pre_flags = 0, []
         jev_sev, jev_verdict = 0.0, None
         review = None
+        mitres: list[list[dict]] = []
         for e in members:
             s = baseline.score_event(e, base, proc_first.get(proc))
             if s["pre_score"] > pre_score:
                 pre_score, pre_flags = s["pre_score"], s["pre_flags"]
+            mitres.append(mitre_map.map_event(e, s["pre_flags"]))
             v = jev.get(int(e["id"]))
             if v:
                 sev = float(v.get("severity_score") or 0)
@@ -1842,6 +1847,7 @@ def findings():
                                  else g.get("autonomy_verdict")),
             "beaconing": beacon, "unapproved": unapproved,
             "review": review,
+            "mitre": mitre_map.union_mitre(mitres),
             "event_ids": [e["id"] for e in members][:20],
         })
     out.sort(key=lambda f: (-f["score"], -(f["seen_count"] or 0)))

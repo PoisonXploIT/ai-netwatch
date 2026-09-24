@@ -253,6 +253,10 @@ function findingDetail(f) {
   if (f.review) {
     parts.push(`<b>Revisión LLM:</b> ${esc(f.review.evaluacion || "")} — ${esc(f.review.porque || "")}`);
   }
+  if ((f.mitre || []).length) {
+    parts.push(`<b>MITRE ATT&CK:</b> ` +
+      f.mitre.map((m) => `${esc(m.id)} ${esc(m.name)}`).join(", "));
+  }
   parts.push(`<b>IPs:</b> ${f.ip_count} · <b>event_ids:</b> ${(f.event_ids || []).join(", ")}`);
   return parts.join("<br>");
 }
