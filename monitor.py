@@ -30,6 +30,7 @@ def _run_ps(script: str, timeout: int = 20) -> str:
     proc = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
         capture_output=True, text=True, timeout=timeout,
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
     return proc.stdout
 

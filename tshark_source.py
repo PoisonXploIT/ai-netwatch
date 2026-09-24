@@ -52,7 +52,8 @@ def tshark_path() -> str | None:
 
 def list_interfaces(tshark: str) -> list[tuple[int, str]]:
     """[(indice, nombre), ...] de `tshark -D` (solo interfaces NPF reales)."""
-    out = subprocess.run([tshark, "-D"], capture_output=True, timeout=15)
+    out = subprocess.run([tshark, "-D"], capture_output=True, timeout=15,
+                         creationflags=subprocess.CREATE_NO_WINDOW)
     text = _decode_maybe_utf16(out.stdout)
     result: list[tuple[int, str]] = []
     for line in text.splitlines():
@@ -70,7 +71,8 @@ def _probe_interface(tshark: str, idx: int) -> bool:
         out = subprocess.run(
             [tshark, "-i", str(idx), "-f", "tcp", "-a", "duration:1.5",
              "-c", "1", "-l", "-T", "fields", "-e", "frame.number"],
-            capture_output=True, timeout=8)
+            capture_output=True, timeout=8,
+            creationflags=subprocess.CREATE_NO_WINDOW)
     except (subprocess.TimeoutExpired, OSError):
         return False
     body = _decode_maybe_utf16(out.stdout).strip()
@@ -179,7 +181,8 @@ class SniCapture(threading.Thread):
              "-e", "ip.dst", "-e", "ipv6.dst",
              "-e", "tcp.dstport", "-e", "udp.dstport",
              "-e", "tls.handshake.extensions_server_name"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW)
 
     def run(self) -> None:  # noqa: PLR6204 - bucle con backoff
         import time

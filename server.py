@@ -504,7 +504,7 @@ def _spawn_netcollector(duration_s: int, out_path: Path) -> str:
           f" -ArgumentList '{script}', {int(duration_s)}, '{out_path}'"
           " -Verb RunAs")
     subprocess.Popen(["powershell", "-NoProfile", "-Command", ps],
-                     creationflags=0x0800)  # CREATE_NO_WINDOW
+                     creationflags=subprocess.CREATE_NO_WINDOW)
     return "uac"
 
 
