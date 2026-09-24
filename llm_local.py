@@ -151,15 +151,18 @@ def explain_events(base_url: str, model: str, events: list[dict],
                 }, ensure_ascii=False),
             )
         except Exception as ex:
-            out.append({"process": e.get("process"), "dest": str(e.get("dest_ip")),
+            out.append({"id": e.get("id"),
+                        "process": e.get("process"), "dest": str(e.get("dest_ip")),
                         "status": "unavailable", "reason": str(ex)[:120]})
             continue
         d = _parse_json(content)
         if not d or not all(k in d for k in ("resumen", "porque", "sugerencia")):
-            out.append({"process": e.get("process"), "dest": str(e.get("dest_ip")),
+            out.append({"id": e.get("id"),
+                        "process": e.get("process"), "dest": str(e.get("dest_ip")),
                         "status": "unavailable", "reason": "bad_json"})
             continue
         out.append({
+            "id": e.get("id"),
             "process": e.get("process"),
             "dest": f"{e.get('sni_domain') or e.get('dest_host') or e.get('dest_ip')}:{e.get('dest_port')}",
             "status": "ok",

@@ -33,6 +33,7 @@ from alerts import AlertLog
 import auto_classify
 import baseline
 import mitre_map
+import triage_sig
 import evidence
 import rules
 import secret_store
@@ -1144,21 +1145,69 @@ def triage(req: TriageRequest):
             proc_first.get(str(e.get("process") or "")))
         e["pre_score"] = s["pre_score"]
         e["pre_flags"] = s["pre_flags"]
+        # I1: firma del estado triable (dedup por firma).
+        e["sig"] = triage_sig.event_signature(e)
+
+    # I1: reutilizar veredictos cuyo evento no cambio desde el ultimo
+    # triaje OK (mismo id y misma firma). Display + coste: Jev solo ve
+    # lo nuevo; un triaje con error vacia la base y el siguiente es
+    # completo (auto-sanante).
+    reuse, last_model = _triage_reuse_map(st)
+    fresh_idx: list[int] = []
+    reused_at: dict[int, dict] = {}
+    for i, e in enumerate(events):
+        r = reuse.get(int(e["id"]))
+        if r is not None and r["sig"] == e["sig"]:
+            reused_at[i] = r
+        else:
+            fresh_idx.append(i)
+
     result: dict = {"status": "skipped", "reason": "ai_disabled"}
     if _cfg.get("jev_enabled") and _cfg.get("jev_api_key"):
-        result = triage_events(events, _cfg["jev_api_key"],
-                               _cfg["jev_base_url"], _cfg["jev_model"])
+        if fresh_idx:
+            result = triage_events([events[i] for i in fresh_idx],
+                                   _cfg["jev_api_key"],
+                                   _cfg["jev_base_url"], _cfg["jev_model"])
+        else:
+            # Todo reutilizado: ninguna llamada a Jev.
+            result = {"status": "ok", "model": last_model,
+                      "count": 0, "verdicts": {}}
+    # Veredictos fusionados por indice global (reutilizados + nuevos),
+    # mismo convenio que siempre: str(indice en la lista de eventos).
+    verdicts: dict[str, dict] = {}
+    for i, r in reused_at.items():
+        verdicts[str(i)] = r["verdict"]
+    if result.get("status") == "ok":
+        for j, i in enumerate(fresh_idx):
+            v = (result.get("verdicts") or {}).get(str(j))
+            if v is not None:
+                verdicts[str(i)] = v
+    result["verdicts"] = verdicts
+
+    def _flagged(v: dict) -> bool:
+        return (v.get("severity_score") is not None
+                and (v["severity_score"] >= 2
+                     or v.get("verdict") != "expected_ai_use"))
+
     explanations: list[dict] | None = None
     if (result.get("status") == "ok" and _cfg.get("llm_enabled")
             and _cfg.get("llm_base_url") and _cfg.get("llm_model")):
-        flagged = [e for i, e in enumerate(events)
-                   if ((result.get("verdicts") or {}).get(str(i), {})
-                       .get("severity_score") is not None
-                       and (result["verdicts"][str(i)]["severity_score"] >= 2
-                            or result["verdicts"][str(i)]["verdict"] != "expected_ai_use"))]
-        if flagged:
+        # Solo se piden explicaciones NUEVAS a la LLM; las de eventos
+        # reutilizados se traen del ultimo triaje (continuidad, sin coste).
+        fresh_flagged = [events[i] for i in fresh_idx
+                         if _flagged(verdicts.get(str(i)) or {})]
+        carried: list[dict] = []
+        for i, r in reused_at.items():
+            if _flagged(verdicts.get(str(i)) or {}) and r.get("explanation"):
+                carried.append(r["explanation"])
+        if fresh_flagged:
             explanations = explain_events(
-                _effective_llm_base(), _cfg["llm_model"], events, result.get("verdicts"))
+                _effective_llm_base(), _cfg["llm_model"], fresh_flagged,
+                {str(j): verdicts[str(i)]
+                 for j, i in enumerate(fresh_idx)})
+            explanations.extend(carried)
+        elif carried:
+            explanations = carried
     # Destino con identidad IA (sni > catalogo > cache DNS > IP), mismo
     # orden que _provider_of: sin esto la tabla mostraba IPs crudas y
     # CDN, y el trafico a IA no se reconocia como tal.
@@ -1166,9 +1215,11 @@ def triage(req: TriageRequest):
         {"id": e["id"], "process": e["process"],
          "dest": f"{_provider_of(e)}:{e['dest_port']}",
          "catalog": e["catalog_domain"], "seen_count": e["seen_count"],
-         "pre_score": e["pre_score"], "pre_flags": e["pre_flags"]}
-        for e in events],
-        "jev": result, "llm_explanations": explanations}
+         "pre_score": e["pre_score"], "pre_flags": e["pre_flags"],
+         "sig": e["sig"], "reused": i in reused_at}
+        for i, e in enumerate(events)],
+        "jev": result, "llm_explanations": explanations,
+        "dedup": {"reused": len(reused_at), "fresh": len(fresh_idx)}}
     st.save_triage(result.get("status", "error"), result.get("model"), payload)
     return payload
 
@@ -1788,6 +1839,45 @@ def _latest_review_by_event() -> dict[int, dict]:
         if eid is not None:
             out.setdefault(int(eid), r)
     return out
+
+
+def _triage_reuse_map(st) -> tuple[dict[int, dict], str | None]:
+    """I1: base de reutilizacion del ultimo triaje OK.
+
+    Devuelve ({event_id: {sig, verdict, explanation}}, modelo).
+    Solo cuenta un triaje con status ok (payload.jev.status == "ok"):
+    si el ultimo triaje fallo o fue skipped, la base queda vacia y el
+    siguiente es completo (auto-sanante). Las explicaciones se indexan
+    por event_id (campo id de cada item).
+    """
+    last = st.latest_triage()
+    if not last or last.get("status") != "ok":
+        return {}, None
+    payload = last.get("payload") or {}
+    jev = payload.get("jev") or {}
+    if jev.get("status") != "ok":
+        return {}, None
+    verdicts = jev.get("verdicts") or {}
+    expl_by_id: dict[int, dict] = {}
+    for x in (payload.get("llm_explanations") or []):
+        if isinstance(x, dict) and x.get("id") is not None:
+            try:
+                expl_by_id[int(x["id"])] = x
+            except (TypeError, ValueError):
+                continue
+    reuse: dict[int, dict] = {}
+    for i, ev in enumerate(payload.get("events") or []):
+        v = verdicts.get(str(i))
+        sig = ev.get("sig")
+        if v is None or not sig:
+            continue
+        try:
+            eid = int(ev["id"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        reuse[eid] = {"sig": str(sig), "verdict": v,
+                     "explanation": expl_by_id.get(eid)}
+    return reuse, jev.get("model")
 
 
 @app.get("/api/findings")

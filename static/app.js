@@ -165,7 +165,10 @@ function triageHtml(data) {
       const v = (jev.verdicts || {})[String(i)] || {};
       if (v.verdict != null) triaged++;
       // Sin veredicto: 'no triado' explicito (no un vacio que parezca fallo).
-      const cls = v.verdict != null ? verdictBadge(v.verdict)
+      const reuseMark = e.reused
+        ? ` <span class="hint" title="veredicto reutilizado: la firma del evento no cambio desde el ultimo triaje (I1)">(reutilizado)</span>`
+        : "";
+      const cls = v.verdict != null ? verdictBadge(v.verdict) + reuseMark
         : `<span class="hint">no triado</span>`;
       const inv = LLM_ENABLED
         ? `<div class="small"><button class="small" data-investigate="${e.id}">Investigar</button></div>`
@@ -189,6 +192,10 @@ function triageHtml(data) {
     parts.push(`<div class="hint">Jev no disponible (${esc(jev.reason || "")}). Vista clásica intacta.</div>`);
   } else if (jev.status === "error") {
     parts.push(`<div class="hint error">Error Jev: ${esc(jev.reason || "")}</div>`);
+  }
+  const dd = data.dedup;
+  if (dd && typeof dd.reused === "number" && typeof dd.fresh === "number") {
+    parts.push(`<div class="hint">Dedup por firma: ${dd.reused} reutilizados / ${dd.fresh} nuevos (Jev solo ve lo nuevo)</div>`);
   }
   const expls = data.llm_explanations || [];
   if (expls.length) {
