@@ -467,9 +467,12 @@ function bind() {
   const $ = (id) => document.getElementById(id);
 
   $("btn-theme").addEventListener("click", themeToggle);
+  // A1: la guía nace oculta; el botón la muestra/oculta (ya no hace scroll).
   $("btn-guide").addEventListener("click", () => {
     const g = document.getElementById("guide-card");
-    if (g) g.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!g) return;
+    const hidden = g.classList.toggle("guide-hidden");
+    $("btn-guide").setAttribute("aria-expanded", String(!hidden));
   });
   // Exports: rutas GET fijas; ninguna entrada del usuario viaja en la URL.
   $("btn-exp-json").addEventListener("click", () => {
