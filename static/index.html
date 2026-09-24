@@ -20,7 +20,7 @@
 <body>
 <header>
   <h1>AI NetWatch</h1>
-  <span class="badge-ver">v1.3</span>
+  <span class="badge-ver">v2.5</span>
   <span class="sub">Monitor de conexiones de red hacia proveedores cloud IA (Jev incluido). Solo loopback.</span>
   <div class="header-right">
     <button id="btn-guide" class="linkbtn" title="Ir a la guía de uso">Guía de uso</button>
@@ -33,7 +33,7 @@
 <main>
   <section class="card" id="panel-card">
     <h2>Panel</h2>
-    <p class="hint">Actividad de los &uacute;ltimos 7 d&iacute;as agregando lo que ya existe: presencia (polls), no sesiones. Bytes cloud: no disponible para TLS remoto (requiere ETW/logman, v2.1); el egress en bytes s&iacute; se mide para el LLM local.</p>
+    <p class="hint">Actividad de los &uacute;ltimos 7 d&iacute;as agregando lo que ya existe: presencia (polls), no sesiones. Bytes cloud: opt-in con el colector elevado (v2.2); sin admin o sin datos, "no disponible" con motivo &mdash; nunca un cero que engane. El egress en bytes del LLM local s&iacute; se mide siempre.</p>
     <div id="dashboard-wrap"></div>
   </section>
 
@@ -86,7 +86,7 @@
 
   <section class="card">
     <h2>Eventos (conexiones a destinos IA)</h2>
-    <p class="hint">v1.1: proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo + periodicidad. Columna SNI = dominio real declarado en el handshake TLS (tshark); Catálogo = match por resolución activa.</p>
+    <p class="hint">Proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo (TCP/QUIC) + periodicidad. Columnas: SNI = dominio real del handshake TLS/QUIC (tshark); Catálogo = match por resolución activa; provider+kind (API/web/CDN). Filtros y agrupación por proveedor (v2.3).</p>
     <div class="row" id="events-filters">
       <label class="check"><input type="checkbox" id="ev-group" checked> Agrupar por proveedor</label>
       <label>Capa</label>
@@ -199,22 +199,28 @@
         <li><b>IA (capa)</b>: cómo se clasificó el dominio — catálogo (evidencia), heurística (señal a revisar, TLD .ai/token IA), LLM local (bajo demanda) o sin clasificar. Cobertura universal: un proveedor no listado se ve si resolvio DNS (EID 22).</li>
         <li><b>Periodicidad</b> (veces observado) y primera/última vez.</li>
       </ul>
-      <p class="hint"><b>Bytes remotos: no.</b> El trafico TLS remoto viaja cifrado; de el se ve la conexion y el dominio, no cuanto sale (bytes remotos requieren ETW/Npcap/MITM). <b>El egress en bytes SI se mide para el LLM local</b> (proxy inspector): bytes que salen hacia el LLM y que vuelven.</p>
+      <p class="hint"><b>Bytes remotos: opt-in (v2.2).</b> El trafico TLS viaja cifrado, asi que no se ve el contenido; el <b>volumen</b> (cuanto sale) SI se mide con un colector elevado (ETW Kernel-Network), desactivado por defecto. El egress en bytes del <b>LLM local</b> se mide siempre via el proxy inspector. QUIC/HTTP-3 (UDP 443) se cubre por SNI (v2.5).</p>
     </details>
 
     <details>
       <summary>Fuentes de datos</summary>
       <ul>
-        <li><b>Polling (5 s)</b>: conexiones TCP establecidas + endpoints UDP. Puede perder conexiones muy breves (&lt;5 s).</li>
-        <li><b>Sysmon (EventID 3)</b>: cada conexión es un evento, ninguna se pierde; aporta la ruta completa del proceso (detecta masquerading: p. ej. <span class="mono">svchost.exe</span> fuera de System32). Recomendado.</li>
-        <li><b>tshark (SNI)</b>: dominio real por handshake TLS. Solo lo ve en sesiones TLS nuevas; una keep-alive establecida antes del arranque no repite SNI.</li>
-        <li><b>Sysmon (EventID 22, DnsQuery)</b>: proceso + dominio consultado + IPs resueltas. Permite enlazar la conexion al dominio real aunque no este en el catalogo (cobertura universal R1).</li>
+        <li><b>Polling (5 s)</b>: TCP establecidas (<span class="mono">Get-NetTCPConnection</span>) + UDP conectados (<span class="mono">netstat -ano -p UDP</span>). Puede perder conexiones muy breves (&lt;5 s). <i>Limite medido: netstat no lista UDP IPv6.</i></li>
+        <li><b>Sysmon (EventID 3)</b>: cada conexión TCP es un evento; aporta la ruta completa del proceso (detecta masquerading: p. ej. <span class="mono">svchost.exe</span> fuera de System32). Recomendado. No cubre QUIC/UDP.</li>
+        <li><b>tshark (SNI)</b>: dominio real por handshake TLS <b>y QUIC/HTTP-3</b> (<span class="mono">udp port 443 or tcp port 443</span>; el SNI sale del paquete Initial de QUIC). Solo en sesiones nuevas; una keep-alive ya establecida no repite SNI.</li>
+        <li><b>Sysmon (EventID 22, DnsQuery)</b>: proceso + dominio consultado + IPs resueltas; cobertura universal (R1) y alimenta <span class="mono">dns_resolutions</span>.</li>
+        <li><b>Sysmon (EventID 1)</b>: creacion de proceso (imagen + CommandLine) para el <b>linaje</b> (autonomia R2) y el <b>fingerprint de SDK</b>.</li>
       </ul>
     </details>
 
     <details>
       <summary>Filtros y agrupaci&oacute;n de eventos (v2.3)</summary>
       <p>La tarjeta Eventos tiene una fila de filtros: capa IA, autonom&iacute;a, solo no aprobados, ocultar CDN, proceso/destino y bot&oacute;n Limpiar. Con <b>Agrupar por proveedor</b> (on por defecto) cada fila es un par (proceso, proveedor): colapsa las IPs rotatorias de CDN (p. ej. <span class="mono">python.exe &rarr; huggingface.co</span>: 104 IPs en una fila) sumando sesiones/polls y contando IPs distintas. Cada fila lleva <b>provider</b> + <b>kind</b> (API/web/CDN).</p>
+    </details>
+
+    <details>
+      <summary>Shadow AI (v2.0)</summary>
+      <p>La tarjeta <b>Shadow AI</b> lista la IA detectada que <b>no est&aacute; aprobada</b>. Aprobado = el cat&aacute;logo (por defecto) + los proveedores que apruebes ah&iacute; (match por sufijo de dominio: aprobar <span class="mono">openai.com</span> cubre <span class="mono">api.openai.com</span>). Cada proveedor no aprobado dispara la alerta <span class="mono">shadow_ai</span>. Config: <span class="mono">catalog_approved</span> y <span class="mono">approved_providers</span>. Es gobernanza (qu&eacute; IA permites), distinta de la detecci&oacute;n.</p>
     </details>
 
     <details>
@@ -226,12 +232,12 @@
         <li><b>Telemetría / ruido</b> (<span class="mono">telemetry_noise</span>): pings pequeños de baja sensibilidad.</li>
         <li><b>No relacionado</b> (<span class="mono">unrelated</span>): falso positivo del catálogo (p. ej. IP compartida de CDN).</li>
       </ul>
-      <p>Métricas: <b>confianza</b> (0-1), <b>prob. falso positivo</b> (derivada), <b>criticidad</b> 0-3 y <b>acción inmediata</b> (0-1). Coste ~$0.001-0.002 por triaje (batch de hasta 50 eventos).</p>
+      <p>Métricas: <b>confianza</b> (0-1), <b>prob. falso positivo</b> = <span class="mono">1 - confianza</span> (v2.4), <b>criticidad</b> 0-3 y <b>acción inmediata</b> (0-1). El triaje cubre <b>todos</b> los eventos, en lotes de 50 por llamada. Coste ~$0.001-0.002 por lote.</p>
     </details>
 
     <details>
       <summary>Explicaciones técnicas (LLM local) — qué hace y qué NO hace</summary>
-      <p>Si el LLM local está configurado, los eventos marcados (criticidad ≥2 o no-<span class="mono">expected</span>) reciben una explicación en español: qué es, por qué importa y sugerencia. El LLM <b>solo loopback, sin API key</b> y <b>nunca re-scorea</b> el veredicto de Jev: es un <b>explicador, no un detector ni un juez</b>. Solo se llama tras Jev, solo sobre eventos ya marcados, y si falla todo sigue funcionando.</p>
+      <p>Si el LLM local está configurado, los eventos marcados (criticidad ≥2 o no-<span class="mono">expected</span>) reciben una explicación en español: qué es, por qué importa y sugerencia. El LLM <b>solo loopback, sin API key</b> y <b>nunca re-scorea</b> el veredicto de Jev: es un <b>explicador, no un detector ni un juez</b>. Solo se llama tras Jev, solo sobre eventos ya marcados, y si falla todo sigue funcionando. Ademas, el boton <b>Investigar con LLM local</b> (v2.4) pide a demanda que <b>confirme/refute/complete</b> un veredicto de Jev (o lo evalue si aun no se trio): devuelve <span class="mono">{evaluacion: confirm|refuta|insuficiente, porque, evidencia_faltante}</span>. Sigue siendo asesoria display-only: no re-puntua; Jev sigue siendo el juez.</p>
     </details>
 
     <details>
@@ -245,6 +251,11 @@
         <li><b>Límite honesto</b>: solo cubre el LLM local. Un proveedor remoto (TLS) no se puede descifrar pasivamente; de él se ve la conexión (eventos de red) pero no el contenido.</li>
         <li><b>Privacidad</b>: prompts y respuestas quedan en claro en <span class="mono">data/llm_calls.db</span>. Si un prompt lleva una API key o datos sensibles, esa información queda en ese fichero: borra las llamadas cuando termines (botón de la tarjeta).</li>
       </ul>
+    </details>
+
+    <details>
+      <summary>Fingerprint de SDK IA (v2.3)</summary>
+      <p>Por cada proceso, NetWatch mira si su runtime lleva un <b>SDK de IA</b> instalado: en Python, paquetes en <span class="mono">site-packages</span> (<span class="mono">openai</span>, <span class="mono">anthropic</span>, <span class="mono">langchain</span>, <span class="mono">huggingface-hub</span>, <span class="mono">litellm</span>, <span class="mono">ollama</span>...); en Node, <span class="mono">node_modules</span> local o global. Identifica <b>qué cliente</b> es sin depender del dominio. Si no hay artefacto verificable, no inventa (queda sin etiqueta). Fuente: Sysmon EID 1 (imagen + CommandLine). Endpoint <span class="mono">GET /api/processes</span>; el Panel muestra "Procesos con SDK IA". Es <b>display-only</b>.</p>
     </details>
 
     <details>
@@ -269,7 +280,7 @@
 
     <details>
       <summary>Panel</summary>
-      <p>El <b>Panel</b> agrega lo que ya existe (7 días): actividad diaria, top proveedores/procesos por presencia (<span class="mono">seen_count</span> = polls; las sesiones son la columna <b>Sesiones</b> de eventos, F1), reparto por capa, número de Shadow AI y LLM Inspector local (llamadas/tokens/bytes). <b>Bytes cloud: no disponible para TLS remoto</b> (requiere ETW/logman, v2.1); el egress en bytes sí se mide para el LLM local.</p>
+      <p>El <b>Panel</b> agrega (7 días): actividad diaria, top proveedores/procesos (con <b>sdk</b> si lo hay), reparto por capa, número de Shadow AI, LLM Inspector local, y <b>bytes cloud</b> (colector elevado opt-in, v2.2; mapeo IP→proveedor por eventos + EID22 + <span class="mono">dns_resolutions</span>, con label API/web/CDN) — si no hay datos, "no disponible" con motivo y <span class="mono">last_meta</span>. El egress en bytes del LLM local se mide siempre.</p>
     </details>
 
     <details>
@@ -278,13 +289,14 @@
     </details>
 
     <details>
-      <summary>Exportación (JSON / CSV / PDF)</summary>
+      <summary>Exportación (JSON / CSV / PDF / Evidence)</summary>
       <ul>
         <li><b>JSON</b>: eventos completos + último triaje (estado, veredictos, explicaciones LLM).</li>
         <li><b>CSV</b>: una fila por evento (proceso, ruta, protocolo, IP:puerto, SNI, catálogo, veces, fechas).</li>
         <li><b>PDF</b>: informe con cabecera, eventos, último triaje Jev y estadísticas de 7 días.</li>
+        <li><b>Evidence (v2.3)</b>: <span class="mono">/api/evidence/chain</span> (JSONL con cadena de hashes: si se altera una fila se rompe el resto, verificable offline) y <span class="mono">/api/evidence/stix</span> (bundle STIX 2.1 para SIEM/CTI). Con selector de ventana en días.</li>
       </ul>
-      <p class="hint">Los tres se generan en memoria; ningún endpoint toma nombres de archivo del usuario (sin path traversal).</p>
+      <p class="hint">Todo se genera en memoria; ningún endpoint toma nombres de archivo del usuario (sin path traversal).</p>
     </details>
 
     <details>
@@ -311,7 +323,7 @@
   </section>
 </main>
 <footer>
-  <span>AI NetWatch v1.3</span>
+  <span>AI NetWatch v2.5</span>
   <span>Solo loopback (127.0.0.1:8790)</span>
   <span>LLM local: solo loopback, sin API key</span>
 </footer>
