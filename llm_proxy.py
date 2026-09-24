@@ -324,7 +324,12 @@ class LlmProxy(threading.Thread):
             return
 
         try:
-            upstream = socket.create_connection(self.target, timeout=15)
+            # El timeout del socket rige TAMBIEN cada recv posterior: una
+            # generacion larga (razonamiento) puede tardar >60s sin emitir
+            # bytes. Invariante: >= el timeout mayor del cliente (_chat 120s,
+            # test 60s); si es menor, el proxy corta la respuesta y el
+            # cliente ve RemoteDisconnected (fix: antes era 15s).
+            upstream = socket.create_connection(self.target, timeout=300)
         except OSError:
             # Un intento fallido tambien es senal (sobre todo si es periodico).
             if self.on_call:
