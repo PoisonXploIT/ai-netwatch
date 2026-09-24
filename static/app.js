@@ -167,8 +167,11 @@ function triageHtml(data) {
       // Sin veredicto: 'no triado' explicito (no un vacio que parezca fallo).
       const cls = v.verdict != null ? verdictBadge(v.verdict)
         : `<span class="hint">no triado</span>`;
+      const inv = LLM_ENABLED
+        ? `<div class="small"><button class="small" data-investigate="${e.id}">Investigar</button></div>`
+        : "";
       return `<tr>
-        <td>${esc(e.process)}</td>
+        <td>${esc(e.process)}${inv}</td>
         <td class="mono">${esc(e.dest)}</td>
         <td>${cls}</td>
         ${numCell(v.confidence, v.confidence)}
@@ -459,7 +462,9 @@ async function loadConfig() {
 async function loadLatestTriage() {
   try {
     const t = await api("/api/triages/latest");
-    document.getElementById("triage-results").innerHTML = triageHtml(t.payload);
+    const wrap = document.getElementById("triage-results");
+    wrap.innerHTML = triageHtml(t.payload);
+    wireInvestigate(wrap); // A2: mismo boton Investigar que en la tabla de eventos.
   } catch (e) { /* sin triajes aún */ }
 }
 
@@ -601,7 +606,9 @@ function bind() {
     $("triage-status").textContent = "En curso... puede tardar un par de minutos.";
     try {
       const data = await api("/api/triage", { method: "POST", body: JSON.stringify({}) });
-      document.getElementById("triage-results").innerHTML = triageHtml(data);
+      const wrap = document.getElementById("triage-results");
+      wrap.innerHTML = triageHtml(data);
+      wireInvestigate(wrap); // A2: boton Investigar en la tabla de triaje.
       $("triage-status").textContent = "Completado.";
       toast("Triaje guardado.", "ok");
     } catch (e) {
