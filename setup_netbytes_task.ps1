@@ -26,8 +26,11 @@ if (-not $isAdmin) {
     throw "Este script necesita una consola ELEVADA (como administrador)."
 }
 
+# -WindowStyle Hidden: la tarea corre en sesion interactiva (LogonType
+# Interactive), asi que el task engine le crea consola; sin esto se ve
+# una ventana de PowerShell cada ciclo. v2.6(3): oculta.
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$wrapper`""
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wrapper`""
 
 # On-demand start ya es el default (el inverso seria -DisallowDemandStart);
 # -StartWhenAvailable es un switch y su default (no iniciar) es lo que
