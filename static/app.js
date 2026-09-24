@@ -442,7 +442,19 @@ async function refreshAutonomy() {
     const a = await api("/api/autonomy?" + autQuery());
     const sig = a.signals || {};
     const lockedTxt = sig.locked == null ? "?" : (sig.locked ? "bloqueada" : "activa");
-    const idleTxt = sig.idle_seconds != null ? `${sig.idle_seconds} s` : "?";
+    // v2.6(3): etiquetar el estado de la senal (no un '?' mudo ni un
+    // numero sin contexto).
+    const idleNotes = {
+      counter_frozen: "sin senal: contador congelado (sesion sin entrada)",
+      api_error: "sin senal: API no disponible",
+      idle_gt_uptime: "sin senal: valor imposible (idle > uptime)",
+      no_win: "sin senal: solo Windows",
+      no_input_since_boot: "sin entrada desde el arranque (sesion sin HID)",
+    };
+    const note = sig.idle_note && idleNotes[sig.idle_note]
+      ? ` (${idleNotes[sig.idle_note]})` : "";
+    const idleTxt = sig.idle_seconds != null
+      ? `${sig.idle_seconds} s${note}` : `?${note || ""}`;
     let html = `<p class="hint">Sesión: <b>${esc(lockedTxt)}</b> · usuario inactivo: <b>${esc(idleTxt)}</b> · foreground PID: <b>${sig.foreground_pid != null ? esc(String(sig.foreground_pid)) : "?"}</b></p>`;
     // A3: contadores de veredicto sobre TODOS los eventos vivos (sin filtros).
     const c = a.counts || {};

@@ -27,9 +27,11 @@ UNKNOWN = "unknown"
 
 _IDLE_AUTONOMOUS_S = 300  # idle >= 5 min: fuerte senal de autonomia
 _IDLE_SUSPECT_S = 60      # idle >= 1 min: sospecha, no basta solo
+_NO_INPUT_MARGIN_S = 60   # idle >= uptime - margen: sin entrada desde el boot
 
 
 _last_probe: tuple[float, int] | None = None  # (monotonic, ms) del probe previo
+_last_signal_note: str | None = None  # etiqueta de la senal idle (display-only)
 
 
 def _probe_ms() -> int | None:
@@ -68,17 +70,22 @@ def get_idle_seconds() -> int | None:
       reportando un contador viejo) -> None de inmediato.
     - Auto-diagnostico de vida: si el contador no avanza con el tiempo
       real (delta 0 entre probes), la senal no es confiable -> None.
+    La etiqueta del estado queda visible via idle_signal_note()
+    (display-only; el veredicto solo ve los segundos o la None).
     """
+    global _last_probe, _last_signal_note
     if sys.platform != "win32":
+        _last_signal_note = "no_win"
         return None
-    global _last_probe
     ms = _probe_ms()
     if ms is None:
+        _last_signal_note = "api_error"
         return None
     up = _uptime_ms()
     if up is not None and ms > up:
         # Imposible: mas idle que uptime. Basura -> no confiable.
         _last_probe = (time.monotonic(), ms)
+        _last_signal_note = "idle_gt_uptime"
         return None
     now = time.monotonic()
     if _last_probe is not None:
@@ -87,9 +94,32 @@ def get_idle_seconds() -> int | None:
         if dt >= 1.0 and (ms - prev_ms) == 0:
             # Congelado: sesion sin entrada. No confiable.
             _last_probe = (now, ms)
+            _last_signal_note = "counter_frozen"
             return None
+    note: str | None = None
+    # Guard de arranque fresco: con uptime < margen no hay suficiente
+    # contexto para etiquetar (evita falsos positivos los primeros
+    # segundos del boot).
+    if up is not None and up >= _NO_INPUT_MARGIN_S * 1000 \
+            and ms >= up - _NO_INPUT_MARGIN_S * 1000:
+        # Ultima entrada en el arranque (o antes): sesion sin HID. La
+        # senal va (el numero es valido); la nota lo etiqueta.
+        note = "no_input_since_boot"
     _last_probe = (now, ms)
+    _last_signal_note = note
     return int(ms // 1000)
+
+
+def idle_signal_note() -> str | None:
+    """Etiqueta del estado de la senal idle (None si va sin matiz).
+
+    Display-only: sirve para etiquetar el estado en el panel/autonomia
+    en vez de dejar un '?' silencioso o un numero sin contexto.
+    Valores: no_win, api_error, idle_gt_uptime, counter_frozen
+    (los cuatro con senal None) y no_input_since_boot (senal valida:
+    nadie ha tecleado desde el arranque, p. ej. sesion sin HID).
+    """
+    return _last_signal_note
 
 
 def get_foreground_pid() -> int | None:

@@ -40,7 +40,7 @@
   </nav>
   <section class="card" data-tab="resumen" id="panel-card">
     <h2>Panel</h2>
-    <p class="hint">Actividad de los &uacute;ltimos 7 d&iacute;as agregando lo que ya existe: presencia (polls), no sesiones. Bytes cloud: opt-in con el colector elevado (v2.2); sin admin o sin datos, "no disponible" con motivo &mdash; nunca un cero que engane. El egress en bytes del LLM local s&iacute; se mide siempre.</p>
+    <p class="hint">Actividad de los &uacute;ltimos 7 d&iacute;as agregando lo que ya existe: presencia (polls), no sesiones. Bytes cloud: opt-in; sin datos, "no disponible" con motivo &mdash; nunca un cero que engane.</p>
     <div id="dashboard-wrap"></div>
     <div class="row">
       <label>Ventana</label>
@@ -133,13 +133,13 @@
 
   <section class="card" data-tab="eventos" id="shadow-card">
     <h2>Shadow AI</h2>
-    <p class="hint">IA detectada que no est&aacute; aprobada. Aprobado = cat&aacute;logo (por defecto) + proveedores que apruebes aqu&iacute;; match por sufijo de dominio (aprobar <span class="mono">openai.com</span> cubre <span class="mono">api.openai.com</span>). Cada proveedor nuevo no aprobado dispara una alerta <span class="mono">shadow_ai</span>.</p>
+    <p class="hint">IA detectada que no est&aacute; aprobada: cat&aacute;logo (por defecto) + proveedores que apruebes aqu&iacute;; match por sufijo de dominio. Cada nuevo no aprobado alerta <span class="mono">shadow_ai</span>.</p>
     <div id="shadow-wrap"></div>
   </section>
 
   <section class="card" data-tab="eventos" id="autonomy-card">
     <h2>Autonom&iacute;a (R2)</h2>
-    <p class="hint">Qu&eacute;n decide la salida a IA: <b>usuario</b> (user_driven), <b>aut&oacute;nomo</b> (autonomous) o <b>programado</b> (scheduled). Se&ntilde;ales: sesi&oacute;n bloqueada, usuario inactivo, foreground y linaje del proceso (padre servicio/tarea programada v&iacute;a Sysmon EID 1). Cada evento lleva su veredicto persistido; una salida IA aut&oacute;noma o programada dispara la alerta <span class="mono">autonomous_ai_call</span>.</p>
+    <p class="hint">Qu&eacute;n decide la salida a IA: <b>usuario</b>, <b>aut&oacute;nomo</b> o <b>programado</b>. Se&ntilde;ales: sesi&oacute;n bloqueada, inactividad, foreground y linaje (EID 1). Una salida aut&oacute;noma/programada alerta <span class="mono">autonomous_ai_call</span>.</p>
     <div class="row" id="aut-filters">
       <label>Veredicto</label>
       <select id="aut-verdict">
@@ -160,7 +160,7 @@
 
   <section class="card" data-tab="eventos" id="baseline-card">
     <h2>Baseline y anomal&iacute;a (D1/D2)</h2>
-    <p class="hint">Lo que es &quot;normal&quot; para cada par proceso &rarr; proveedor, aprendido de lo retenido: primera aparici&oacute;n, horas t&iacute;picas (inicios de sesi&oacute;n, hora UTC) y ratio de sesiones. Anomal&iacute;a determinista sin IA: cada flag lleva su porqu&eacute; y peso; <span class="mono">pre_score</span> 0-100 (ambar = un flag, rojo = dos o m&aacute;s). Display-only: enriquece el state que se pasa a Jev y alimenta la regla <span class="mono">anomaly_pre_score</span>.</p>
+    <p class="hint">Lo que es &quot;normal&quot; por (proceso, proveedor), aprendido de lo retenido. Anomal&iacute;a determinista sin IA: flags con porqu&eacute; y <span class="mono">pre_score</span> 0-100; display-only.</p>
     <div id="baseline-wrap"></div>
   </section>
 
@@ -237,7 +237,7 @@
       <button id="btn-save-proxy">Guardar</button>
     </div>
     <p class="hint">Para inspeccionar, apunta el cliente al puerto del proxy (p. ej. SDK/cliente → <span class="mono">http://127.0.0.1:8098</span>). Las llamadas se guardan en <span class="mono">data/llm_calls.db</span> con prompts y respuestas completos: no expongas ese fichero.</p>
-    <p class="hint">Cobertura: chat/completions (incluido tool-calling), embeddings, audio e imágenes; un intento que no conecta queda registrado como fallo. Si la URL del LLM local apunta al mismo upstream que el target, las llamadas propias de NetWatch (explicador y test) también pasan por el proxy: el inspector se auto-observa.</p>
+    <p class="hint">Cobertura: chat/completions (incluido tool-calling), embeddings, audio e imágenes; un intento que no conecta queda registrado como fallo.</p>
     <div id="llm-calls-wrap"></div>
     <div class="row">
       <button id="btn-reset-llmcalls" class="danger">Borrar llamadas registradas</button>
@@ -322,6 +322,11 @@
     </details>
 
     <details>
+      <summary>Baseline y anomal&iacute;a (D1/D2)</summary>
+      <p>Lo que es &quot;normal&quot; para cada par proceso &rarr; proveedor, aprendido de lo retenido: primera aparici&oacute;n, horas t&iacute;picas (inicios de sesi&oacute;n, hora UTC) y ratio de sesiones. Anomal&iacute;a determinista sin IA: cada flag lleva su porqu&eacute; y peso; <span class="mono">pre_score</span> 0-100 (ambar = un flag, rojo = dos o m&aacute;s). Flags: <span class="mono">first_time_dest</span>, <span class="mono">new_process</span>, <span class="mono">off_hours</span>, <span class="mono">high_sessions</span>, <span class="mono">udp_non443</span>. Display-only: enriquece el state que se pasa a Jev y alimenta la regla <span class="mono">anomaly_pre_score</span> (umbral 50). Endpoint: <span class="mono">GET /api/baseline</span>.</p>
+    </details>
+
+    <details>
       <summary>Reglas (v2.2)</summary>
       <p>El motor de reglas eval&iacute;a cada 60 s el estado existente: <b>service_ai_call</b> (veredicto aut&oacute;nomo/programado llamando a IA no aprobada), <b>beacon_unapproved</b> (beaconing a proveedor no aprobado) y <b>egress_volume_unapproved</b> (&gt;X MB a IA no aprobada seg&uacute;n bytes remotos; sin datos de colector, disponible=false). Cada regla que pasa a disparar genera una alerta <span class="mono">rule_fired</span>; la tarjeta muestra su estado en vivo.</p>
     </details>
@@ -333,12 +338,12 @@
 
     <details>
       <summary>Autonomía (R2)</summary>
-      <p>Cada evento IA lleva un veredicto persistido: <b>usuario</b>, <b>autónomo</b> o <b>programado</b>. Señales: sesión bloqueada/pantalla apagada, usuario inactivo, foreground y linaje del proceso (padre servicio/tarea programada vía Sysmon EID 1). El triaje Jev recibe el estado real del usuario (<span class="mono">user_active</span>), y una salida autónoma/programada dispara la alerta <span class="mono">autonomous_ai_call</span>. Sin señales disponibles, el veredicto queda <i>unknown</i>: nunca se inventa.</p>
+      <p>Cada evento IA lleva un veredicto persistido: <b>usuario</b>, <b>autónomo</b> o <b>programado</b>. Señales: sesión bloqueada/pantalla apagada, usuario inactivo, foreground y linaje del proceso (padre servicio/tarea programada vía Sysmon EID 1). El triaje Jev recibe el estado real del usuario (<span class="mono">user_active</span>), y una salida autónoma/programada dispara la alerta <span class="mono">autonomous_ai_call</span>. Sin señales disponibles, el veredicto queda <i>unknown</i>: nunca se inventa. La tarjeta etiqueta el estado del contador de entrada en vez de dejar un "?" silencioso: si está congelado (sesión sin entrada, p. ej. RDP desconectado) o la API no responde, muestra "sin señal" con el motivo; si nadie ha tecleado desde el arranque (sesión sin HID), muestra los segundos <b>con</b> la etiqueta "sin entrada desde el arranque" &mdash; el valor es válido, la nota da contexto.</p>
     </details>
 
     <details>
       <summary>Panel</summary>
-      <p>El <b>Panel</b> agrega (7 días): actividad diaria, top proveedores/procesos (con <b>sdk</b> si lo hay), reparto por capa, número de Shadow AI, LLM Inspector local, y <b>bytes cloud</b> (colector elevado opt-in, v2.2; mapeo IP→proveedor por eventos + EID22 + <span class="mono">dns_resolutions</span>, con label API/web/CDN) — si no hay datos, "no disponible" con motivo y <span class="mono">last_meta</span>. El egress en bytes del LLM local se mide siempre.</p>
+      <p>El <b>Panel</b> agrega (7 días): actividad diaria (cuenta presencia/polls, no sesiones), top proveedores/procesos (con <b>sdk</b> si lo hay), reparto por capa, número de Shadow AI, LLM Inspector local, y <b>bytes cloud</b> (colector elevado opt-in, v2.2; mapeo IP→proveedor por eventos + EID22 + <span class="mono">dns_resolutions</span>, con label API/web/CDN) — si no hay datos, "no disponible" con motivo y <span class="mono">last_meta</span>. El egress en bytes del LLM local se mide siempre.</p>
     </details>
 
     <details>

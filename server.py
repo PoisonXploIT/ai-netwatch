@@ -1592,6 +1592,10 @@ def autonomy_state(verdict: str | None = None, process: str | None = None,
     eventos vivos (sin filtros): para los contadores de la UI."""
     st = _req_store()
     sig = {"idle_seconds": autonomy.get_idle_seconds(),
+           # v2.6(3): etiqueta el estado de la senal (display-only):
+           # degradada (sin senal) o valida pero sin matiz (p. ej. sin
+           # entrada desde el arranque).
+           "idle_note": autonomy.idle_signal_note(),
            "locked": autonomy.is_session_locked(),
            "foreground_pid": autonomy.get_foreground_pid()}
     limit = max(1, min(int(limit), 1000))
