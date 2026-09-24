@@ -1359,14 +1359,52 @@ def shadow_providers() -> dict:
 
 
 @app.get("/api/autonomy")
-def autonomy_state() -> dict:
-    """R2: senales globales de autonomia + eventos con veredicto
-    autonomous/scheduled. Las senales son del momento (no historico)."""
+def autonomy_state(verdict: str | None = None, process: str | None = None,
+                   provider: str | None = None, group: str = "none",
+                   limit: int = 100) -> dict:
+    """R2: senales globales de autonomia + eventos con veredicto. Las
+    senales son del momento (no historico). Filtros de vista (A3):
+    veredicto (autonomous/scheduled/user_driven/unknown), proceso y
+    proveedor por substring, y agrupacion por proveedor como en la tarjeta
+    de eventos. `counts` = reparticion de veredictos sobre TODOS los
+    eventos vivos (sin filtros): para los contadores de la UI."""
     st = _req_store()
     sig = {"idle_seconds": autonomy.get_idle_seconds(),
            "locked": autonomy.is_session_locked(),
            "foreground_pid": autonomy.get_foreground_pid()}
-    return {"signals": sig, "events": st.autonomy_events(limit=100)}
+    limit = max(1, min(int(limit), 1000))
+    rows = st.list_events(limit=1000)
+    for e in rows:
+        e["provider"] = _provider_of(e)
+        e["kind"] = destination_kind(e.get("provider") or "")
+    counts: dict[str, int] = {"autonomous": 0, "scheduled": 0,
+                              "user_driven": 0, "unknown": 0}
+    for e in rows:
+        v = str(e.get("autonomy_verdict") or "").strip().lower()
+        counts[v if v in ("autonomous", "scheduled", "user_driven")
+               else "unknown"] += 1
+    if verdict:
+        if verdict == "unknown":
+            rows = [e for e in rows
+                    if str(e.get("autonomy_verdict") or "").strip().lower()
+                    not in ("autonomous", "scheduled", "user_driven")]
+        else:
+            rows = [e for e in rows
+                    if str(e.get("autonomy_verdict") or "").strip().lower()
+                    == verdict]
+    if process:
+        p = str(process).strip().lower()
+        rows = [e for e in rows if p in str(e.get("process") or "").lower()]
+    if provider:
+        p = str(provider).strip().lower()
+        rows = [e for e in rows if p in str(e.get("provider") or "").lower()]
+    grouped = group == "provider"
+    if grouped:
+        rows = _group_by_provider(rows)[:limit]
+    else:
+        rows = rows[:limit]
+    return {"signals": sig, "counts": counts,
+            "events": rows, "grouped": grouped}
 
 
 @app.get("/api/processes")

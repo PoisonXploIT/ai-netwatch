@@ -122,6 +122,21 @@
   <section class="card" id="autonomy-card">
     <h2>Autonom&iacute;a (R2)</h2>
     <p class="hint">Qu&eacute;n decide la salida a IA: <b>usuario</b> (user_driven), <b>aut&oacute;nomo</b> (autonomous) o <b>programado</b> (scheduled). Se&ntilde;ales: sesi&oacute;n bloqueada, usuario inactivo, foreground y linaje del proceso (padre servicio/tarea programada v&iacute;a Sysmon EID 1). Cada evento lleva su veredicto persistido; una salida IA aut&oacute;noma o programada dispara la alerta <span class="mono">autonomous_ai_call</span>.</p>
+    <div class="row" id="aut-filters">
+      <label>Veredicto</label>
+      <select id="aut-verdict">
+        <option value="">Todas</option>
+        <option value="autonomous">aut&oacute;nomo</option>
+        <option value="scheduled">programado</option>
+        <option value="user_driven">usuario</option>
+        <option value="unknown">desconocido</option>
+      </select>
+      <input id="aut-process" placeholder="proceso" style="width:120px">
+      <input id="aut-provider" placeholder="proveedor" style="width:140px">
+      <label class="check"><input type="checkbox" id="aut-group"> Agrupar por proveedor</label>
+      <button id="btn-aut-clear">Limpiar</button>
+    </div>
+    <p id="autonomy-counters" class="hint"></p>
     <div id="autonomy-wrap"></div>
   </section>
 

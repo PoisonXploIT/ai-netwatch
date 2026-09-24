@@ -344,22 +344,54 @@ async function refreshShadow() {
   } catch (e) { /* sin datos aún */ }
 }
 
+function autQuery() {
+  const $ = (id) => document.getElementById(id);
+  const p = new URLSearchParams();
+  p.set("limit", "100");
+  const v = $("aut-verdict") && $("aut-verdict").value;
+  if (v) p.set("verdict", v);
+  const proc = $("aut-process") && $("aut-process").value.trim();
+  if (proc) p.set("process", proc);
+  const prov = $("aut-provider") && $("aut-provider").value.trim();
+  if (prov) p.set("provider", prov);
+  if ($("aut-group") && $("aut-group").checked) p.set("group", "provider");
+  return p.toString();
+}
+
 async function refreshAutonomy() {
   const wrap = document.getElementById("autonomy-wrap");
   if (!wrap) return;
   try {
-    const a = await api("/api/autonomy");
+    const a = await api("/api/autonomy?" + autQuery());
     const sig = a.signals || {};
     const lockedTxt = sig.locked == null ? "?" : (sig.locked ? "bloqueada" : "activa");
     const idleTxt = sig.idle_seconds != null ? `${sig.idle_seconds} s` : "?";
     let html = `<p class="hint">Sesión: <b>${esc(lockedTxt)}</b> · usuario inactivo: <b>${esc(idleTxt)}</b> · foreground PID: <b>${sig.foreground_pid != null ? esc(String(sig.foreground_pid)) : "?"}</b></p>`;
+    // A3: contadores de veredicto sobre TODOS los eventos vivos (sin filtros).
+    const c = a.counts || {};
+    const counters = document.getElementById("autonomy-counters");
+    if (counters) {
+      counters.textContent = `Veredictos (eventos vivos): autónomo ${c.autonomous ?? 0} · programado ${c.scheduled ?? 0} · usuario ${c.user_driven ?? 0} · desconocido ${c.unknown ?? 0}`;
+    }
     if (!a.events.length) {
-      html += '<p class="hint">Sin salidas IA autónomas/programadas registradas.</p>';
+      html += '<p class="hint">Sin eventos con los filtros actuales.</p>';
     } else {
-      html += a.events.map(e => `<div class="row">
-        <span class="mono">${esc(e.process)} → ${esc(e.dest_host || e.dest_ip)}:${e.dest_port}</span>
-        <span class="hint">${esc(e.autonomy_verdict)} · score ${e.autonomy_score ?? "?"} · flags ${esc(e.autonomy_flags || "")} · último ${esc(e.last_seen)}</span>
-      </div>`).join("");
+      html += a.events.map(e => {
+        // Las filas agrupadas no llevan dest (son (proceso, proveedor));
+        // la rama se decide por `grouped`, no por presencia de dest_port.
+        const left = a.grouped
+          ? `${esc(e.process)} → ${esc(e.provider || "-")}${kindBadge(e.kind)}`
+          : `${esc(e.process)} → ${esc(e.dest_host || e.dest_ip)}:${e.dest_port}`;
+        const vb = autonomyBadge(e.autonomy_verdict, e.autonomy_score)
+          || '<span class="hint">desconocido</span>';
+        const extra = a.grouped
+          ? ` · ${e.seen_count ?? 0} polls · ${e.sessions ?? 0} sesiones`
+          : ` · score ${e.autonomy_score ?? "?"}`;
+        return `<div class="row">
+        <span class="mono">${left}</span>
+        <span class="hint">${vb} · flags ${esc(e.autonomy_flags || "")}${extra} · último ${esc(e.last_seen)}</span>
+      </div>`;
+      }).join("");
     }
     wrap.innerHTML = html;
   } catch (e) { /* sin datos aún */ }
@@ -640,6 +672,25 @@ function bind() {
     $("ev-process").value = "";
     $("ev-dest").value = "";
     refreshEvents();
+  });
+  // A3: filtros de la tarjeta Autonomía (veredicto/proceso/proveedor/grupo).
+  ["aut-verdict", "aut-group"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("change", refreshAutonomy);
+  });
+  ["aut-process", "aut-provider"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("input", () => {
+      clearTimeout(el._t);
+      el._t = setTimeout(refreshAutonomy, 300);
+    });
+  });
+  $("btn-aut-clear").addEventListener("click", () => {
+    $("aut-verdict").value = "";
+    $("aut-process").value = "";
+    $("aut-provider").value = "";
+    $("aut-group").checked = false;
+    refreshAutonomy();
   });
 
   loadConfig();
