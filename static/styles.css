@@ -212,3 +212,23 @@ pre {
   background: rgba(127, 127, 127, .14);
 }
 details h4 { margin: 8px 0 2px; font-size: 12px; }
+
+/* v2.6 UX: pestanas + vista de hallazgos */
+.tabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
+.tab { background: var(--btn-bg); border: 1px solid var(--btn-border);
+  color: var(--text); padding: 7px 14px; border-radius: 8px;
+  cursor: pointer; font-size: 14px; }
+.tab:hover { background: var(--row-hover); }
+.tab.active { background: var(--accent); border-color: var(--accent);
+  color: #fff; }
+section.card[data-tab] { display: none; }
+section.card[data-tab].tab-active { display: block; }
+.score-badge { display: inline-block; min-width: 34px; text-align: center;
+  padding: 2px 6px; border-radius: 6px; font-weight: 600; color: #fff; }
+.sc-low { background: var(--v-ok); }
+.sc-mid { background: var(--v-warn); }
+.sc-high { background: var(--v-bad); }
+tr.finding-row { cursor: pointer; }
+tr.finding-row:hover { background: var(--row-hover); }
+.finding-detail td { background: var(--zebra); font-size: 13px;
+  white-space: pre-wrap; word-break: break-word; }

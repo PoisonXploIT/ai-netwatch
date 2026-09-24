@@ -1757,6 +1757,97 @@ def baseline_api():
             "groups": out_groups}
 
 
+def _latest_jev_by_event() -> dict[int, dict]:
+    """event_id -> veredicto Jev del ultimo triaje (vacio si no hay)."""
+    if store is None:
+        return {}
+    t = store.latest_triage()
+    if not t:
+        return {}
+    payload = t.get("payload") or {}
+    evs = payload.get("events") or []
+    verdicts = (payload.get("jev") or {}).get("verdicts") or {}
+    out: dict[int, dict] = {}
+    for i, e in enumerate(evs):
+        v = verdicts.get(str(i))
+        if isinstance(v, dict) and e.get("id") is not None:
+            out[int(e["id"])] = v
+    return out
+
+
+def _latest_review_by_event() -> dict[int, dict]:
+    """event_id -> ultima revision LLM (vacio si no hay)."""
+    if store is None:
+        return {}
+    out: dict[int, dict] = {}
+    for r in store.list_reviews(limit=500):
+        eid = r.get("event_id")
+        if eid is not None:
+            out.setdefault(int(eid), r)
+    return out
+
+
+@app.get("/api/findings")
+def findings():
+    """v2.6 UX: vista unificada — UNA fila por (proceso, proveedor) con un
+    score combinado 0-100, ordenada desc. Consolida lo que antes salia
+    disperso (eventos, pre_score/anomalia, veredicto Jev, autonomia,
+    beaconing, shadow, revision LLM) en una linea; expandible para el
+    detalle. Display-only: no cambia deteccion ni veredictos."""
+    events, groups_by_key, proc_first = _baseline_view()
+    jev = _latest_jev_by_event()
+    reviews = _latest_review_by_event()
+    for e in events:
+        e["kind"] = destination_kind(e.get("provider") or "")
+    members_by_key: dict[tuple[str, str], list[dict]] = {}
+    for e in events:
+        members_by_key.setdefault(
+            (str(e["process"]), str(e["provider"])), []).append(e)
+    out: list[dict] = []
+    for (proc, prov), members in members_by_key.items():
+        g = _group_by_provider(members)[0]
+        base = groups_by_key.get((proc, prov))
+        pre_score, pre_flags = 0, []
+        jev_sev, jev_verdict = 0.0, None
+        review = None
+        for e in members:
+            s = baseline.score_event(e, base, proc_first.get(proc))
+            if s["pre_score"] > pre_score:
+                pre_score, pre_flags = s["pre_score"], s["pre_flags"]
+            v = jev.get(int(e["id"]))
+            if v:
+                sev = float(v.get("severity_score") or 0)
+                if sev >= jev_sev:
+                    jev_sev, jev_verdict = sev, v.get("verdict")
+            if review is None:
+                review = reviews.get(int(e["id"]))
+        auto = any(str(e.get("autonomy_verdict") or "")
+                   in ("autonomous", "scheduled") for e in members)
+        beacon = any(
+            e.get("iat_cv") is not None and (e.get("sessions") or 0) >= 5
+            and float(e["iat_cv"]) <= 0.3 for e in members)
+        unapproved = bool(prov) and not _is_approved_provider(prov)
+        score = min(100, int(pre_score) + int(jev_sev * 10)
+                    + (15 if auto else 0) + (15 if beacon else 0)
+                    + (10 if unapproved else 0))
+        out.append({
+            "score": score, "process": proc, "provider": prov,
+            "kind": g["kind"], "ai_layer": g.get("ai_layer"),
+            "sessions": g["sessions"], "seen_count": g["seen_count"],
+            "ip_count": g["ip_count"],
+            "first_seen": g["first_seen"], "last_seen": g["last_seen"],
+            "pre_score": pre_score, "pre_flags": pre_flags,
+            "jev_verdict": jev_verdict, "jev_severity": jev_sev,
+            "autonomy_verdict": ("autonomous" if auto
+                                 else g.get("autonomy_verdict")),
+            "beaconing": beacon, "unapproved": unapproved,
+            "review": review,
+            "event_ids": [e["id"] for e in members][:20],
+        })
+    out.sort(key=lambda f: (-f["score"], -(f["seen_count"] or 0)))
+    return {"findings": out}
+
+
 @app.get("/api/alerts")
 def list_alerts(since_id: int = 0):
     return {"alerts": alerts.list(since_id) if alerts else [],

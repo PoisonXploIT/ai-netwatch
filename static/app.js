@@ -231,6 +231,72 @@ async function refreshEvents() {
   } catch (e) { /* server caído */ }
 }
 
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach((t) =>
+    t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll("section.card[data-tab]").forEach((s) =>
+    s.classList.toggle("tab-active", s.dataset.tab === name));
+  if (name === "hallazgos") refreshFindings();
+}
+
+function scoreClass(s) { return s >= 60 ? "sc-high" : s >= 30 ? "sc-mid" : "sc-low"; }
+
+function findingDetail(f) {
+  const parts = [];
+  if ((f.pre_flags || []).length) {
+    parts.push("<b>Anomalía (" + f.pre_score + "):</b> " +
+      f.pre_flags.map((x) => `${esc(x.flag)} (${esc(x.porque)})`).join("; "));
+  }
+  if (f.jev_verdict) {
+    parts.push(`<b>Jev:</b> ${esc(f.jev_verdict)} (criticidad ${f.jev_severity})`);
+  }
+  if (f.review) {
+    parts.push(`<b>Revisión LLM:</b> ${esc(f.review.evaluacion || "")} — ${esc(f.review.porque || "")}`);
+  }
+  parts.push(`<b>IPs:</b> ${f.ip_count} · <b>event_ids:</b> ${(f.event_ids || []).join(", ")}`);
+  return parts.join("<br>");
+}
+
+function findingsHtml(findings) {
+  if (!findings.length) return `<div class="hint">Sin hallazgos todavía.</div>`;
+  const rows = findings.map((f, i) => {
+    const badges = [
+      f.unapproved ? `<span class="badge-bad">no aprobado</span>` : "",
+      f.beaconing ? `<span class="badge-bad">beacon</span>` : "",
+      (f.autonomy_verdict === "autonomous" || f.autonomy_verdict === "scheduled")
+        ? `<span class="badge-warn">${esc(f.autonomy_verdict)}</span>` : "",
+    ].filter(Boolean).join(" ");
+    const jev = f.jev_verdict ? verdictBadge(f.jev_verdict) : `<span class="hint">sin Jev</span>`;
+    return `<tr class="finding-row" data-fi="${i}">
+      <td><span class="score-badge ${scoreClass(f.score)}">${f.score}</span></td>
+      <td>${esc(f.process)}</td>
+      <td class="mono">${esc(f.provider || "-")}${kindBadge(f.kind)}</td>
+      <td>${jev} ${badges}</td>
+      <td class="num">${f.sessions ?? 0}</td>
+      <td class="num">${f.seen_count ?? 0}</td>
+      <td class="mono small">${esc(f.last_seen || "")}</td>
+    </tr>
+    <tr class="finding-detail" data-fd="${i}" hidden><td colspan="7">${findingDetail(f)}</td></tr>`;
+  }).join("");
+  return `<table>
+    <thead><tr><th class="num">Score</th><th>Proceso</th><th>Proveedor</th><th>Señales</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Última vez</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+async function refreshFindings() {
+  try {
+    const d = await api("/api/findings");
+    const wrap = document.getElementById("findings-wrap");
+    wrap.innerHTML = findingsHtml(d.findings || []);
+    wrap.querySelectorAll("tr.finding-row").forEach((r) => {
+      r.addEventListener("click", () => {
+        const det = wrap.querySelector(`tr.finding-detail[data-fd="${r.dataset.fi}"]`);
+        if (det) det.hidden = !det.hidden;
+      });
+    });
+  } catch (e) { /* sin hallazgos */ }
+}
+
 function wireInvestigate(wrap) {
   // v2.4: asesoria LLM local por evento (display-only; Jev sigue siendo el
   // juez). Solo si llm_enabled; el resultado se inserta como fila debajo.
@@ -876,6 +942,10 @@ function bind() {
     runReview({ event_ids: ids });
   });
 
+  document.querySelectorAll(".tab").forEach((t) =>
+    t.addEventListener("click", () => showTab(t.dataset.tab)));
+  showTab("resumen");
+
   loadConfig();
   loadLatestTriage();
   loadReviewHistory();
@@ -896,6 +966,10 @@ function bind() {
   setInterval(refreshBaseline, 60000);
   setInterval(refreshRules, 60000);
   setInterval(refreshDashboard, 60000);
+  setInterval(() => {
+    const a = document.querySelector(".tab.active");
+    if (a && a.dataset.tab === "hallazgos") refreshFindings();
+  }, 15000);
 }
 
 document.addEventListener("DOMContentLoaded", bind);

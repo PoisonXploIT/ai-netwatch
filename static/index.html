@@ -31,7 +31,14 @@
   </div>
 </header>
 <main>
-  <section class="card" id="panel-card">
+  <nav class="tabs">
+    <button class="tab active" data-tab="resumen">Resumen</button>
+    <button class="tab" data-tab="hallazgos">Hallazgos</button>
+    <button class="tab" data-tab="eventos">Eventos</button>
+    <button class="tab" data-tab="ia">IA (Jev / LLM)</button>
+    <button class="tab" data-tab="config">Config</button>
+  </nav>
+  <section class="card" data-tab="resumen" id="panel-card">
     <h2>Panel</h2>
     <p class="hint">Actividad de los &uacute;ltimos 7 d&iacute;as agregando lo que ya existe: presencia (polls), no sesiones. Bytes cloud: opt-in con el colector elevado (v2.2); sin admin o sin datos, "no disponible" con motivo &mdash; nunca un cero que engane. El egress en bytes del LLM local s&iacute; se mide siempre.</p>
     <div id="dashboard-wrap"></div>
@@ -42,7 +49,13 @@
     </div>
   </section>
 
-  <section class="card" id="cfg-card">
+  <section class="card" data-tab="hallazgos" id="findings-card">
+    <h2>Hallazgos</h2>
+    <p class="hint">Una linea por (proceso, proveedor) con un <b>score combinado 0-100</b> (anomalia determinista + criticidad Jev + autonomia + beaconing + no aprobado), ordenado por score. Clic en la fila para el detalle. Display-only.</p>
+    <div id="findings-wrap"></div>
+  </section>
+
+  <section class="card" data-tab="config" id="cfg-card">
     <h2>Configuración (persistente)</h2>
     <div class="row">
       <label>Jev (TypeSafe)</label>
@@ -89,7 +102,7 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-tab="eventos">
     <h2>Eventos (conexiones a destinos IA)</h2>
     <p class="hint">Proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo (TCP/QUIC) + periodicidad. Columnas: SNI = dominio real del handshake TLS/QUIC (tshark); Catálogo = match por resolución activa; provider+kind (API/web/CDN). Filtros y agrupación por proveedor (v2.3).</p>
     <div class="row" id="events-filters">
@@ -118,13 +131,13 @@
     <div id="events-wrap" class="table-wrap"></div>
   </section>
 
-  <section class="card" id="shadow-card">
+  <section class="card" data-tab="eventos" id="shadow-card">
     <h2>Shadow AI</h2>
     <p class="hint">IA detectada que no est&aacute; aprobada. Aprobado = cat&aacute;logo (por defecto) + proveedores que apruebes aqu&iacute;; match por sufijo de dominio (aprobar <span class="mono">openai.com</span> cubre <span class="mono">api.openai.com</span>). Cada proveedor nuevo no aprobado dispara una alerta <span class="mono">shadow_ai</span>.</p>
     <div id="shadow-wrap"></div>
   </section>
 
-  <section class="card" id="autonomy-card">
+  <section class="card" data-tab="eventos" id="autonomy-card">
     <h2>Autonom&iacute;a (R2)</h2>
     <p class="hint">Qu&eacute;n decide la salida a IA: <b>usuario</b> (user_driven), <b>aut&oacute;nomo</b> (autonomous) o <b>programado</b> (scheduled). Se&ntilde;ales: sesi&oacute;n bloqueada, usuario inactivo, foreground y linaje del proceso (padre servicio/tarea programada v&iacute;a Sysmon EID 1). Cada evento lleva su veredicto persistido; una salida IA aut&oacute;noma o programada dispara la alerta <span class="mono">autonomous_ai_call</span>.</p>
     <div class="row" id="aut-filters">
@@ -145,19 +158,19 @@
     <div id="autonomy-wrap"></div>
   </section>
 
-  <section class="card" id="baseline-card">
+  <section class="card" data-tab="eventos" id="baseline-card">
     <h2>Baseline y anomal&iacute;a (D1/D2)</h2>
     <p class="hint">Lo que es &quot;normal&quot; para cada par proceso &rarr; proveedor, aprendido de lo retenido: primera aparici&oacute;n, horas t&iacute;picas (inicios de sesi&oacute;n, hora UTC) y ratio de sesiones. Anomal&iacute;a determinista sin IA: cada flag lleva su porqu&eacute; y peso; <span class="mono">pre_score</span> 0-100 (ambar = un flag, rojo = dos o m&aacute;s). Display-only: enriquece el state que se pasa a Jev y alimenta la regla <span class="mono">anomaly_pre_score</span>.</p>
     <div id="baseline-wrap"></div>
   </section>
 
-  <section class="card" id="rules-card">
+  <section class="card" data-tab="config" id="rules-card">
     <h2>Reglas (v2.2)</h2>
     <p class="hint">Reglas por umbral sobre lo que ya se mide: shadow, autonom&iacute;a y beaconing. Una regla que pasa a disparar alerta una vez (<span class="mono">rule_fired</span>); el reset re-alerta.</p>
     <div id="rules-wrap"></div>
   </section>
 
-  <section class="card">
+  <section class="card" data-tab="config">
     <h2>Estadísticas (últimos 7 días)</h2>
     <p class="hint">El reset borra los eventos y triajes vivos, pero el histórico diario se conserva para la estadística.</p>
     <div id="stats-wrap"></div>
@@ -167,7 +180,7 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-tab="config">
     <h2>Exportar</h2>
     <p class="hint">Generado en memoria desde los datos vivos (eventos + último triaje). Sin secretos: ninguna API key aparece en ningún export.</p>
     <div class="row">
@@ -186,14 +199,14 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" data-tab="ia">
     <h2>Triaje con Jev</h2>
     <button id="btn-triage" class="primary">Triar eventos con Jev</button>
     <span id="triage-status" class="hint"></span>
     <div id="triage-results"></div>
   </section>
 
-  <section class="card" id="review-card">
+  <section class="card" data-tab="ia" id="review-card">
     <h2>Revisi&oacute;n LLM local (batch)</h2>
     <p class="hint">El LLM local opina uno a uno sobre un conjunto de eventos (tope por petici&oacute;n: <span class="mono">llm_review_max</span>, config). Asesoria display-only: no re-punt&uacute;a, no aprueba ni ejecuta nada; Jev sigue siendo el juez. El resultado se guarda en el hist&oacute;rico de revisiones.</p>
     <div class="row">
@@ -212,7 +225,7 @@
     <div id="review-history"></div>
   </section>
 
-  <section class="card" id="llm-inspector-card">
+  <section class="card" data-tab="ia" id="llm-inspector-card">
     <h2>LLM Inspector (R3)</h2>
     <p class="hint">Reverse proxy local frente al LLM local: registra cada llamada HTTP en claro — prompt, respuesta, modelo, tokens y latencia. Solo sirve para un LLM de loopback (HTTP plano); los proveedores remotos viajan cifrados y su contenido no se ve aquí.</p>
     <div class="row">
