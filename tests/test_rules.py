@@ -116,6 +116,11 @@ class RulesServerBase(unittest.TestCase):
     def _kinds(self):
         return [a["kind"] for a in self.log.list()]
 
+    def _fired_rules(self):
+        # v2.5(3): cada alerta rule_fired lleva el id de la regla en details.
+        return [(a.get("details") or {}).get("rule")
+                for a in self.log.list() if a["kind"] == "rule_fired"]
+
 
 class TestRulesServer(RulesServerBase):
     def test_fired_rule_alerts_once(self):
@@ -126,10 +131,16 @@ class TestRulesServer(RulesServerBase):
             " WHERE process='svc.exe'")
         self.store.conn.commit()
         server._rules_cycle()
-        self.assertEqual(self._kinds().count("rule_fired"), 1)
+        # service_ai_call y anomaly_pre_score (evento nuevo: pre_score 50)
+        # disparan, cada una una vez.
+        fired = self._fired_rules()
+        self.assertEqual(fired.count("service_ai_call"), 1)
+        self.assertEqual(fired.count("anomaly_pre_score"), 1)
         # Ciclos siguientes: sigue firmando pero no re-alerta.
         server._rules_cycle()
-        self.assertEqual(self._kinds().count("rule_fired"), 1)
+        fired = self._fired_rules()
+        self.assertEqual(fired.count("service_ai_call"), 1)
+        self.assertEqual(fired.count("anomaly_pre_score"), 1)
 
     def test_rules_disabled_no_alert(self):
         self.store.observe_connection("svc.exe", "9.9.9.9", 443, None, None)
@@ -150,7 +161,9 @@ class TestRulesServer(RulesServerBase):
         server._rules_cycle()
         server._rules_alerted.clear()  # lo que hace el reset
         server._rules_cycle()
-        self.assertEqual(self._kinds().count("rule_fired"), 2)
+        fired = self._fired_rules()
+        self.assertEqual(fired.count("service_ai_call"), 2)
+        self.assertEqual(fired.count("anomaly_pre_score"), 2)
 
     def test_api_rules_shape(self):
         out = server.list_rules()

@@ -12,11 +12,16 @@ Reglas:
 - egress_volume_unapproved: >X MB a IA no aprobada (bytes remotos del
   colector elevado; acumulado desde inicio del colector). Sin datos de
   colector => available=False. Honestidad: sin dato, no regla.
+- anomaly_pre_score: anomalia determinista (v2.5(3) D2): algun evento con
+  pre_score >= umbral (flags explicables: primera aparicion, proceso
+  nuevo, fuera de horas tipicas, rafaga de sesiones, UDP no 443).
+  Detecion sin IA; la regla solo avisa, Jev sigue siendo el juez.
 """
 from __future__ import annotations
 
 _BEACON_CV_MAX = 0.3
 _BEACON_MIN_N = 5
+_ANOMALY_MIN_SCORE = 50
 
 
 def _top(items: list[str], n: int = 5) -> str:
@@ -32,7 +37,7 @@ def evaluate(events: list[dict], *, egress_mb_per_day: float,
     """Evalua las reglas contra eventos ya enriquecidos.
 
     events: dicts con (process, provider, autonomy_verdict, sessions,
-    iat_cv, unapproved). egress: bytes remotos por proveedor
+    iat_cv, unapproved, pre_score). egress: bytes remotos por proveedor
     [{provider, bytes, unapproved}] o None si el colector elevado no ha
     volcado datos (la regla egress queda disponible=False).
     Devuelve uno por regla: {id, available, reason, fired, detail}.
@@ -71,6 +76,10 @@ def evaluate(events: list[dict], *, egress_mb_per_day: float,
             "detail": (f"egress a IA no aprobada > {egress_mb_per_day:g} MB:"
                        f" {_top(over)}" if over else None),
         }
+    anom = [f"{e.get('process')} -> {e.get('provider')}"
+            f" (pre_score {e.get('pre_score')})"
+            for e in events
+            if int(e.get("pre_score") or 0) >= _ANOMALY_MIN_SCORE]
     return [
         egress_rule,
         {"id": "service_ai_call",
@@ -85,4 +94,10 @@ def evaluate(events: list[dict], *, egress_mb_per_day: float,
          "fired": bool(bcn),
          "detail": (f"beaconing a proveedores no aprobados: {_top(bcn)}"
                     if bcn else None)},
+        {"id": "anomaly_pre_score",
+         "available": True,
+         "reason": None,
+         "fired": bool(anom),
+         "detail": (f"anomalia determinista pre_score >= {_ANOMALY_MIN_SCORE}:"
+                    f" {_top(anom)}" if anom else None)},
     ]

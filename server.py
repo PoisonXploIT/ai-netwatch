@@ -389,12 +389,18 @@ def _egress_rows() -> list[dict]:
 
 def _rules_events() -> list[dict]:
     """Eventos enriquecidos para el motor de reglas (provider y
-    unapproved con la misma logica que shadow). Vacio sin store."""
+    unapproved con la misma logica que shadow; pre_score v2.5(3) D2).
+    Vacio sin store."""
     out: list[dict] = []
     if store is None:
         return out
+    _, groups_by_key, proc_first = _baseline_view()
     for ev in store.list_events(limit=500):
         provider = _provider_of(ev)
+        s = baseline.score_event(
+            ev,
+            groups_by_key.get((str(ev.get("process") or ""), provider)),
+            proc_first.get(str(ev.get("process") or "")))
         out.append({
             "process": ev.get("process"),
             "provider": provider,
@@ -402,6 +408,7 @@ def _rules_events() -> list[dict]:
             "sessions": ev.get("sessions"),
             "iat_cv": ev.get("iat_cv"),
             "unapproved": not _is_approved_provider(provider),
+            "pre_score": s["pre_score"],
         })
     return out
 
@@ -1082,6 +1089,18 @@ def list_events(limit: int = 200, process: str | None = None,
     for e in rows:
         e["provider"] = _provider_of(e)
         e["kind"] = destination_kind(e.get("provider") or "")
+    # v2.5(3) D2: anomalia determinista por evento (display-only; la
+    # deteccion la hacen reglas/Jev). En filas agrupadas: pre_score = max
+    # de miembros y flags del que lo aporta.
+    _, groups_by_key, proc_first = _baseline_view()
+    for e in rows:
+        s = baseline.score_event(
+            e,
+            groups_by_key.get((str(e.get("process") or ""),
+                               str(e.get("provider") or ""))),
+            proc_first.get(str(e.get("process") or "")))
+        e["pre_score"] = s["pre_score"]
+        e["pre_flags"] = s["pre_flags"]
     if shadow:
         rows = [e for e in rows if e["provider"]
                 and not _is_approved_provider(e["provider"])]
@@ -1089,7 +1108,18 @@ def list_events(limit: int = 200, process: str | None = None,
         rows = [e for e in rows if e["kind"] != "cdn"]
     grouped = group == "provider"
     if grouped:
-        rows = _group_by_provider(rows)[:limit]
+        agg = _group_by_provider(rows)
+        for g in agg:
+            members = [e for e in rows
+                       if (str(e.get("process") or ""),
+                           str(e.get("provider") or ""))
+                       == (str(g.get("process") or ""),
+                           str(g.get("provider") or ""))]
+            best = max(members, key=lambda e: int(e.get("pre_score") or 0),
+                       default=None)
+            g["pre_score"] = int((best or {}).get("pre_score") or 0)
+            g["pre_flags"] = (best or {}).get("pre_flags") or []
+        rows = agg[:limit]
     return {"events": rows, "grouped": grouped}
 
 
@@ -1100,6 +1130,17 @@ def triage(req: TriageRequest):
               else [e for i in req.event_ids if (e := st.get_event(i))] )
     if not events:
         raise HTTPException(404, "no hay eventos que triar")
+    # v2.5(3) D2: pre_score determinista en el state que ve Jev (asesoria
+    # de contexto; Jev sigue siendo el juez). No cambia veredictos.
+    _, groups_by_key, proc_first = _baseline_view()
+    for e in events:
+        s = baseline.score_event(
+            e,
+            groups_by_key.get((str(e.get("process") or ""),
+                               str(_provider_of(e)))),
+            proc_first.get(str(e.get("process") or "")))
+        e["pre_score"] = s["pre_score"]
+        e["pre_flags"] = s["pre_flags"]
     result: dict = {"status": "skipped", "reason": "ai_disabled"}
     if _cfg.get("jev_enabled") and _cfg.get("jev_api_key"):
         result = triage_events(events, _cfg["jev_api_key"],
@@ -1121,7 +1162,8 @@ def triage(req: TriageRequest):
     payload = {"events": [
         {"id": e["id"], "process": e["process"],
          "dest": f"{_provider_of(e)}:{e['dest_port']}",
-         "catalog": e["catalog_domain"], "seen_count": e["seen_count"]}
+         "catalog": e["catalog_domain"], "seen_count": e["seen_count"],
+         "pre_score": e["pre_score"], "pre_flags": e["pre_flags"]}
         for e in events],
         "jev": result, "llm_explanations": explanations}
     st.save_triage(result.get("status", "error"), result.get("model"), payload)

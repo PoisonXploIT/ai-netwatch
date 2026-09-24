@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import baseline  # noqa: E402
+import rules  # noqa: E402
 import server  # noqa: E402
 from store import LlmCallStore, Store  # noqa: E402
 
@@ -297,6 +298,72 @@ class TestBaselineEndpoint(BaselineEndpointBase):
         out = server.baseline_api()
         self.assertEqual(out["groups"], [])
         self.assertIsNone(out["window"]["since"])
+
+
+class TestEventsPreScore(BaselineEndpointBase):
+    def test_rows_and_grouped(self):
+        self.store.observe_connection(
+            process="a.exe", dest_ip="1.1.1.1", dest_port=443,
+            dest_host=None, catalog_domain="api.openai.com",
+            ai_layer="catalog")
+        # Sin agrupar: pre_score y flags por fila.
+        out = server.list_events(group="none")
+        e0 = out["events"][0]
+        self.assertEqual(e0["pre_score"], 50)
+        self.assertEqual({f["flag"] for f in e0["pre_flags"]},
+                         {"first_time_dest", "new_process"})
+        # Agrupado: el max de miembros y sus flags.
+        out = server.list_events()
+        g0 = out["events"][0]
+        self.assertTrue(out["grouped"])
+        self.assertEqual(g0["pre_score"], 50)
+        self.assertEqual({f["flag"] for f in g0["pre_flags"]},
+                         {"first_time_dest", "new_process"})
+
+
+class TestTriagePreScore(BaselineEndpointBase):
+    def test_payload_has_pre_score(self):
+        self.store.observe_connection(
+            process="a.exe", dest_ip="1.1.1.1", dest_port=443,
+            dest_host=None, catalog_domain="api.openai.com",
+            ai_layer="catalog")
+        out = server.triage(server.TriageRequest())
+        self.assertEqual(out["jev"]["status"], "skipped")
+        ev0 = out["events"][0]
+        self.assertEqual(ev0["pre_score"], 50)
+        self.assertTrue(any(f["flag"] == "first_time_dest"
+                            for f in ev0["pre_flags"]))
+
+
+class TestRulesAnomaly(unittest.TestCase):
+    def _ev(self, pre_score):
+        return {"process": "a.exe", "provider": "openai.com",
+                "autonomy_verdict": "unknown", "sessions": 1,
+                "iat_cv": None, "unapproved": True,
+                "pre_score": pre_score}
+
+    def test_rule_fires_with_detail(self):
+        res = {r["id"]: r for r in
+               rules.evaluate([self._ev(60)], egress_mb_per_day=500)}
+        self.assertTrue(res["anomaly_pre_score"]["fired"])
+        self.assertIn("pre_score 60", res["anomaly_pre_score"]["detail"])
+
+    def test_rule_not_fired_below_threshold(self):
+        res = {r["id"]: r for r in
+               rules.evaluate([self._ev(25)], egress_mb_per_day=500)}
+        self.assertFalse(res["anomaly_pre_score"]["fired"])
+        self.assertIsNone(res["anomaly_pre_score"]["detail"])
+
+
+class TestRulesEventsPreScore(BaselineEndpointBase):
+    def test_rules_events_includes_pre_score(self):
+        self.store.observe_connection(
+            process="a.exe", dest_ip="1.1.1.1", dest_port=443,
+            dest_host=None, catalog_domain="api.openai.com",
+            ai_layer="catalog")
+        evs = server._rules_events()
+        self.assertEqual(len(evs), 1)
+        self.assertEqual(evs[0]["pre_score"], 50)
 
 
 if __name__ == "__main__":
