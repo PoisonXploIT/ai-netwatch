@@ -1426,22 +1426,48 @@ def dashboard(days: int = 7) -> dict:
     si no, 'no disponible' con motivo (nunca un cero que engane)."""
     days = max(1, min(int(days), 365))
     st = _req_store()
+    evs = st.events_since(days)
     providers: dict[str, int] = {}
     processes: dict[str, int] = {}
     layers: dict[str, int] = {}
-    for e in st.events_since(days):
+    # A4: capa dominante por proveedor (para el label API/web/CDN + capa
+    # junto al nombre en el panel).
+    prov_layers: dict[str, dict[str, int]] = {}
+    for e in evs:
         seen = int(e.get("seen_count") or 1)
         prov = _provider_of(e)
         if prov:
             providers[prov] = providers.get(prov, 0) + seen
+            pl = prov_layers.setdefault(prov, {})
+            layer = str(e.get("ai_layer") or "none")
+            pl[layer] = pl.get(layer, 0) + seen
         proc = str(e.get("process") or "?")
         processes[proc] = processes.get(proc, 0) + seen
         layer = str(e.get("ai_layer") or "none")
         layers[layer] = layers.get(layer, 0) + seen
 
+    def _top_providers() -> list[dict]:
+        out: list[dict] = []
+        for k, v in sorted(providers.items(), key=lambda kv: -kv[1])[:10]:
+            pl = prov_layers.get(k) or {}
+            dom_layer = ("none" if not pl else
+                         sorted(pl.items(),
+                                key=lambda kv: (-kv[1], kv[0]))[0][0])
+            out.append({"name": k, "seen_count": v,
+                        "kind": destination_kind(k),
+                        "layer": dom_layer})
+        return out
+
     def _top(d: dict[str, int]) -> list[dict]:
         return [{"name": k, "seen_count": v}
                 for k, v in sorted(d.items(), key=lambda kv: -kv[1])[:10]]
+
+    # A4: resumen agregado de la ventana (totales + cardinalidades).
+    summary = {"days": days,
+               "events": len(evs),
+               "seen_total": sum(int(e.get("seen_count") or 1) for e in evs),
+               "processes": len({str(e.get("process") or "?") for e in evs}),
+               "providers": len(providers)}
 
     # v2.3: label de SDK IA por nombre de proceso (display; la ficha
     # completa esta en /api/processes).
@@ -1456,8 +1482,9 @@ def dashboard(days: int = 7) -> dict:
         row["sdk"] = proc_sdk.get(str(row["name"]).lower(), "")
     return {
         "days": days,
+        "summary": summary,
         "daily": st.stats(days=days),
-        "top_providers": _top(providers),
+        "top_providers": _top_providers(),
         "top_processes": top_procs,
         "layers": [{"layer": k, "seen_count": v}
                    for k, v in sorted(layers.items(),

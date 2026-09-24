@@ -152,5 +152,54 @@ class TestLlmSummaryDays(DashboardBase):
         self.assertEqual(days7["request_bytes"], 20)
 
 
+class TestDashboardA4(DashboardBase):
+    """A4: top_providers con kind+capa dominante y resumen agregado."""
+
+    def _seed(self) -> None:
+        # openai.com (kind web) x2 procesos, capa catalog...
+        self.store.observe_connection(
+            process="a.exe", dest_ip="1.1.1.1", dest_port=443,
+            dest_host=None, catalog_domain="openai.com",
+            ai_layer="catalog")
+        # ...y una repeticion del mismo evento (seen_count=2).
+        self.store.observe_connection(
+            process="a.exe", dest_ip="1.1.1.1", dest_port=443,
+            dest_host=None, catalog_domain="openai.com",
+            ai_layer="catalog")
+        # api.openai.com (kind api) por dest_host, capa llm.
+        self.store.observe_connection(
+            process="b.exe", dest_ip="2.2.2.2", dest_port=443,
+            dest_host="api.openai.com", catalog_domain=None,
+            ai_layer="llm")
+
+    def test_summary_totals(self):
+        self._seed()
+        out = server.dashboard(days=7)
+        s = out["summary"]
+        self.assertEqual(s["events"], 2)          # filas vivas (a, b)
+        self.assertEqual(s["seen_total"], 3)      # 2 + 1 presencias
+        self.assertEqual(s["processes"], 2)
+        self.assertEqual(s["providers"], 2)
+        self.assertEqual(s["days"], 7)
+
+    def test_top_providers_kind_and_dominant_layer(self):
+        self._seed()
+        out = server.dashboard(days=7)
+        by_name = {p["name"]: p for p in out["top_providers"]}
+        # openai.com: 2 presencias catalog -> capa dominante catalog.
+        self.assertEqual(by_name["openai.com"]["kind"], "web")
+        self.assertEqual(by_name["openai.com"]["layer"], "catalog")
+        self.assertEqual(by_name["openai.com"]["seen_count"], 2)
+        # api.openai.com: kind api por subdominio, capa llm.
+        self.assertEqual(by_name["api.openai.com"]["kind"], "api")
+        self.assertEqual(by_name["api.openai.com"]["layer"], "llm")
+
+    def test_top_providers_sorted_by_seen(self):
+        self._seed()
+        out = server.dashboard(days=7)
+        self.assertEqual(out["top_providers"][0]["name"], "openai.com")
+        self.assertEqual(out["top_providers"][0]["seen_count"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

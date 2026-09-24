@@ -413,23 +413,94 @@ async function refreshRules() {
   } catch (e) { /* sin datos aún */ }
 }
 
-async function refreshDashboard() {
+// A4: estado del panel (ventana en días y orden de la tabla de proveedores).
+let dashDays = 7;
+let dashSortKey = "seen_count";
+let dashSortDir = -1;
+
+function providersTableHtml(items) {
+  if (!items.length) return `<div class="hint">Sin proveedores en la ventana.</div>`;
+  const max = Math.max(1, ...items.map(i => i.seen_count || 0));
+  const kindLabel = { api: "API", web: "web", cdn: "CDN" };
+  const sorted = [...items].sort((a, b) => {
+    const av = a[dashSortKey], bv = b[dashSortKey];
+    const cmp = typeof av === "string"
+      ? String(av).localeCompare(String(bv)) : (av - bv);
+    return cmp * dashSortDir;
+  });
+  const th = (key, label) =>
+    `<th class="sortable${dashSortKey === key ? " active" : ""}" data-sort="${key}">${label}</th>`;
+  const rows = sorted.map(i => `<tr>
+    <td class="mono">${esc(i.name)}</td>
+    <td>${kindLabel[i.kind] || esc(i.kind || "")}</td>
+    <td>${aiLayerHtml(i.layer)}</td>
+    ${numCell(i.seen_count, i.seen_count / max)}
+  </tr>`).join("");
+  return `<table class="dash-providers">
+    <thead><tr>${th("name", "Proveedor")}<th>Tipo</th><th>Capa</th>${th("seen_count", "Presencias")}</tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderDashboard(d) {
   const wrap = document.getElementById("dashboard-wrap");
   if (!wrap) return;
+  const topList = (items, label) => items.length
+    ? `<p class="hint">${label}</p>` + items.map(i =>
+      `<div class="row"><span class="mono">${esc(i.name)}</span>` +
+      (i.sdk ? ` <span class="hint">[${esc(i.sdk)}]</span>` : "") +
+      `<span class="hint">${i.seen_count} presencias</span></div>`).join("")
+    : "";
+  const layers = d.layers.length
+    ? d.layers.map(l => `${l.layer}: ${l.seen_count}`).join(" · ")
+    : "sin datos";
+  const llm = d.llm_calls
+    ? `llamadas: ${d.llm_calls.calls} · tokens: ${(d.llm_calls.prompt_tokens || 0) + (d.llm_calls.completion_tokens || 0)} · bytes locales: ${fmtBytes((d.llm_calls.request_bytes || 0) + (d.llm_calls.response_bytes || 0))}`
+    : "inspector sin datos";
+  const daily = d.daily.map(x => `${x.date}: ${x.events} ev / ${x.triages} tri`).join(" · ");
+  // v2.3: cloud_bytes disponible -> total + desglose por proveedor con
+  // label api/web/cdn y hostname resuelto cuando el provider es 'desconocido'.
+  const cb = d.cloud_bytes || {};
+  const kindLabel = { api: "API", web: "web", cdn: "CDN" };
+  const provRows = (cb.by_provider || []).map(p =>
+    `<div class="row"><span class="mono">${esc(p.provider)}</span>` +
+    (p.host && p.host !== p.provider ? ` <span class="hint">(${esc(p.host)})</span>` : "") +
+    (kindLabel[p.kind] ? ` <span class="hint">[${kindLabel[p.kind]}]</span>` : "") +
+    ` <span class="mono">${fmtBytes(p.bytes)}</span></div>`).join("");
+  const cloudLine = cb.available
+    ? `<div class="row"><b>Bytes cloud (TLS remoto)</b>: <span class="mono">${fmtBytes(cb.total_bytes || 0)}</span>${cb.spawn_method ? ` <span class="hint">(${esc(cb.spawn_method)})</span>` : ""}</div>${provRows}`
+    : `<div class="row"><span class="hint">Bytes cloud: no disponible para TLS remoto (${esc(cb.reason || "")}).</span></div>`;
+  // A4: resumen agregado de la ventana (totales y cardinalidades).
+  const s = d.summary || {};
+  const sumLine = s.events != null
+    ? `<div class="row"><span class="hint">Resumen (${d.days} días): ${s.events} eventos · ${s.seen_total} presencias · ${s.processes} procesos · ${s.providers} proveedores</span></div>`
+    : "";
+  wrap.innerHTML = `
+    <div class="row"><span class="hint">Actividad (${d.days} días): ${daily || "sin datos"}</span></div>
+    ${sumLine}
+    <p class="hint">Top proveedores por presencia (clic en cabecera para ordenar)</p>
+    ${providersTableHtml(d.top_providers)}
+    ${topList(d.top_processes, "Top procesos")}
+    <div id="dash-sdk-block"></div>
+    <div class="row"><span class="hint">Capas: ${layers}</span></div>
+    <div class="row"><a href="#shadow-card" class="hint">Shadow AI: ${d.shadow_count} proveedor(es) no aprobado(s)</a></div>
+    <div class="row"><span class="hint">LLM Inspector (local): ${llm}</span></div>
+    ${cloudLine}`;
+  // A4: orden por cabecera (sin re-fetch; solo re-render con el dato cacheado).
+  wrap.querySelectorAll("th.sortable").forEach(thEl => {
+    thEl.onclick = () => {
+      const k = thEl.dataset.sort;
+      if (dashSortKey === k) dashSortDir *= -1;
+      else { dashSortKey = k; dashSortDir = k === "name" ? 1 : -1; }
+      renderDashboard(d);
+    };
+  });
+}
+
+async function refreshDashboard() {
   try {
-    const d = await api("/api/dashboard?days=7");
-    const topList = (items, label) => items.length
-      ? `<p class="hint">${label}</p>` + items.map(i =>
-        `<div class="row"><span class="mono">${esc(i.name)}</span>` +
-        (i.sdk ? ` <span class="hint">[${esc(i.sdk)}]</span>` : "") +
-        `<span class="hint">${i.seen_count} presencias</span></div>`).join("")
-      : "";
-    const layers = d.layers.length
-      ? d.layers.map(l => `${l.layer}: ${l.seen_count}`).join(" · ")
-      : "sin datos";
-    const llm = d.llm_calls
-      ? `llamadas: ${d.llm_calls.calls} · tokens: ${(d.llm_calls.prompt_tokens || 0) + (d.llm_calls.completion_tokens || 0)} · bytes locales: ${fmtBytes((d.llm_calls.request_bytes || 0) + (d.llm_calls.response_bytes || 0))}`
-      : "inspector sin datos";
+    const d = await api(`/api/dashboard?days=${dashDays}`);
+    renderDashboard(d);
     // v2.3: ficha de proceso por fingerprint de SDK IA (display).
     let sdkBlock = "";
     try {
@@ -439,28 +510,8 @@ async function refreshDashboard() {
           `<div class="row"><span class="mono" title="${esc(p.image)}">${esc(p.image)}</span> <span class="hint">${esc(p.label)}</span></div>`).join("");
       }
     } catch (e) { /* sin monitor */ }
-    const daily = d.daily.map(x => `${x.date}: ${x.events} ev / ${x.triages} tri`).join(" · ");
-    // v2.3: cloud_bytes disponible -> total + desglose por proveedor con
-    // label api/web/cdn y hostname resuelto cuando el provider es 'desconocido'.
-    const cb = d.cloud_bytes || {};
-    const kindLabel = { api: "API", web: "web", cdn: "CDN" };
-    const provRows = (cb.by_provider || []).map(p =>
-      `<div class="row"><span class="mono">${esc(p.provider)}</span>` +
-      (p.host && p.host !== p.provider ? ` <span class="hint">(${esc(p.host)})</span>` : "") +
-      (kindLabel[p.kind] ? ` <span class="hint">[${kindLabel[p.kind]}]</span>` : "") +
-      ` <span class="mono">${fmtBytes(p.bytes)}</span></div>`).join("");
-    const cloudLine = cb.available
-      ? `<div class="row"><b>Bytes cloud (TLS remoto)</b>: <span class="mono">${fmtBytes(cb.total_bytes || 0)}</span>${cb.spawn_method ? ` <span class="hint">(${esc(cb.spawn_method)})</span>` : ""}</div>${provRows}`
-      : `<div class="row"><span class="hint">Bytes cloud: no disponible para TLS remoto (${esc(cb.reason || "")}).</span></div>`;
-    wrap.innerHTML = `
-      <div class="row"><span class="hint">Actividad (7 días): ${daily || "sin datos"}</span></div>
-      ${topList(d.top_providers, "Top proveedores por presencia")}
-      ${topList(d.top_processes, "Top procesos")}
-      ${sdkBlock}
-      <div class="row"><span class="hint">Capas: ${layers}</span></div>
-      <div class="row"><a href="#shadow-card" class="hint">Shadow AI: ${d.shadow_count} proveedor(es) no aprobado(s)</a></div>
-      <div class="row"><span class="hint">LLM Inspector (local): ${llm}</span></div>
-      ${cloudLine}`;
+    const slot = document.getElementById("dash-sdk-block");
+    if (slot) slot.innerHTML = sdkBlock;
   } catch (e) { /* sin datos aún */ }
 }
 
@@ -691,6 +742,12 @@ function bind() {
     $("aut-provider").value = "";
     $("aut-group").checked = false;
     refreshAutonomy();
+  });
+  // A4: ventana del panel (1/7/30 dias).
+  $("dash-days").addEventListener("change", (ev) => {
+    const v = Number(ev.target.value);
+    dashDays = [1, 7, 30].includes(v) ? v : 7;
+    refreshDashboard();
   });
 
   loadConfig();
