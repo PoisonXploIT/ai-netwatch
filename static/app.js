@@ -120,7 +120,7 @@ function eventsTableHtml(events, grouped) {
   if (grouped) return groupedEventsTableHtml(events);
   if (!events.length) return `<div class="hint">Sin eventos todavía (monitor activo).</div>`;
   const rows = events.map((e) => `<tr>
-    <td>${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}${LLM_ENABLED ? `<div class="small"><button class="small" data-investigate="${e.id}">Investigar con LLM local</button></div>` : ""}</td>
+    <td><label class="check small" title="Seleccionar para Revisar (batch)"><input type="checkbox" class="ev-check" data-evid="${e.id}"></label> ${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}${LLM_ENABLED ? `<div class="small"><button class="small" data-investigate="${e.id}">Investigar con LLM local</button></div>` : ""}</td>
     <td class="mono">${esc(e.dest_host || e.dest_ip)}:${e.dest_port}</td>
     <td>${esc(e.protocol || "tcp")}</td>
     <td class="mono">${esc(e.sni_domain || "")}</td>
@@ -551,6 +551,59 @@ async function loadLatestTriage() {
   } catch (e) { /* sin triajes aún */ }
 }
 
+// B: revision LLM local por lote (asesoria display-only, sin auto).
+const REVIEW_EVAL_BADGE = {
+  confirm: "badge-ok", refuta: "badge-bad", insuficiente: "badge-warn",
+};
+
+function reviewRowHtml(r) {
+  const badge = r.evaluacion != null
+    ? `<span class="${REVIEW_EVAL_BADGE[r.evaluacion] || "badge-warn"}">${esc(r.evaluacion)}</span>`
+    : `<span class="hint">no disponible${r.reason ? ` (${esc(r.reason)})` : ""}</span>`;
+  return `<div class="row"><b>#${r.event_id}</b> ${badge}` +
+    (r.porque ? `<div class="small hint">${esc(r.porque)}</div>` : "") +
+    (r.evidencia_faltante ? `<div class="small hint">Falta: ${esc(r.evidencia_faltante)}</div>` : "") +
+    `</div>`;
+}
+
+function renderReviewResults(data) {
+  const wrap = document.getElementById("review-results");
+  if (!wrap) return;
+  if (data.status === "unavailable") {
+    wrap.innerHTML = `<div class="hint">LLM no disponible (${esc(data.reason || "")}): sin revision.</div>`;
+    return;
+  }
+  const rows = (data.reviews || []).map(reviewRowHtml).join("");
+  wrap.innerHTML =
+    `<p class="hint">Scope: ${esc(data.scope)} · revisados ${data.reviews.length}/${data.requested} (tope ${data.cap})</p>` + rows;
+}
+
+async function runReview(body) {
+  const status = document.getElementById("review-status");
+  if (status) status.textContent = "revisando...";
+  try {
+    const data = await api("/api/review", { method: "POST", body: JSON.stringify(body) });
+    renderReviewResults(data);
+    if (status) status.textContent = "";
+    loadReviewHistory();
+  } catch (e) {
+    if (status) status.textContent = `error: ${e.message || e}`;
+  }
+}
+
+async function loadReviewHistory() {
+  const wrap = document.getElementById("review-history");
+  if (!wrap) return;
+  try {
+    const d = await api("/api/reviews?limit=10");
+    const rows = d.reviews || [];
+    wrap.innerHTML = rows.length
+      ? `<p class="hint">${rows.map(r =>
+        `#${r.event_id} · ${esc(r.evaluacion || "no disponible")} (${esc((r.ts || "").slice(0, 16))})`).join(" · ")}</p>`
+      : `<div class="hint">Sin revisiones todavía.</div>`;
+  } catch (e) { /* sin historial */ }
+}
+
 function bind() {
   const $ = (id) => document.getElementById(id);
 
@@ -749,9 +802,26 @@ function bind() {
     dashDays = [1, 7, 30].includes(v) ? v : 7;
     refreshDashboard();
   });
+  // B: revision LLM por lote (display-only; sin auto-ejecucion).
+  [["btn-rev-aut", "autonomous"],
+   ["btn-rev-unapproved", "unapproved"],
+   ["btn-rev-flagged", "flagged"],
+   ["btn-rev-untriaged", "untriaged"]].forEach(([id, scope]) => {
+    $(id).addEventListener("click", () => runReview({ scope }));
+  });
+  $("btn-review-selected").addEventListener("click", () => {
+    const ids = [...document.querySelectorAll(".ev-check:checked")]
+      .map(c => Number(c.dataset.evid)).filter(n => !Number.isNaN(n));
+    if (!ids.length) {
+      toast("Marca eventos en la tabla (casilla) antes de revisar.");
+      return;
+    }
+    runReview({ event_ids: ids });
+  });
 
   loadConfig();
   loadLatestTriage();
+  loadReviewHistory();
   refreshEvents();
   refreshStats();
   refreshLlmCalls();

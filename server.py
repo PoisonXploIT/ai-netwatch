@@ -62,6 +62,9 @@ _cfg: dict = {
     "llm_enabled": False,
     "llm_base_url": "",
     "llm_model": "",
+    # B: tope de eventos por lote en POST /api/review (una llamada LLM
+    # por evento; el resto queda pendiente para el proximo lote).
+    "llm_review_max": 10,
     "llm_proxy_enabled": False,
     "llm_proxy_port": 8098,
     "llm_proxy_target": "127.0.0.1:8099",
@@ -150,7 +153,7 @@ def _load_config() -> None:
               # remotos a los defaults (persistencia silenciosamente rota).
               "rules_enabled", "rule_egress_mb_per_day",
               "net_bytes_enabled", "net_bytes_duration_s",
-              "net_bytes_cycle_s"):  # noqa: E128
+              "net_bytes_cycle_s", "llm_review_max"):  # noqa: E128
         if k in data:
             _cfg[k] = data[k]
     for key, default in (("retention_days", 90),
@@ -181,6 +184,10 @@ def _load_config() -> None:
     if not isinstance(cyc, int) or isinstance(cyc, bool) \
             or not (30 <= cyc <= 86400):
         _cfg["net_bytes_cycle_s"] = 600
+    rm = _cfg.get("llm_review_max")
+    if not isinstance(rm, int) or isinstance(rm, bool) \
+            or not (1 <= rm <= 100):
+        _cfg["llm_review_max"] = 10
     ap = _cfg.get("approved_providers")
     if not isinstance(ap, list):
         ap = []
@@ -820,6 +827,7 @@ class ConfigRequest(BaseModel):
     net_bytes_enabled: bool | None = None
     net_bytes_duration_s: int | None = None
     net_bytes_cycle_s: int | None = None
+    llm_review_max: int | None = None
 
 
 class TriageRequest(BaseModel):
@@ -828,6 +836,12 @@ class TriageRequest(BaseModel):
 
 class InvestigateRequest(BaseModel):
     event_id: int
+
+
+class ReviewRequest(BaseModel):
+    """B: scope de la revision batch O ids explicitos (no ambos)."""
+    scope: str | None = None
+    event_ids: list[int] | None = None
 
 
 class TestRequest(BaseModel):
@@ -924,6 +938,11 @@ def set_config(req: ConfigRequest):
             _cfg[key] = v
     if req.llm_store_content is not None:
         _cfg["llm_store_content"] = bool(req.llm_store_content)
+    if req.llm_review_max is not None:
+        v = int(req.llm_review_max)
+        if not (1 <= v <= 100):
+            raise HTTPException(400, "llm_review_max: entre 1 y 100")
+        _cfg["llm_review_max"] = v
     if (req.net_bytes_enabled is not None
             or req.net_bytes_duration_s is not None
             or req.net_bytes_cycle_s is not None):
@@ -1180,6 +1199,112 @@ def _investigate_context(e: dict) -> dict:
         # Bytes egress hacia el LLM local de este proceso (si aplica).
         "bytes_llm_local_proceso": bytes_local,
     }
+
+
+_REVIEW_SCOPES = ("autonomous", "unapproved", "flagged", "untriaged")
+
+
+def _review_scope_events(st, scope: str) -> list[dict]:
+    """B: resuelve un scope a eventos vivos (mas recientes primero).
+
+    - autonomous: veredicto de autonomia autonomous/scheduled.
+    - unapproved: proveedor fuera del catalogo/aprobados (shadow).
+    - flagged: marcados en el ultimo triage (severity>=2 o no expected;
+      mismo criterio que las explicaciones LLM). Sin triage ok -> [].
+    - untriaged: vivos que NO aparecen en el ultimo triage.
+    """
+    if scope not in _REVIEW_SCOPES:
+        raise HTTPException(
+            400, f"scope invalido; usa uno de {list(_REVIEW_SCOPES)}")
+    rows = st.list_events(limit=1000)
+    for e in rows:
+        e["provider"] = _provider_of(e)
+    if scope == "autonomous":
+        return [e for e in rows
+                if str(e.get("autonomy_verdict") or "").strip().lower()
+                in ("autonomous", "scheduled")]
+    if scope == "unapproved":
+        return [e for e in rows
+                if e["provider"]
+                and not _is_approved_provider(e["provider"])]
+    t = st.latest_triage()
+    if not t:
+        return []
+    payload = t.get("payload") or {}
+    evs = payload.get("events") or []
+    verdicts = (payload.get("jev") or {}).get("verdicts") or {}
+    ids: set[int] = set()
+    if scope == "flagged":
+        # Sin triage ok no hay marcas fiables: degradar a vacio, no inventar.
+        if (payload.get("jev") or {}).get("status") != "ok":
+            return []
+        for i, e in enumerate(evs):
+            v = verdicts.get(str(i)) or {}
+            sev = v.get("severity_score")
+            if (sev is not None and float(sev) >= 2
+                    or v.get("verdict") != "expected_ai_use"):
+                ids.add(int(e.get("id") or -1))
+    else:  # untriaged
+        for e in evs:
+            ids.add(int(e.get("id") or -1))
+        return [e for e in rows if int(e["id"]) not in ids]
+    return [e for e in rows if int(e["id"]) in ids]
+
+
+@app.post("/api/review")
+def review(req: ReviewRequest):
+    """B: revision LLM local por lote (asesoria display-only, sin auto).
+
+    Un scope ('autonomous' | 'unapproved' | 'flagged' | 'untriaged') o
+    event_ids explicitos; una llamada LLM por evento con tope llm_review_max.
+    Nunca re-puntua ni ejecuta: Jev sigue siendo el juez. Persiste en
+    llm_reviews (historial display). Sin LLM -> 'no disponible' sin llamar."""
+    st = _req_store()
+    if req.event_ids is not None:
+        evs = [e for i in dict.fromkeys(req.event_ids)
+               if (e := st.get_event(i))]
+    else:
+        evs = _review_scope_events(st, str(req.scope or "").strip().lower())
+    scope = ("event_ids" if req.event_ids is not None
+             else str(req.scope or "").strip().lower())
+    cap = max(1, int(_cfg.get("llm_review_max", 10)))
+    if not (_cfg.get("llm_enabled") and _cfg.get("llm_base_url")
+            and _cfg.get("llm_model")):
+        return {"status": "unavailable", "reason": "llm_no_configurado",
+                "scope": scope, "reviews": []}
+    base = _effective_llm_base().strip()
+    if not is_loopback_url(base):
+        return {"status": "unavailable", "reason": "not_loopback",
+                "scope": scope, "reviews": []}
+    model = str(_cfg["llm_model"])
+    reviews: list[dict] = []
+    for e in evs[:cap]:
+        r = investigate_event(base, model, _investigate_context(e))
+        pq = str(r.get("porque") or "")
+        ef = str(r.get("evidencia_faltante") or "")
+        row = {"event_id": int(e["id"]),
+               "evaluacion": r.get("evaluacion"),
+               "porque": pq,
+               "evidencia_faltante": ef}
+        if r.get("status") == "ok":
+            # investigate_event valida evaluacion en ok; str() por si acaso.
+            st.save_review(int(e["id"]),
+                           str(r.get("evaluacion") or ""), pq, ef)
+        else:
+            # Fail-safe por evento: no persistir transitorios, pero si
+            # devolver la fila con evaluacion None (no fabricar).
+            row["reason"] = str(r.get("reason") or "unavailable")
+        reviews.append(row)
+    return {"status": "ok", "scope": scope, "cap": cap,
+            "requested": len(evs), "reviews": reviews}
+
+
+@app.get("/api/reviews")
+def list_reviews(limit: int = 50):
+    """B: historial de revisiones LLM (display-only)."""
+    st = _req_store()
+    limit = max(1, min(int(limit), 200))
+    return {"reviews": st.list_reviews(limit=limit)}
 
 
 @app.post("/api/investigate")

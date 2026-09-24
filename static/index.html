@@ -187,6 +187,25 @@
     <div id="triage-results"></div>
   </section>
 
+  <section class="card" id="review-card">
+    <h2>Revisi&oacute;n LLM local (batch)</h2>
+    <p class="hint">El LLM local opina uno a uno sobre un conjunto de eventos (tope por petici&oacute;n: <span class="mono">llm_review_max</span>, config). Asesoria display-only: no re-punt&uacute;a, no aprueba ni ejecuta nada; Jev sigue siendo el juez. El resultado se guarda en el hist&oacute;rico de revisiones.</p>
+    <div class="row">
+      <button id="btn-rev-aut" class="primary">Revisar: aut&oacute;nomos</button>
+      <button id="btn-rev-unapproved" class="primary">Revisar: no aprobados</button>
+      <button id="btn-rev-flagged" class="primary">Revisar: marcados (triage)</button>
+      <button id="btn-rev-untriaged" class="primary">Revisar: sin triar</button>
+    </div>
+    <p class="hint">O bien marca eventos con la casilla de la tabla de arriba y:</p>
+    <div class="row">
+      <button id="btn-review-selected" class="primary">Revisar selecci&oacute;n</button>
+      <span id="review-status" class="hint"></span>
+    </div>
+    <div id="review-results"></div>
+    <p class="hint">&Uacute;ltimas revisiones (hist&oacute;rico)</p>
+    <div id="review-history"></div>
+  </section>
+
   <section class="card" id="llm-inspector-card">
     <h2>LLM Inspector (R3)</h2>
     <p class="hint">Reverse proxy local frente al LLM local: registra cada llamada HTTP en claro — prompt, respuesta, modelo, tokens y latencia. Solo sirve para un LLM de loopback (HTTP plano); los proveedores remotos viajan cifrados y su contenido no se ve aquí.</p>

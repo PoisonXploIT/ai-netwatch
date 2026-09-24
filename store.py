@@ -72,6 +72,15 @@ CREATE TABLE IF NOT EXISTS dns_resolutions (
     domain TEXT NOT NULL,
     last_seen TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS llm_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    event_id INTEGER NOT NULL,
+    evaluacion TEXT,
+    porque TEXT,
+    evidencia_faltante TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_llm_reviews_ts ON llm_reviews(ts);
 """
 
 
@@ -682,13 +691,16 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             dr = self.conn.execute(
                 "DELETE FROM dns_resolutions WHERE last_seen < ?",
                 (cut,)).rowcount
+            lr = self.conn.execute(
+                "DELETE FROM llm_reviews WHERE ts < ?", (cut,)).rowcount
             # VACUUM no puede correr dentro de la transaccion del DELETE.
             self.conn.commit()
             self.conn.execute("VACUUM")
             self.conn.commit()
         return {"events_removed": ev, "triages_removed": tr,
                 "sessions_removed": sl, "net_bytes_removed": nb,
-                "dns_resolutions_removed": dr}
+                "dns_resolutions_removed": dr,
+                "llm_reviews_removed": lr}
 
     def reset(self) -> dict:
         """Borra eventos y triajes vivos; daily_stats NO se toca (historico)."""
@@ -704,9 +716,32 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             dr = self.conn.execute(
                 "SELECT COUNT(*) FROM dns_resolutions").fetchone()[0]
             self.conn.execute("DELETE FROM dns_resolutions")
+            lr = self.conn.execute(
+                "SELECT COUNT(*) FROM llm_reviews").fetchone()[0]
+            self.conn.execute("DELETE FROM llm_reviews")
             self.conn.commit()
         return {"events_removed": ev, "triages_removed": tr,
-                "net_bytes_removed": nb, "dns_resolutions_removed": dr}
+                "net_bytes_removed": nb, "dns_resolutions_removed": dr,
+                "llm_reviews_removed": lr}
+
+    def save_review(self, event_id: int, evaluacion: str,
+                    porque: str, evidencia_faltante: str) -> None:
+        """B: persiste una revision LLM local (asesoria display-only;
+        nunca altera veredictos ni aprobaciones)."""
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO llm_reviews (ts, event_id, evaluacion, porque,"
+                " evidencia_faltante) VALUES (?,?,?,?,?)",
+                (_now(), int(event_id), evaluacion, porque,
+                 evidencia_faltante))
+            self.conn.commit()
+
+    def list_reviews(self, limit: int = 50) -> list[dict]:
+        """B: ultimas revisiones LLM (mas recientes primero)."""
+        rows = self.conn.execute(
+            "SELECT * FROM llm_reviews ORDER BY id DESC LIMIT ?",
+            (max(1, int(limit)),)).fetchall()
+        return [dict(r) for r in rows]
 
     def latest_triage(self) -> dict | None:
         row = self.conn.execute(
