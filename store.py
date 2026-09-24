@@ -188,32 +188,35 @@ class LlmCallStore:
             return int(cur.lastrowid or 0)
 
     def list_calls(self, limit: int = 100) -> list[dict]:
-        limit = max(1, min(int(limit), 1000))
-        rows = self.conn.execute(
-            "SELECT * FROM llm_calls ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            limit = max(1, min(int(limit), 1000))
+            rows = self.conn.execute(
+                "SELECT * FROM llm_calls ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def get_call(self, call_id: int) -> dict | None:
-        row = self.conn.execute(
-            "SELECT * FROM llm_calls WHERE id=?", (call_id,)
-        ).fetchone()
-        return dict(row) if row else None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM llm_calls WHERE id=?", (call_id,)
+            ).fetchone()
+            return dict(row) if row else None
 
     def summary(self, days: int | None = None) -> dict:
         """Totales del inspector (locales): llamadas, tokens y bytes."""
-        q = ("SELECT COUNT(*) AS calls,"
-             " COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,"
-             " COALESCE(SUM(completion_tokens),0) AS completion_tokens,"
-             " COALESCE(SUM(request_bytes),0) AS request_bytes,"
-             " COALESCE(SUM(response_bytes),0) AS response_bytes"
-             " FROM llm_calls")
-        args: list[object] = []
-        if days is not None:
-            q += " WHERE ts >= ?"
-            args.append(_cutoff_ts(days))
-        r = self.conn.execute(q, tuple(args)).fetchone()
-        return {k: int(v or 0) for k, v in dict(r).items()}
+        with self._lock:
+            q = ("SELECT COUNT(*) AS calls,"
+                 " COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,"
+                 " COALESCE(SUM(completion_tokens),0) AS completion_tokens,"
+                 " COALESCE(SUM(request_bytes),0) AS request_bytes,"
+                 " COALESCE(SUM(response_bytes),0) AS response_bytes"
+                 " FROM llm_calls")
+            args: list[object] = []
+            if days is not None:
+                q += " WHERE ts >= ?"
+                args.append(_cutoff_ts(days))
+            r = self.conn.execute(q, tuple(args)).fetchone()
+            return {k: int(v or 0) for k, v in dict(r).items()}
 
     def clear(self) -> int:
         with self._lock:
@@ -385,27 +388,29 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             self.conn.commit()
 
     def get_classification(self, domain: str) -> dict | None:
-        row = self.conn.execute(
-            "SELECT * FROM domain_classifications WHERE domain=?",
-            (domain.lower(),),
-        ).fetchone()
-        return dict(row) if row else None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM domain_classifications WHERE domain=?",
+                (domain.lower(),),
+            ).fetchone()
+            return dict(row) if row else None
 
     def pending_heuristic_domains(self, limit: int = 10,
                                   ttl_days: int = 30) -> list[str]:
         """Dominios en capa 0.5 sin clasificar (o con clase mas antigua que el
         TTL). Solo catalog_domain: es la clave canonica del dominio."""
-        cut = _cutoff_ts(ttl_days)
-        rows = self.conn.execute(
-            "SELECT e.catalog_domain AS domain FROM events e"
-            " LEFT JOIN domain_classifications dc ON dc.domain=e.catalog_domain"
-            " WHERE e.ai_layer='heuristic' AND e.catalog_domain IS NOT NULL"
-            " AND e.catalog_domain != ''"
-            " AND (dc.domain IS NULL OR dc.ts < ?)"
-            " GROUP BY e.catalog_domain ORDER BY MAX(e.last_seen) DESC LIMIT ?",
-            (cut, limit),
-        ).fetchall()
-        return [r["domain"] for r in rows]
+        with self._lock:
+            cut = _cutoff_ts(ttl_days)
+            rows = self.conn.execute(
+                "SELECT e.catalog_domain AS domain FROM events e"
+                " LEFT JOIN domain_classifications dc ON dc.domain=e.catalog_domain"
+                " WHERE e.ai_layer='heuristic' AND e.catalog_domain IS NOT NULL"
+                " AND e.catalog_domain != ''"
+                " AND (dc.domain IS NULL OR dc.ts < ?)"
+                " GROUP BY e.catalog_domain ORDER BY MAX(e.last_seen) DESC LIMIT ?",
+                (cut, limit),
+            ).fetchall()
+            return [r["domain"] for r in rows]
 
     def apply_classification_layer(self, domain: str, layer: str) -> int:
         """Pasa eventos de 'heuristic' a la capa nueva. El catalogo NUNCA se
@@ -420,26 +425,29 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             return cur.rowcount
 
     def process_for_domain(self, domain: str) -> str | None:
-        row = self.conn.execute(
-            "SELECT process FROM events WHERE catalog_domain=?"
-            " ORDER BY seen_count DESC LIMIT 1",
-            (domain.lower(),),
-        ).fetchone()
-        return row["process"] if row else None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT process FROM events WHERE catalog_domain=?"
+                " ORDER BY seen_count DESC LIMIT 1",
+                (domain.lower(),),
+            ).fetchone()
+            return row["process"] if row else None
 
     def has_event(self, process: str, dest_ip: str,
                   dest_port: int) -> bool:
-        row = self.conn.execute(
-            "SELECT 1 FROM events WHERE process=? AND dest_ip=? AND dest_port=?",
-            (process, dest_ip, dest_port),
-        ).fetchone()
-        return row is not None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT 1 FROM events WHERE process=? AND dest_ip=? AND dest_port=?",
+                (process, dest_ip, dest_port),
+            ).fetchone()
+            return row is not None
 
     def get_event(self, event_id: int) -> dict | None:
-        row = self.conn.execute(
-            "SELECT * FROM events WHERE id=?", (event_id,)
-        ).fetchone()
-        return dict(row) if row else None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM events WHERE id=?", (event_id,)
+            ).fetchone()
+            return dict(row) if row else None
 
     def list_events(self, limit: int = 200, process: str | None = None,
                     dest: str | None = None, layer: str | None = None,
@@ -447,38 +455,40 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
         """Eventos vivos. Filtros opcionales por proceso, destino (IP/host/
         SNI/catalogo), capa IA y veredicto de autonomia (v2.3: para quitar
         ruido en la vista sin tocar la deteccion)."""
-        where: list[str] = []
-        args: list[object] = []
-        if process:
-            where.append("process LIKE ?")
-            args.append(f"%{process}%")
-        if dest:
-            where.append("(dest_ip LIKE ? OR COALESCE(dest_host,'') LIKE ?"
-                         " OR COALESCE(catalog_domain,'') LIKE ?"
-                         " OR COALESCE(sni_domain,'') LIKE ?)")
-            args.extend([f"%{dest}%", f"%{dest}%", f"%{dest}%", f"%{dest}%"])
-        if layer:
-            where.append("ai_layer = ?")
-            args.append(layer)
-        if verdict:
-            where.append("autonomy_verdict = ?")
-            args.append(verdict)
-        q = "SELECT * FROM events"
-        if where:
-            q += " WHERE " + " AND ".join(where)
-        q += " ORDER BY last_seen DESC LIMIT ?"
-        args.append(limit)
-        return [dict(r) for r in self.conn.execute(q, args).fetchall()]
+        with self._lock:
+            where: list[str] = []
+            args: list[object] = []
+            if process:
+                where.append("process LIKE ?")
+                args.append(f"%{process}%")
+            if dest:
+                where.append("(dest_ip LIKE ? OR COALESCE(dest_host,'') LIKE ?"
+                             " OR COALESCE(catalog_domain,'') LIKE ?"
+                             " OR COALESCE(sni_domain,'') LIKE ?)")
+                args.extend([f"%{dest}%", f"%{dest}%", f"%{dest}%", f"%{dest}%"])
+            if layer:
+                where.append("ai_layer = ?")
+                args.append(layer)
+            if verdict:
+                where.append("autonomy_verdict = ?")
+                args.append(verdict)
+            q = "SELECT * FROM events"
+            if where:
+                q += " WHERE " + " AND ".join(where)
+            q += " ORDER BY last_seen DESC LIMIT ?"
+            args.append(limit)
+            return [dict(r) for r in self.conn.execute(q, args).fetchall()]
 
     def ip_resolution_rows(
             self) -> list[tuple[str, str, str, str]]:
         """v2.3: (dest_ip, sni_domain, catalog_domain, dest_host) de TODOS
         los eventos, mas reciente primero. Sirve para mapear las IPs de
         net_bytes a proveedor aunque no salgan en la ventana reciente."""
-        return self.conn.execute(
-            "SELECT dest_ip, COALESCE(sni_domain,''),"
-            " COALESCE(catalog_domain,''), COALESCE(dest_host,'')"
-            " FROM events ORDER BY last_seen DESC").fetchall()
+        with self._lock:
+            return self.conn.execute(
+                "SELECT dest_ip, COALESCE(sni_domain,''),"
+                " COALESCE(catalog_domain,''), COALESCE(dest_host,'')"
+                " FROM events ORDER BY last_seen DESC").fetchall()
 
     def record_dns_resolution(self, ip: str, domain: str) -> None:
         """v2.3: persiste una resolucion EID 22 (ip->dominio); el mas
@@ -519,17 +529,19 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
 
     def events_since(self, days: int) -> list[dict]:
         """Eventos vivos con last_seen dentro de `days` (panel)."""
-        q = ("SELECT * FROM events WHERE last_seen >= ?"
-             " ORDER BY last_seen DESC")
-        return [dict(r) for r in
-                self.conn.execute(q, (_cutoff_ts(days),)).fetchall()]
+        with self._lock:
+            q = ("SELECT * FROM events WHERE last_seen >= ?"
+                 " ORDER BY last_seen DESC")
+            return [dict(r) for r in
+                    self.conn.execute(q, (_cutoff_ts(days),)).fetchall()]
 
     def get_event_by_key(self, process: str, dest_ip: str,
                          dest_port: int) -> dict | None:
-        row = self.conn.execute(
-            "SELECT * FROM events WHERE process=? AND dest_ip=? AND dest_port=?",
-            (process, dest_ip, dest_port)).fetchone()
-        return dict(row) if row else None
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM events WHERE process=? AND dest_ip=? AND dest_port=?",
+                (process, dest_ip, dest_port)).fetchone()
+            return dict(row) if row else None
 
     def record_session(self, process: str, dest_ip: str,
                        dest_port: int) -> dict:
@@ -605,18 +617,20 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
 
     def autonomy_events(self, limit: int = 100) -> list[dict]:
         """Eventos con veredicto de autonomia autonomous/scheduled (R2)."""
-        q = ("SELECT * FROM events"
-             " WHERE autonomy_verdict IN ('autonomous', 'scheduled')"
-             " ORDER BY last_seen DESC LIMIT ?")
-        return [dict(r) for r in
-                self.conn.execute(q, (limit,)).fetchall()]
+        with self._lock:
+            q = ("SELECT * FROM events"
+                 " WHERE autonomy_verdict IN ('autonomous', 'scheduled')"
+                 " ORDER BY last_seen DESC LIMIT ?")
+            return [dict(r) for r in
+                    self.conn.execute(q, (limit,)).fetchall()]
 
     def ai_events(self) -> list[dict]:
         """Eventos clasificados como IA (ai_layer != none)."""
-        q = ("SELECT * FROM events"
-             " WHERE ai_layer IS NOT NULL AND ai_layer != 'none'"
-             " ORDER BY last_seen DESC")
-        return [dict(r) for r in self.conn.execute(q).fetchall()]
+        with self._lock:
+            q = ("SELECT * FROM events"
+                 " WHERE ai_layer IS NOT NULL AND ai_layer != 'none'"
+                 " ORDER BY last_seen DESC")
+            return [dict(r) for r in self.conn.execute(q).fetchall()]
 
     def save_triage(self, status: str, model: str | None, payload: dict) -> int:
         with self._lock:
@@ -630,22 +644,23 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
 
     def stats(self, days: int = 7) -> list[dict]:
         """Rollup diario de los ultimos `days` dias (incluye dias sin actividad)."""
-        from datetime import timedelta
-        today = datetime.now(timezone.utc)
-        want = [(today - timedelta(days=i)).strftime("%Y-%m-%d")
-                for i in range(max(1, days) - 1, -1, -1)]
-        have = {r["date"]: dict(r) for r in self.conn.execute(
-            "SELECT * FROM daily_stats WHERE date >= ? ORDER BY date",
-            ((today - timedelta(days=max(1, days) - 1)).strftime("%Y-%m-%d"),))}
-        out = []
-        for d in want:
-            row = have.get(d)
-            out.append({
-                "date": d,
-                "events": row["events"] if row else 0,
-                "triages": row["triages"] if row else 0,
-            })
-        return out
+        with self._lock:
+            from datetime import timedelta
+            today = datetime.now(timezone.utc)
+            want = [(today - timedelta(days=i)).strftime("%Y-%m-%d")
+                    for i in range(max(1, days) - 1, -1, -1)]
+            have = {r["date"]: dict(r) for r in self.conn.execute(
+                "SELECT * FROM daily_stats WHERE date >= ? ORDER BY date",
+                ((today - timedelta(days=max(1, days) - 1)).strftime("%Y-%m-%d"),))}
+            out = []
+            for d in want:
+                row = have.get(d)
+                out.append({
+                    "date": d,
+                    "events": row["events"] if row else 0,
+                    "triages": row["triages"] if row else 0,
+                })
+            return out
 
     def ingest_net_bytes(self, rows: list[dict], ts: str) -> int:
         """v2.2: bytes remotos del colector elevado por destino.
@@ -653,35 +668,37 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
         rows: [{dest_ip, dest_port, bytes}]. Acumula (cada ciclo del
         colector es una ventana nueva; no hay solapes). Devuelve el
         numero de destinos actualizados."""
-        n = 0
-        for r in rows:
-            try:
-                b = int(r.get("bytes") or 0)
-                dest_ip = str(r.get("dest_ip") or "")
-                dest_port = int(r.get("dest_port") or 0)
-            except (TypeError, ValueError):
-                continue
-            if b <= 0 or not dest_ip:
-                continue
-            self.conn.execute(
-                "INSERT INTO net_bytes(dest_ip, dest_port, bytes,"
-                " first_seen, last_seen) VALUES(?, ?, ?, ?, ?)"
-                " ON CONFLICT(dest_ip, dest_port) DO UPDATE SET"
-                " bytes = net_bytes.bytes + excluded.bytes,"
-                " last_seen = max(net_bytes.last_seen, excluded.last_seen)"
-                , (dest_ip, dest_port, b, ts, ts))
-            n += 1
-        self.conn.commit()
-        return n
+        with self._lock:
+            n = 0
+            for r in rows:
+                try:
+                    b = int(r.get("bytes") or 0)
+                    dest_ip = str(r.get("dest_ip") or "")
+                    dest_port = int(r.get("dest_port") or 0)
+                except (TypeError, ValueError):
+                    continue
+                if b <= 0 or not dest_ip:
+                    continue
+                self.conn.execute(
+                    "INSERT INTO net_bytes(dest_ip, dest_port, bytes,"
+                    " first_seen, last_seen) VALUES(?, ?, ?, ?, ?)"
+                    " ON CONFLICT(dest_ip, dest_port) DO UPDATE SET"
+                    " bytes = net_bytes.bytes + excluded.bytes,"
+                    " last_seen = max(net_bytes.last_seen, excluded.last_seen)"
+                    , (dest_ip, dest_port, b, ts, ts))
+                n += 1
+            self.conn.commit()
+            return n
 
     def net_bytes_sum(self) -> list[dict]:
         """Bytes acumulados por destino, mayor primero."""
-        rows = self.conn.execute(
-            "SELECT dest_ip, dest_port, SUM(bytes) AS b FROM net_bytes"
-            " GROUP BY dest_ip, dest_port ORDER BY b DESC"
-        ).fetchall()
-        return [{"dest_ip": r["dest_ip"], "dest_port": int(r["dest_port"]),
-                 "bytes": int(r["b"])} for r in rows]
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT dest_ip, dest_port, SUM(bytes) AS b FROM net_bytes"
+                " GROUP BY dest_ip, dest_port ORDER BY b DESC"
+            ).fetchall()
+            return [{"dest_ip": r["dest_ip"], "dest_port": int(r["dest_port"]),
+                     "bytes": int(r["b"])} for r in rows]
 
     def prune(self, days: int) -> dict:
         """Retencion (F7): borra eventos/triajes mas antiguos que N dias.
@@ -749,20 +766,22 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
 
     def list_reviews(self, limit: int = 50) -> list[dict]:
         """B: ultimas revisiones LLM (mas recientes primero)."""
-        rows = self.conn.execute(
-            "SELECT * FROM llm_reviews ORDER BY id DESC LIMIT ?",
-            (max(1, int(limit)),)).fetchall()
-        return [dict(r) for r in rows]
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM llm_reviews ORDER BY id DESC LIMIT ?",
+                (max(1, int(limit)),)).fetchall()
+            return [dict(r) for r in rows]
 
     def latest_triage(self) -> dict | None:
-        row = self.conn.execute(
-            "SELECT * FROM triages ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        if not row:
-            return None
-        out = dict(row)
-        out["payload"] = json.loads(out["payload"])
-        return out
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM triages ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if not row:
+                return None
+            out = dict(row)
+            out["payload"] = json.loads(out["payload"])
+            return out
 
     def close(self) -> None:
         with self._lock:
