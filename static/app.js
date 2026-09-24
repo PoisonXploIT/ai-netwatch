@@ -397,6 +397,63 @@ async function refreshAutonomy() {
   } catch (e) { /* sin datos aún */ }
 }
 
+function baselineHtml(b) {
+  const groups = b.groups || [];
+  if (!groups.length) {
+    return '<p class="hint">Sin eventos vivos: sin baseline.</p>';
+  }
+  let rows = "";
+  for (const g of groups) {
+    const cur = g.current || [];
+    const maxScore = cur.reduce((m, c) => Math.max(m, c.pre_score || 0), 0);
+    const badge = maxScore >= 40 ? "badge-bad"
+      : maxScore > 0 ? "badge-warn" : "";
+    const anom = (maxScore > 0
+      ? `<span class="badge ${badge}">${maxScore}</span>`
+      : "0") + cur.map(c =>
+        `<details><summary>${esc(c.dest_ip)}:${c.dest_port} (${esc(c.protocol)}) pre ${c.pre_score}</summary>` +
+        (c.pre_flags.length
+          ? c.pre_flags.map(f => `<p><b>${f.flag}</b>: ${esc(f.porque)}</p>`).join("")
+          : "<p>Sin flags: dentro de lo esperado.</p>") +
+        `</details>`).join("");
+    const typ = (g.typical_hours || []).length
+      ? g.typical_hours.map(h => h + "h").join(", ") : "&mdash;";
+    const rate = g.sessions_per_hour != null ? g.sessions_per_hour : "&mdash;";
+    rows += `<tr>
+      <td>${esc(g.process)}</td>
+      <td>${esc(g.provider)} <span class="hint">${esc(g.kind || "")}</span></td>
+      <td class="num">${g.first_seen ? g.first_seen.slice(0, 10) : "&mdash;"}</td>
+      <td class="num">${g.sessions_total}</td>
+      <td class="num">${rate}</td>
+      <td class="num">${g.days_active}</td>
+      <td>${typ}</td>
+      <td class="num">${anom}</td>
+    </tr>`;
+  }
+  return `<table class="tbl">
+    <thead><tr>
+      <th>Proceso</th><th>Proveedor</th>
+      <th class="num">1&ordf; aparici&oacute;n</th>
+      <th class="num">Sesiones</th>
+      <th class="num">Ratio /h</th>
+      <th class="num">D&iacute;as activos</th>
+      <th>Horas t&iacute;picas (UTC)</th>
+      <th class="num">pre_score</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function refreshBaseline() {
+  const wrap = document.getElementById("baseline-wrap");
+  if (!wrap) return;
+  try {
+    const r = await fetch("/api/baseline");
+    if (r.status === 404) { wrap.innerHTML = ""; return; }
+    wrap.innerHTML = baselineHtml(await r.json());
+  } catch (e) { /* sin datos a&uacute;n */ }
+}
+
 async function refreshRules() {
   const wrap = document.getElementById("rules-wrap");
   if (!wrap) return;
@@ -827,6 +884,7 @@ function bind() {
   refreshLlmCalls();
   refreshShadow();
   refreshAutonomy();
+  refreshBaseline();
   refreshRules();
   refreshDashboard();
   setInterval(refreshEvents, 5000);
@@ -835,6 +893,7 @@ function bind() {
   setInterval(refreshAlerts, 10000);
   setInterval(refreshShadow, 15000);
   setInterval(refreshAutonomy, 15000);
+  setInterval(refreshBaseline, 60000);
   setInterval(refreshRules, 60000);
   setInterval(refreshDashboard, 60000);
 }

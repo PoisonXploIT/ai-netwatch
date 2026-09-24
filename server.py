@@ -31,6 +31,7 @@ from ai_catalog import KNOWN_AI_DOMAINS
 from ai_classifier import classify_domain, destination_kind
 from alerts import AlertLog
 import auto_classify
+import baseline
 import evidence
 import rules
 import secret_store
@@ -1657,6 +1658,61 @@ def list_rules():
         egress_mb_per_day=float(_cfg.get("rule_egress_mb_per_day", 500)),
         egress=_egress_rows() or None)
     return {"rules": results}
+
+
+def _baseline_view():
+    """v2.5(3) D1/D2: baseline por (proceso, proveedor) sobre eventos vivos
+    + sessions_log. Devuelve (eventos con 'provider', grupos_por_clave,
+    primera_aparicion_por_proceso). Vacio sin store; nunca lanza."""
+    if store is None:
+        return [], {}, {}
+    events = [{**e, "provider": _provider_of(e)}
+              for e in store.list_events(limit=1000)]
+    ip_provider: dict[str, str] = {}
+    for e in sorted(events, key=lambda x: str(x.get("last_seen") or ""),
+                    reverse=True):
+        ip = str(e.get("dest_ip") or "")
+        if ip:
+            ip_provider.setdefault(ip, str(e["provider"]))
+    view = baseline.compute_baseline(events, store.session_rows(),
+                                     ip_provider)
+    return (events,
+            {(g["process"], g["provider"]): g
+             for g in view["groups"]},
+            view["process_first_seen"])
+
+
+@app.get("/api/baseline")
+def baseline_api():
+    """v2.5(3) D1: baseline aprendido por (proceso, proveedor) — primera
+    aparicion, horario tipico (histograma UTC de inicios de sesion) y ratio
+    de sesiones — mas la anomalia determinista (D2 pre_score) de sus
+    eventos vivos. Display-only; la deteccion la hacen reglas/Jev."""
+    events, groups_by_key, proc_first = _baseline_view()
+    out_groups: list[dict] = []
+    for g in sorted(groups_by_key.values(),
+                    key=lambda g: (-g["sessions_total"], g["process"],
+                                   g["provider"])):
+        gg = dict(g)
+        gg["kind"] = destination_kind(g["provider"])
+        cur = []
+        for e in events:
+            if (e["process"], e["provider"]) == (g["process"],
+                                                   g["provider"]):
+                s = baseline.score_event(e, g, proc_first.get(e["process"]))
+                cur.append({"event_id": e["id"], "dest_ip": e["dest_ip"],
+                            "dest_port": e["dest_port"],
+                            "protocol": e["protocol"],
+                            "pre_score": s["pre_score"],
+                            "pre_flags": s["pre_flags"]})
+        gg["current"] = cur
+        out_groups.append(gg)
+    since = min((g["first_seen"] for g in out_groups if g["first_seen"]),
+                default=None)
+    until = max((g["last_seen"] for g in out_groups if g["last_seen"]),
+                default=None)
+    return {"window": {"since": since, "until": until},
+            "groups": out_groups}
 
 
 @app.get("/api/alerts")

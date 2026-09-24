@@ -145,6 +145,12 @@
     <div id="autonomy-wrap"></div>
   </section>
 
+  <section class="card" id="baseline-card">
+    <h2>Baseline y anomal&iacute;a (D1/D2)</h2>
+    <p class="hint">Lo que es &quot;normal&quot; para cada par proceso &rarr; proveedor, aprendido de lo retenido: primera aparici&oacute;n, horas t&iacute;picas (inicios de sesi&oacute;n, hora UTC) y ratio de sesiones. Anomal&iacute;a determinista sin IA: cada flag lleva su porqu&eacute; y peso; <span class="mono">pre_score</span> 0-100 (ambar = un flag, rojo = dos o m&aacute;s). Display-only: enriquece el state que se pasa a Jev y alimenta la regla <span class="mono">anomaly_pre_score</span>.</p>
+    <div id="baseline-wrap"></div>
+  </section>
+
   <section class="card" id="rules-card">
     <h2>Reglas (v2.2)</h2>
     <p class="hint">Reglas por umbral sobre lo que ya se mide: shadow, autonom&iacute;a y beaconing. Una regla que pasa a disparar alerta una vez (<span class="mono">rule_fired</span>); el reset re-alerta.</p>

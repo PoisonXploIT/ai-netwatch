@@ -506,6 +506,17 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
                 "SELECT dest_ip, domain FROM dns_resolutions").fetchall()
         return {str(r["dest_ip"]): str(r["domain"]) for r in rows}
 
+    def session_rows(self) -> list[tuple[str, str, str]]:
+        """v2.5(3) D1: (ts, process, dest_ip) de cada inicio de sesion
+        (transicion ausente->presente de F1), mas antiguo primero.
+        Sirve para el baseline: horario tipico y ratio de sesiones."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT ts, process, dest_ip FROM sessions_log"
+                " ORDER BY ts").fetchall()
+        return [(str(r["ts"]), str(r["process"]), str(r["dest_ip"]))
+                for r in rows]
+
     def events_since(self, days: int) -> list[dict]:
         """Eventos vivos con last_seen dentro de `days` (panel)."""
         q = ("SELECT * FROM events WHERE last_seen >= ?"
