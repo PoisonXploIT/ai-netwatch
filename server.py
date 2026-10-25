@@ -1384,6 +1384,7 @@ def _group_by_provider(rows: list[dict]) -> list[dict]:
                 "sessions": 0, "seen_count": 0, "_ips": set(),
                 "first_seen": e.get("first_seen"),
                 "last_seen": e.get("last_seen"),
+                "members": [],
             }
             groups[key] = g
         g["sessions"] += int(e.get("sessions") or 0)
@@ -1394,6 +1395,21 @@ def _group_by_provider(rows: list[dict]) -> list[dict]:
             g["first_seen"] = fs
         if ls and (not g["last_seen"] or ls > g["last_seen"]):
             g["last_seen"] = ls
+        # #11 (U2): el detalle por evento necesita el registro completo, no solo
+        # el agregado. Se guardan hasta 10 miembros; el resto se indica con un
+        # contador para no inflar el payload.
+        if len(g["members"]) < 10:
+            g["members"].append({
+                "id": e.get("id"), "ts": e.get("ts"),
+                "dest_ip": e.get("dest_ip"), "dest_port": e.get("dest_port"),
+                "dest_host": e.get("dest_host"), "sni_domain": e.get("sni_domain"),
+                "catalog_domain": e.get("catalog_domain"), "protocol": e.get("protocol"),
+                "ai_layer": e.get("ai_layer"), "seen_count": e.get("seen_count"),
+                "sessions": e.get("sessions"), "first_seen": e.get("first_seen"),
+                "last_seen": e.get("last_seen"), "pre_score": e.get("pre_score"),
+                "pre_flags": e.get("pre_flags") or [], "mitre": e.get("mitre") or [],
+            })
+        g["member_total"] = g.get("member_total", 0) + 1
     out: list[dict] = []
     for g in groups.values():
         g["ip_count"] = len(g.pop("_ips"))

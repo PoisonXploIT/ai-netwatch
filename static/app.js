@@ -108,9 +108,58 @@ function kindBadge(kind) {
   return m[kind] ? ` <span class="hint">[${m[kind]}]</span>` : "";
 }
 
+// #11 (U2): el payload de /api/events trae el registro completo; se muestra
+// en el detalle expandible de cada fila.
+function detailDl(pairs) {
+  const rows = pairs.filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => `<div><dt>${esc(k)}</dt><dd class="mono">${esc(String(v))}</dd></div>`);
+  return `<dl class="detail-dl">${rows.join("")}</dl>`;
+}
+
+function eventDetailHtml(e) {
+  const flags = (e.pre_flags || []).map((x) => `${x.flag} (${x.porque})`).join("; ");
+  const mitre = (e.mitre || []).map((m) => `${m.id} ${m.name}`).join(", ");
+  return detailDl([
+    ["id", e.id], ["registro", e.ts], ["proceso", e.process], ["imagen", e.image],
+    ["destino", `${e.dest_ip}:${e.dest_port}`], ["dest_host", e.dest_host],
+    ["protocolo", e.protocol], ["SNI", e.sni_domain], ["catalogo", e.catalog_domain],
+    ["capa IA", e.ai_layer], ["veredicto", e.autonomy_verdict], ["score", e.autonomy_score],
+    ["sesiones", e.sessions], ["polls", e.seen_count],
+    ["primera vez", e.first_seen], ["ultima vez", e.last_seen],
+    ["anomalia", e.pre_score], ["flags", flags], ["MITRE", mitre],
+  ]);
+}
+
+function groupDetailHtml(g) {
+  const mitre = (g.mitre || []).map((m) => `${m.id} ${m.name}`).join(", ");
+  const members = (g.members || []).map((m) => `<tr>
+    <td class="mono">${esc(m.dest_ip)}:${esc(m.dest_port)}</td>
+    <td class="mono">${esc(m.sni_domain || "")}</td>
+    <td class="mono">${esc(m.catalog_domain || "")}</td>
+    <td class="num">${m.sessions ?? 0}</td>
+    <td class="num">${m.seen_count ?? 0}</td>
+    <td class="mono small">${esc(m.first_seen || "")}</td>
+    <td class="mono small">${esc(m.last_seen || "")}</td>
+  </tr>`).join("");
+  const more = (g.member_total || 0) > (g.members || []).length
+    ? `<p class="hint">... y ${(g.member_total || 0) - (g.members || []).length} registros mas (limitado a 10 por grupo).</p>`
+    : "";
+  const head = detailDl([
+    ["proceso", g.process], ["imagen", g.image], ["proveedor", g.provider],
+    ["capa IA", g.ai_layer], ["veredicto", g.autonomy_verdict], ["score", g.autonomy_score],
+    ["sesiones", g.sessions], ["polls", g.seen_count], ["#IPs", g.ip_count],
+    ["primera vez", g.first_seen], ["ultima vez", g.last_seen],
+    ["anomalia", g.pre_score], ["MITRE", mitre],
+  ]);
+  const table = members
+    ? `<table class="subtable"><thead><tr><th>IP:puerto</th><th>SNI</th><th>Catalogo</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Primera vez</th><th>Ultima vez</th></tr></thead><tbody>${members}</tbody></table>${more}`
+    : "";
+  return head + table;
+}
+
 function groupedEventsTableHtml(events) {
   if (!events.length) return `<div class="hint">Sin eventos con los filtros actuales.</div>`;
-  const rows = events.map((e) => `<tr>
+  const rows = events.map((e, i) => `<tr>
     <td>${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}</td>
     <td class="mono">${esc(e.provider || "-")}${kindBadge(e.kind)}</td>
     <td>${aiLayerHtml(e.ai_layer)}</td>
@@ -120,9 +169,11 @@ function groupedEventsTableHtml(events) {
     <td class="num" title="IPs distintas para este proceso y proveedor (CDN rotatorio).">${e.ip_count ?? 0}</td>
     <td class="mono small">${esc(e.first_seen || "")}</td>
     <td class="mono small">${esc(e.last_seen || "")}</td>
-  </tr>`).join("");
+    <td><button class="linklike" data-detail="ev-d-g${i}" aria-expanded="false">detalle</button></td>
+  </tr>
+  <tr class="ev-detail" id="ev-d-g${i}" hidden><td colspan="10">${groupDetailHtml(e)}</td></tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Proveedor</th><th>IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente.">Sesiones</th><th class="num" title="Polls = muestras de presencia.">Polls</th><th class="num">#IPs</th><th>Primera vez</th><th>Última vez</th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Proveedor</th><th>IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente.">Sesiones</th><th class="num" title="Polls = muestras de presencia.">Polls</th><th class="num">#IPs</th><th>Primera vez</th><th>Última vez</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -130,7 +181,7 @@ function groupedEventsTableHtml(events) {
 function eventsTableHtml(events, grouped) {
   if (grouped) return groupedEventsTableHtml(events);
   if (!events.length) return `<div class="hint">Sin eventos todavía (monitor activo).</div>`;
-  const rows = events.map((e) => `<tr>
+  const rows = events.map((e, i) => `<tr>
     <td><label class="check small" title="Seleccionar para Revisar (batch)"><input type="checkbox" class="ev-check" data-evid="${e.id}"></label> ${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}${LLM_ENABLED ? `<div class="small"><button class="small" data-investigate="${e.id}">Investigar con LLM local</button></div>` : ""}</td>
     <td class="mono">${esc(e.dest_host || e.dest_ip)}:${e.dest_port}</td>
     <td>${esc(e.protocol || "tcp")}</td>
@@ -142,9 +193,11 @@ function eventsTableHtml(events, grouped) {
     <td class="num">${e.seen_count}</td>
     <td class="mono small">${esc(e.first_seen)}</td>
     <td class="mono small">${esc(e.last_seen)}</td>
-  </tr>`).join("");
+    <td><button class="linklike" data-detail="ev-d-${i}" aria-expanded="false">detalle</button></td>
+  </tr>
+  <tr class="ev-detail" id="ev-d-${i}" hidden><td colspan="12">${eventDetailHtml(e)}</td></tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th title="Sesiones = transiciones ausente→presente (F1); Polls = muestras de presencia.">IA (capa)</th><th>Autonomía</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Primera vez</th><th>Última vez</th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th title="Sesiones = transiciones ausente→presente (F1); Polls = muestras de presencia.">IA (capa)</th><th>Autonomía</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Primera vez</th><th>Última vez</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -291,6 +344,7 @@ async function refreshEvents() {
     const wrap = document.getElementById("events-wrap");
     wrap.innerHTML = eventsTableHtml(d.events, d.grouped);
     wireInvestigate(wrap);
+    wireEventDetail(wrap);
   } catch (e) { /* server caído */ }
 }
 
@@ -312,12 +366,45 @@ async function loadFacets() {
   } catch (e) { /* sin facets */ }
 }
 
+// #10: refresco acotado a la pestaña visible. Cada tarea solo corre cuando su
+// pestaña es la activa (y la pagina esta abierta), de modo que la carga de la
+// pestaña activa queda por debajo de 12 req/min. Antes: 38 req/min globales.
+const REFRESH_JOBS = [
+  { tab: "eventos", fn: refreshEvents, every: 10000 },    // 6/min
+  { tab: "eventos", fn: refreshShadow, every: 30000 },    // 2/min
+  { tab: "eventos", fn: refreshAutonomy, every: 30000 },  // 2/min
+  { tab: "eventos", fn: refreshBaseline, every: 120000 }, // 0.5/min
+  { tab: "hallazgos", fn: refreshFindings, every: 15000 }, // 4/min
+  { tab: "ia", fn: refreshLlmCalls, every: 30000 },       // 2/min
+  { tab: "config", fn: refreshRules, every: 60000 },      // 1/min
+  { tab: "resumen", fn: refreshStats, every: 60000 },     // 1/min
+  { tab: "resumen", fn: refreshDashboard, every: 60000 }, // 1/min
+  // Global: las alertas salen como toast, no dependen de la pestaña.
+  { tab: null, fn: refreshAlerts, every: 60000 },         // 1/min
+];
+
+function activeTabName() {
+  const a = document.querySelector(".tab.active");
+  return a ? a.dataset.tab : "";
+}
+
+function startRefreshJobs() {
+  REFRESH_JOBS.forEach((job) => {
+    setInterval(() => {
+      if (document.hidden) return;
+      if (job.tab && activeTabName() !== job.tab) return;
+      job.fn();
+    }, job.every);
+  });
+}
+
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) =>
     t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll("section.card[data-tab]").forEach((s) =>
     s.classList.toggle("tab-active", s.dataset.tab === name));
-  if (name === "hallazgos") refreshFindings();
+  // #10: al cambiar de pestaña, se cargan una vez los datos de esa pestaña.
+  REFRESH_JOBS.forEach((j) => { if (j.tab === name) j.fn(); });
 }
 
 function scoreClass(s) { return s >= 60 ? "sc-high" : s >= 30 ? "sc-mid" : "sc-low"; }
@@ -503,6 +590,19 @@ async function refreshFindings() {
       };
     });
   } catch (e) { /* sin hallazgos */ }
+}
+
+function wireEventDetail(wrap) {
+  // #11: expandir/cerrar el registro completo de cada fila.
+  wrap.querySelectorAll("button[data-detail]").forEach((b) => {
+    b.onclick = () => {
+      const row = document.getElementById(b.dataset.detail);
+      if (!row) return;
+      const open = row.hidden;
+      row.hidden = !open;
+      b.setAttribute("aria-expanded", String(open));
+    };
+  });
 }
 
 function wireInvestigate(wrap) {
@@ -1285,33 +1385,14 @@ function bind() {
 
   document.querySelectorAll(".tab").forEach((t) =>
     t.addEventListener("click", () => showTab(t.dataset.tab)));
-  showTab("resumen");
-  loadFacets();
 
   loadConfig();
   loadLatestTriage();
   loadReviewHistory();
-  refreshEvents();
-  refreshStats();
-  refreshLlmCalls();
-  refreshShadow();
-  refreshAutonomy();
-  refreshBaseline();
-  refreshRules();
-  refreshDashboard();
-  setInterval(refreshEvents, 5000);
-  setInterval(refreshStats, 60000);
-  setInterval(refreshLlmCalls, 10000);
-  setInterval(refreshAlerts, 10000);
-  setInterval(refreshShadow, 15000);
-  setInterval(refreshAutonomy, 15000);
-  setInterval(refreshBaseline, 60000);
-  setInterval(refreshRules, 60000);
-  setInterval(refreshDashboard, 60000);
-  setInterval(() => {
-    const a = document.querySelector(".tab.active");
-    if (a && a.dataset.tab === "hallazgos") refreshFindings();
-  }, 15000);
+  loadFacets();
+  refreshAlerts();
+  showTab("resumen");
+  startRefreshJobs();
 }
 
 document.addEventListener("DOMContentLoaded", bind);

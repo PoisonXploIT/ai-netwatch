@@ -76,6 +76,20 @@ class TestGrouping(EventsFilterBase):
         self.assertEqual(hf["ip_count"], 2)
         self.assertEqual(hf["process"], "python.exe")
 
+    def test_group_carries_member_detail(self):
+        # #11 (U2): el grupo agrupado debe traer el registro completo de sus
+        # miembros (hasta 10) para poder mostrar el detalle por evento.
+        for i in range(12):
+            self._obs("python.exe", f"2600:{i}", catalog="huggingface.co")
+        out = server.list_events(limit=200, group="provider")
+        hf = out["events"][0]
+        self.assertEqual(hf["member_total"], 12)
+        self.assertEqual(len(hf["members"]), 10)
+        m = hf["members"][0]
+        for key in ("id", "dest_ip", "dest_port", "first_seen", "last_seen", "seen_count"):
+            self.assertIn(key, m, f"falta el campo {key} en el detalle")
+        self.assertTrue(any(x["dest_ip"] == "2600:1" for x in hf["members"]))
+
     def test_group_none_returns_flat(self):
         self._obs("python.exe", "2600:1", catalog="huggingface.co")
         self._obs("python.exe", "2600:2", catalog="huggingface.co")
