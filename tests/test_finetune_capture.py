@@ -89,7 +89,8 @@ class TriageLiveCaptureBase(unittest.TestCase):
         def fake_triage(events: list[dict], api_key: str,
                         base_url: str | None = None,
                         model: str | None = None,
-                        timeout: int = 30, backend: str = "cloud") -> dict:
+                        timeout: int = 30, backend: str = "cloud",
+                        minimal: bool = False) -> dict:
             verdicts, raw = {}, {}
             for i, _ in enumerate(events):
                 a = _raw_answer()
@@ -164,7 +165,7 @@ class TestLiveCapture(TriageLiveCaptureBase):
 
     def test_no_raw_in_result_is_harmless(self):
         # Un triaje sin campo raw (p. ej. todo reutilizado) no rompe nada.
-        def fake_no_raw(events, api_key, base_url="", model="", timeout=30):
+        def fake_no_raw(events, api_key, base_url="", model="", timeout=30, minimal=False):
             return {"status": "ok", "model": "test-model", "count": 0,
                     "partial": False, "verdicts": {}}
 

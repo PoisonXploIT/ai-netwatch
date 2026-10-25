@@ -205,12 +205,12 @@ def _local_verdict(answers: dict) -> dict:
     }
 
 
-def _state_for(event: dict) -> dict:
+def _state_for(event: dict, minimal: bool = False) -> dict:
     # sni_domain = dominio real declarado en el handshake TLS (tshark):
     # mas fiable que dest_host (cache DNS, puede ser nombre de CDN).
     sni = str(event.get("sni_domain") or "")[:120]
     host = sni or str(event.get("dest_host") or "")[:120]
-    return {
+    state = {
         "title": f"{event.get('process')} -> {host or event.get('dest_ip')}:{event.get('dest_port')}",
         "process": str(event.get("process") or "")[:80],
         "dest_ip": str(event.get("dest_ip") or ""),
@@ -232,6 +232,22 @@ def _state_for(event: dict) -> dict:
             and float(event["iat_cv"]) <= 0.3
             and int(event.get("sessions") or 0) >= 5),
     }
+    if minimal:
+        # S-07 modo "solo dominios": no salen proceso, IP, puerto ni nombre de
+        # host. El modelo solo ve el dominio observado y su patron temporal.
+        state = {
+            "title": host or "(sin dominio)",
+            "sni_domain": sni,
+            "dest_host": host,
+            "catalog_domain": str(event.get("catalog_domain") or ""),
+            "seen_count": state["seen_count"],
+            "first_seen": state["first_seen"],
+            "last_seen": state["last_seen"],
+            "sessions": state["sessions"],
+            "iat_cv": state["iat_cv"],
+            "beaconing": state["beaconing"],
+        }
+    return state
 
 
 def _prob_false_positive(verdict, confidence):
@@ -342,7 +358,8 @@ def _triage_local(states_all: list[dict], api_key: str, base_url: str,
 
 def triage_events(events: list[dict], api_key: str,
                   base_url: str | None = None, model: str | None = None,
-                  timeout: int = 30, backend: str = "cloud") -> dict:
+                  timeout: int = 30, backend: str = "cloud",
+                  minimal: bool = False) -> dict:
     """Triaje batch de TODOS los eventos. Devuelve
     {status, model, count, verdicts{idx: {...}}}, mas el campo ADITIVO
     raw{idx: answers crudas} (dataset Fase F; no cambia el contrato).
@@ -367,7 +384,7 @@ def triage_events(events: list[dict], api_key: str,
     if not api_key:
         return {"status": "skipped", "reason": "no_api_key"}
     n = len(events)
-    states_all = [_state_for(e) for e in events]
+    states_all = [_state_for(e, minimal=minimal) for e in events]
 
     if backend == "local":
         key = os.environ.get("LAYA_API_KEY") or api_key

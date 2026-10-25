@@ -72,7 +72,8 @@ class TriageDedupBase(unittest.TestCase):
         def fake_triage(events: list[dict], api_key: str,
                         base_url: str | None = None,
                         model: str | None = None,
-                        timeout: int = 30, backend: str = "cloud") -> dict:
+                        timeout: int = 30, backend: str = "cloud",
+                        minimal: bool = False) -> dict:
             self.jev_calls.append([dict(e) for e in events])
             verdicts = {}
             for i, e in enumerate(events):

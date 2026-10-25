@@ -1053,6 +1053,8 @@ async function loadConfig() {
     document.getElementById("retention-days").value = c.retention_days || 90;
     document.getElementById("retention-llm-days").value = c.retention_days_llm || 30;
     document.getElementById("llm-content-store").checked = !!c.llm_store_content;
+    const jevMin = document.getElementById("jev-minimal");
+    if (jevMin) jevMin.checked = !!c.jev_minimal;
     approvedProviders = c.approved_providers || [];
     SUPPRESSED = new Set(c.suppressed_findings || []);
     document.getElementById("sysmon-toggle").checked = !!c.sysmon_enabled;
@@ -1286,6 +1288,14 @@ function bind() {
     try {
       await api("/api/config", { method: "POST", body: JSON.stringify({ llm_store_content: ev.target.checked }) });
       toast(ev.target.checked ? "Contenido LLM se guarda (claro)." : "Solo metadatos y bytes; el contenido LLM ya no se persiste.", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("jev-minimal").addEventListener("change", async (ev) => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({ jev_minimal: ev.target.checked }) });
+      toast(ev.target.checked
+        ? "Modo solo dominios: Jev ya no recibe proceso, IP ni puerto."
+        : "Modo completo: Jev recibe proceso, IP, puerto y dominio.", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-reset-llmcalls").addEventListener("click", async () => {

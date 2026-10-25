@@ -270,7 +270,8 @@ def _load_config() -> None:
               # UI: ocultados y lista negra (soft-delete/cuarentena) deben
               # sobrevivir al restart, igual que reglas y bytes remotos.
               "suppressed_findings", "blacklist",
-              "laya_enabled", "laya_base_url", "laya_model"):  # noqa: E128
+              "laya_enabled", "laya_base_url", "laya_model",
+              "jev_minimal"):  # noqa: E128
         if k in data:
             _cfg[k] = data[k]
     for key, default in (("retention_days", 90),
@@ -1038,6 +1039,7 @@ class ConfigRequest(BaseModel):
     laya_enabled: bool | None = None
     laya_base_url: str | None = None
     laya_model: str | None = None
+    jev_minimal: bool | None = None
 
 
 class TriageRequest(BaseModel):
@@ -1154,6 +1156,8 @@ def set_config(req: ConfigRequest):
             alerts.webhook_url = url
     if req.jev_enabled is not None:
         _cfg["jev_enabled"] = req.jev_enabled
+    if req.jev_minimal is not None:
+        _cfg["jev_minimal"] = bool(req.jev_minimal)
     if req.jev_api_key_clear:
         # Borrado explicito (boton 'Quitar key'): unico camino para vaciar.
         _cfg["jev_api_key"] = ""
@@ -1560,7 +1564,8 @@ def triage(req: TriageRequest):
         if fresh_idx:
             result = triage_events([events[i] for i in fresh_idx],
                                    _cfg["jev_api_key"],
-                                   _cfg["jev_base_url"], _cfg["jev_model"])
+                                   _cfg["jev_base_url"], _cfg["jev_model"],
+                                   minimal=bool(_cfg.get("jev_minimal")))
         else:
             # Todo reutilizado: ninguna llamada a Jev.
             result = {"status": "ok", "model": last_model,
