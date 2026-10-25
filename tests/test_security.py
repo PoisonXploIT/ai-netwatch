@@ -12,6 +12,7 @@ Cobertura:
 Ejecutar desde la raiz:  python -m unittest discover tests -v
 """
 import json
+import asyncio
 import sys
 import tempfile
 import unittest
@@ -22,6 +23,8 @@ sys.path.insert(0, str(ROOT))
 
 import server  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
 import secret_store  # noqa: E402
 from store import Store  # noqa: E402
 
@@ -172,6 +175,69 @@ class TestDestructiveAndInputs(SecurityBase):
         with self.assertRaises(HTTPException) as ctx:
             server.triage(server.TriageRequest())
         self.assertEqual(ctx.exception.status_code, 404)
+
+
+class TestOriginGuard(SecurityBase):
+    """S2/S3: ningun origen distinto de la consola puede POSTar.
+
+    Sin TestClient (no hay httpx en el venv) se invoca el middleware con un
+    scope Starlette minimo: es lo mismo que ve el server en una peticion real.
+    """
+
+    def _req(self, method: str, host: str, origin: str | None = None) -> Request:
+        headers = [(b"host", host.encode())]
+        if origin is not None:
+            headers.append((b"origin", origin.encode()))
+        return Request({"type": "http", "method": method, "path": "/api/config",
+                        "headers": headers, "query_string": b"",
+                        "scheme": "http"})
+
+    @staticmethod
+    async def _pass_through(request):
+        return JSONResponse({"ok": True}, status_code=200)
+
+    def _run(self, request) -> int:
+        return asyncio.run(server._origin_guard(request, self._pass_through)).status_code
+
+    def test_rebinding_host_blocked(self):
+        # evil.com resuelto a 127.0.0.1: el Host sigue siendo evil.com.
+        self.assertEqual(self._run(self._req("POST", "evil.com:8790")), 403)
+
+    def test_cross_origin_post_blocked(self):
+        self.assertEqual(self._run(self._req("POST", "127.0.0.1:8790",
+                                            "https://evil.com")), 403)
+
+    def test_null_origin_blocked(self):
+        self.assertEqual(self._run(self._req("POST", "127.0.0.1:8790", "null")), 403)
+
+    def test_same_origin_allowed(self):
+        self.assertEqual(self._run(self._req("POST", "127.0.0.1:8790",
+                                            "http://127.0.0.1:8790")), 200)
+        self.assertEqual(self._run(self._req("POST", "localhost:8790",
+                                            "http://localhost:8790")), 200)
+
+    def test_local_cli_without_origin_allowed(self):
+        # curl / watchdog local: no mandan Origin, el Host es loopback.
+        self.assertEqual(self._run(self._req("POST", "127.0.0.1:8790")), 200)
+
+    def test_get_from_foreign_host_blocked(self):
+        # La lectura de /api/config tambien esta sujeta al guard de Host.
+        self.assertEqual(self._run(self._req("GET", "evil.com")), 403)
+
+    def test_security_headers_present(self):
+        resp = asyncio.run(server._origin_guard(
+            self._req("GET", "127.0.0.1:8790"), self._pass_through))
+        for header in ("x-content-type-options", "x-frame-options",
+                       "referrer-policy"):
+            self.assertIn(header, resp.headers)
+        self.assertEqual(resp.headers["x-frame-options"], "DENY")
+
+    def test_cors_deny_all_configured(self):
+        cors = [m for m in server.app.user_middleware
+                if "allow_origins" in getattr(m, "kwargs", {})]
+        self.assertTrue(cors, "no se ha registrado CORSMiddleware")
+        self.assertEqual(cors[0].kwargs["allow_origins"], [])
+        self.assertFalse(cors[0].kwargs.get("allow_credentials"))
 
 
 class TestJevKeyProtection(SecurityBase):

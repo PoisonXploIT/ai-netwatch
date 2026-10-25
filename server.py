@@ -23,6 +23,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -59,6 +60,51 @@ CONFIG_PATH = DATA_DIR / "config.json"
 VERSION = "2.0-alpha"
 
 app = FastAPI(title="AI NetWatch")
+
+# --- S2/S3: guard de origen (loopback estricto) ---
+# El server solo escucha en 127.0.0.1, pero cualquier pagina abierta en el
+# navegador del usuario puede alcanzarlo: rebinding DNS (evil.com -> 127.0.0.1)
+# o un fetch 'simple' (text/plain con cuerpo JSON) que no exige preflight.
+# Un POST desde esa pagina puede gastar dinero en api.typesafe.ai, borrar los
+# eventos o apagar el monitor. El Host debe ser loopback y, si el navegador
+# manda Origin, tiene que ser la propia consola. CORS deny-all refuerza el
+# bloqueo de las peticiones con preflight.
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
+
+
+def _host_of(value: str) -> str:
+    """Host sin puerto; tolera IPv6 ([::1]:8790) y esquemas (http://x:8790)."""
+    value = (value or "").strip().lower()
+    if value.startswith("["):
+        return value[1:].partition("]")[0]
+    return value.split("://")[-1].split("/")[0].split(":")[0]
+
+
+@app.middleware("http")
+async def _origin_guard(request, call_next):
+    host = _host_of(request.headers.get("host", ""))
+    if host not in _LOOPBACK_HOSTS:
+        return JSONResponse({"error": "host no permitido: solo 127.0.0.1/localhost"},
+                            status_code=403)
+    if request.method not in ("GET", "HEAD"):
+        origin = (request.headers.get("origin") or "").strip().lower()
+        if origin and (origin == "null" or _host_of(origin) not in _LOOPBACK_HOSTS):
+            return JSONResponse({"error": "origen no permitido (CSRF/rebinding)"},
+                                status_code=403)
+    response = await call_next(request)
+    for header, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
+
+
+# CORS deny-all: ninguna pagina distinta de la consola puede leer respuestas.
+app.add_middleware(CORSMiddleware, allow_origins=[], allow_methods=[],
+                   allow_headers=[], allow_credentials=False)
 
 _cfg: dict = {
     "jev_enabled": True,
