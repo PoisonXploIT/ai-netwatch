@@ -88,7 +88,7 @@ def _norm_action(v):
         return None
 
 
-def _mae(a: list[float], b: list[float]) -> float | None:
+def _mae(a: list[float | None], b: list[float | None]) -> float | None:
     pairs = [(x, y) for x, y in zip(a, b)
              if isinstance(x, (int, float)) and isinstance(y, (int, float))]
     if not pairs:
@@ -96,7 +96,8 @@ def _mae(a: list[float], b: list[float]) -> float | None:
     return round(sum(abs(x - y) for x, y in pairs) / len(pairs), 4)
 
 
-def _ab_metrics(cloud_verdicts: list[dict], local_verdicts: list[dict]) -> dict:
+def _ab_metrics(cloud_verdicts: list[dict],
+                local_verdicts: list[dict]) -> tuple[dict, dict]:
     """Metricas de un checkpoint local contra el tramo cloud cacheado.
 
     Misma semantica que la comparacion principal: acuerdo verdict (%),

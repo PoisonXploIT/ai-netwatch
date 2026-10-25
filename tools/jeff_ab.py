@@ -152,8 +152,8 @@ def _run_jeff(payloads: dict[str, dict], url: str, timeout: int) -> dict:
 
 def _metrics(events: list[dict], jeff: dict[int, dict[str, dict]]) -> dict:
     """Metricas Jeff vs gold Jev por primitiva."""
-    verdict_pairs: list[tuple[str, str]] = []   # (gold, jeff) keys class
-    action_pairs: list[tuple[str, str]] = []   # (gold, jeff) yes/no
+    verdict_pairs: list[tuple[str | None, str | None]] = []   # (gold, jeff) keys class
+    action_pairs: list[tuple[str | None, str | None]] = []   # (gold, jeff) yes/no
     sev_diffs: list[float] = []
     act_prob_diffs: list[float] = []
     confusion: dict[str, dict[str, int]] = {}
@@ -164,7 +164,7 @@ def _metrics(events: list[dict], jeff: dict[int, dict[str, dict]]) -> dict:
         g_class, g_sev, g_act = _pick_raw(ev)
         class_q, _, _ = _pick(ev)
         crit_keys = list(class_q["criteria"].keys())
-        j = jeff.get(eid)
+        j = jeff.get(eid) if eid is not None else None
         row = {"event_id": eid}
         if not j:
             row["error"] = "missing"
@@ -199,7 +199,7 @@ def _metrics(events: list[dict], jeff: dict[int, dict[str, dict]]) -> dict:
         row["ms_total"] = round(sum(ms), 1)
         per_event.append(row)
 
-    def _agree(pairs: list[tuple[str, str]]) -> tuple[int, float | None]:
+    def _agree(pairs: list[tuple[str | None, str | None]]) -> tuple[int, float | None]:
         ok = pairs and all(a is not None and b is not None for a, b in pairs)
         n_ok = sum(1 for a, b in pairs if a == b)
         pct = round(n_ok / len(pairs) * 100, 2) if pairs else None

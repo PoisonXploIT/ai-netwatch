@@ -193,7 +193,7 @@ def _local_verdict(answers: dict) -> dict:
     score = sev.get("score") if isinstance(sev, dict) else None
     noul = act.get("noul") if isinstance(act, dict) else None
     try:
-        immediate = "yes" if float(noul) >= 0.5 else "no"
+        immediate = "yes" if float(noul or 0) >= 0.5 else "no"
     except (TypeError, ValueError):
         immediate = None
     return {
@@ -325,10 +325,10 @@ def _triage_local(states_all: list[dict], api_key: str, base_url: str,
             if str(i) in verdicts:
                 continue
             try:
-                a = one(i)
-                if a is not None:
-                    verdicts[str(i)] = _local_verdict(a)
-                    raw[str(i)] = a
+                single = one(i)
+                if single is not None:
+                    verdicts[str(i)] = _local_verdict(single)
+                    raw[str(i)] = single
                 else:
                     errors.append(f"evento {i}: bad_response_shape")
             except Exception as e2:
@@ -382,7 +382,7 @@ def triage_events(events: list[dict], api_key: str,
                 "raw": raw}
 
     answers: dict = {}
-    errors: list[str] = []
+    errors = []
     for start in range(0, n, TRIAGE_CAP):
         idxs = list(range(start, min(start + TRIAGE_CAP, n)))
         try:
@@ -407,7 +407,7 @@ def triage_events(events: list[dict], api_key: str,
     if not answers:
         return {"status": "error",
                 "reason": "; ".join(errors)[:500] or "no_answers"}
-    verdicts: dict[str, dict] = {}
+    verdicts = {}
     for i in range(n):
         cls = answers.get(f"f{i}_class") or {}
         sev = answers.get(f"f{i}_sev") or {}

@@ -86,7 +86,10 @@ class TriageLiveCaptureBase(unittest.TestCase):
                        "jev_model": "test-model",
                        "llm_enabled": False}
 
-        def fake_triage(events, api_key, base_url="", model="", timeout=30):
+        def fake_triage(events: list[dict], api_key: str,
+                        base_url: str | None = None,
+                        model: str | None = None,
+                        timeout: int = 30, backend: str = "cloud") -> dict:
             verdicts, raw = {}, {}
             for i, _ in enumerate(events):
                 a = _raw_answer()

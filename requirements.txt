@@ -1,0 +1,8 @@
+# Dependencias directas del servidor (el producto es stdlib + FastAPI).
+# Instalacion local:  uv pip install --python .venv/Scripts/python.exe -r requirements.txt
+fastapi>=0.140
+uvicorn>=0.30
+
+# Herramientas de calidad (Bloque 4 / CI): lint, tipos y tests.
+ruff>=0.17
+mypy>=2.4
