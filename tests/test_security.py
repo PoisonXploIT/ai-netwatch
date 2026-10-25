@@ -174,6 +174,61 @@ class TestDestructiveAndInputs(SecurityBase):
         self.assertEqual(ctx.exception.status_code, 404)
 
 
+class TestJevKeyProtection(SecurityBase):
+    """U-01: la key no puede destruirse por accidente ni exponerse.
+
+    El GET devuelve cadena vacia + `jev_api_key_set`; el POST ignora la
+    mascara '***' y el campo vacio. Solo se borra con el flag explicito.
+    """
+
+    def _set_key(self, value):
+        server.set_config(server.ConfigRequest(jev_api_key=value))
+        return server._cfg["jev_api_key"]
+
+    def test_get_never_returns_the_key(self):
+        server._cfg["jev_api_key"] = "KEY-REAL"
+        masked = server._mask(server._cfg)
+        self.assertEqual(masked["jev_api_key"], "")
+        self.assertTrue(masked["jev_api_key_set"])
+        self.assertNotIn("KEY-REAL", json.dumps(masked))
+
+    def test_mask_sentinel_is_ignored(self):
+        server._cfg["jev_api_key"] = "KEY-REAL"
+        self.assertEqual(self._set_key("***"), "KEY-REAL")
+
+    def test_empty_field_is_ignored(self):
+        server._cfg["jev_api_key"] = "KEY-REAL"
+        self.assertEqual(self._set_key(""), "KEY-REAL")
+        self.assertEqual(self._set_key("   "), "KEY-REAL")
+
+    def test_real_key_replaces_and_is_dpapi(self):
+        self.assertEqual(self._set_key("KEY-NUEVA"), "KEY-NUEVA")
+        server._save_config()
+        data = json.loads(server.CONFIG_PATH.read_text(encoding="utf-8"))
+        if secret_store.available():
+            self.assertTrue(data["jev_api_key"].startswith(secret_store.PREFIX))
+            self.assertNotIn("KEY-NUEVA", json.dumps(data))
+        server._cfg["jev_api_key"] = ""
+        server._load_config()
+        self.assertEqual(server._cfg["jev_api_key"], "KEY-NUEVA")
+
+    def test_clear_flag_is_the_only_way_to_delete(self):
+        server._cfg["jev_api_key"] = "KEY-REAL"
+        server.set_config(server.ConfigRequest(jev_api_key_clear=True))
+        self.assertEqual(server._cfg["jev_api_key"], "")
+        out = server._mask(server._cfg)
+        self.assertFalse(out["jev_api_key_set"])
+
+    def test_roundtrip_survives_ui_repost(self):
+        # Simula el flujo de la UI: GET (vacio) -> Guardar sin escribir -> GET.
+        self._set_key("KEY-REAL")
+        server.set_config(server.ConfigRequest(jev_api_key=""))
+        server._save_config()
+        server._cfg["jev_api_key"] = ""
+        server._load_config()
+        self.assertEqual(server._cfg["jev_api_key"], "KEY-REAL")
+
+
 class TestExportsStatic(SecurityBase):
     """Los exports no toman nombres de archivo del usuario: el contenido es
     generado en memoria y los headers son fijos (sin path traversal posible)."""

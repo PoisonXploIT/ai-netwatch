@@ -16,8 +16,15 @@ const VERDICT_META = {
   unrelated: { cls: "v-unrelated", label: "No relacionado" },
 };
 
-function verdictBadge(v) {
+// Puerta de confianza (2026-10-01): un argmax con confianza < CONF_GATE no se
+// presenta como veredicto definitivo; se muestra 'Indeterminado' y el label
+// argmax queda en el tooltip. La columna Confianza sigue mostrando el valor.
+const CONF_GATE = 0.5;
+function verdictBadge(v, confidence) {
   const m = VERDICT_META[v] || { cls: "v-none", label: v || "—" };
+  if (confidence != null && confidence < CONF_GATE) {
+    return `<span class="vbadge v-undetermined" title="veredicto argmax con confianza baja (<${CONF_GATE}): ${esc(m.label)} (conf ${confidence}). Ver columna Confianza.">Indeterminado</span>`;
+  }
   return `<span class="vbadge ${m.cls}">${esc(m.label)}</span>`;
 }
 
@@ -154,21 +161,33 @@ async function refreshStats() {
   } catch (e) { /* sin stats */ }
 }
 
+function ttabShow(which) {
+  const j = document.getElementById("ttab-jev");
+  const l = document.getElementById("ttab-laya");
+  if (j) j.style.display = which === "jev" ? "" : "none";
+  if (l) l.style.display = which === "laya" ? "" : "none";
+  document.querySelectorAll(".ttab").forEach((b) => b.classList.toggle("active", b.dataset.tt === which));
+}
+
 function triageHtml(data) {
   if (!data) return "";
   const parts = [];
+  let jevHtml = "";
+  let layaHtml = "";
   const jev = data.jev || {};
   if (jev.status === "ok") {
     const evs = data.events || [];
     let triaged = 0;
     const rows = evs.map((e, i) => {
+      // Soft-delete en UI: fila oculta si (proceso|proveedor) esta suprimido.
+      if (SUPPRESSED.has(`${e.process}|${providerFromDest(e.dest)}`)) return "";
       const v = (jev.verdicts || {})[String(i)] || {};
       if (v.verdict != null) triaged++;
       // Sin veredicto: 'no triado' explicito (no un vacio que parezca fallo).
       const reuseMark = e.reused
         ? ` <span class="hint" title="veredicto reutilizado: la firma del evento no cambio desde el ultimo triaje (I1)">(reutilizado)</span>`
         : "";
-      const cls = v.verdict != null ? verdictBadge(v.verdict) + reuseMark
+      const cls = v.verdict != null ? verdictBadge(v.verdict, v.confidence) + reuseMark
         : `<span class="hint">no triado</span>`;
       const inv = LLM_ENABLED
         ? `<div class="small"><button class="small" data-investigate="${e.id}">Investigar</button></div>`
@@ -185,13 +204,46 @@ function triageHtml(data) {
     }).join("");
     const countNote = triaged < evs.length
       ? ` <span class="hint">(triados ${triaged} de ${evs.length})</span>` : "";
-    parts.push(`<h3>Veredictos Jev${countNote}</h3><table>
+    jevHtml = `<h3>Veredictos Jev${countNote}</h3><table>
       <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificación</th><th class="num">Confianza</th><th class="num">Prob. falso positivo</th><th class="num">Criticidad</th><th class="num">Acción inmediata</th></tr></thead>
-      <tbody>${rows}</tbody></table>`);
+      <tbody>${rows}</tbody></table>`;
   } else if (jev.status === "skipped") {
-    parts.push(`<div class="hint">Jev no disponible (${esc(jev.reason || "")}). Vista clásica intacta.</div>`);
+    jevHtml = `<div class="hint">Jev no disponible (${esc(jev.reason || "")}). Vista clásica intacta.</div>`;
   } else if (jev.status === "error") {
-    parts.push(`<div class="hint error">Error Jev: ${esc(jev.reason || "")}</div>`);
+    jevHtml = `<div class="hint error">Error Jev: ${esc(jev.reason || "")}</div>`;
+  }
+  const laya = data.laya || {};
+  if (laya.status === "ok") {
+    const evs = data.events || [];
+    const jvAll = jev.verdicts || {};
+    let cmpOk = 0, cmpN = 0;
+    const lrows = evs.map((e, i) => {
+      if (SUPPRESSED.has(`${e.process}|${providerFromDest(e.dest)}`)) return "";
+      const v = (laya.verdicts || {})[String(i)] || {};
+      const jv = jvAll[String(i)] || {};
+      const cls = v.verdict != null ? verdictBadge(v.verdict, v.confidence) : `<span class="hint">no triado</span>`;
+      let cmp = `<span class="hint">-</span>`;
+      if (v.verdict != null && jv.verdict != null) {
+        cmpN++;
+        if (v.verdict === jv.verdict) { cmpOk++; cmp = `<span style="color:#2e9e5b;font-weight:600">coincide</span>`; }
+        else { cmp = `<span style="color:#d9534f;font-weight:600">difiere</span> <span class="hint">(Jev: ${esc(jv.verdict)})</span>`; }
+      }
+      return `<tr><td>${esc(e.process)}</td><td class="mono">${esc(e.dest)}</td><td>${cls}</td><td>${cmp}</td>${numCell(v.confidence, v.confidence)}${sevCell(v.severity_score)}${numCell(v.immediate_action, v.immediate_action)}</tr>`;
+    }).join("");
+    const pct = cmpN ? Math.round((cmpOk / cmpN) * 100) : 0;
+    layaHtml = `<h3>Veredictos LAY\u00c1 (local) <span class="hint">${esc(laya.model || "")} \u00b7 acuerdo con Jev: ${cmpOk}/${cmpN} (${pct}%)</span></h3><table>
+      <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificaci\u00f3n</th><th>vs Jev</th><th class="num">Confianza</th><th class="num">Criticidad</th><th class="num">Acci\u00f3n inmediata</th></tr></thead>
+      <tbody>${lrows}</tbody></table>`;
+  } else if (laya.status === "error") {
+    layaHtml = `<div class="hint error">LAY\u00c1 local: ${esc(laya.reason || "")}</div>`;
+  }
+  if (jevHtml || layaHtml) {
+    parts.push(`<div style="display:flex;gap:8px;margin:12px 0">
+      <button class="btn ttab active" data-tt="jev" onclick="ttabShow('jev')">Jev (juez)</button>
+      <button class="btn ttab" data-tt="laya" onclick="ttabShow('laya')">LAY\u00c1 (local)</button>
+    </div>
+    <div id="ttab-jev">${jevHtml}</div>
+    <div id="ttab-laya" style="display:none">${layaHtml}</div>`);
   }
   const dd = data.dedup;
   if (dd && typeof dd.reused === "number" && typeof dd.fresh === "number") {
@@ -276,7 +328,8 @@ function findingDetail(f) {
     parts.push(`<b>Jev:</b> ${esc(f.jev_verdict)} (criticidad ${f.jev_severity})`);
   }
   if (f.review) {
-    parts.push(`<b>Revisión LLM:</b> ${esc(f.review.evaluacion || "")} — ${esc(f.review.porque || "")}`);
+    const acc = f.review.accion ? ` · accion: ${esc(f.review.accion)}` : "";
+    parts.push(`<b>Revisión LLM:</b> ${esc(f.review.evaluacion || "")}${acc} — ${esc(f.review.porque || "")}`);
   }
   if ((f.mitre || []).length) {
     parts.push(`<b>MITRE ATT&CK:</b> ` +
@@ -286,9 +339,33 @@ function findingDetail(f) {
   return parts.join("<br>");
 }
 
-function findingsHtml(findings) {
-  if (!findings.length) return `<div class="hint">Sin hallazgos todavía.</div>`;
-  const rows = findings.map((f, i) => {
+// Ocultacion en UI (soft-delete): conjunto vivo de claves "proceso|proveedor"
+// cargado desde /api/config. Los eventos siguen en la base de datos.
+let SUPPRESSED = new Set();
+function providerFromDest(dest) {
+  if (!dest) return "";
+  const m = String(dest).match(/^(.*):\d+$/);
+  return m ? m[1] : dest;
+}
+
+function reviewBadge(rev) {
+  if (!rev) return `<span class="hint">sin revision</span>`;
+  const ev = typeof rev === "string" ? rev : rev.evaluacion;
+  if (!ev) return `<span class="hint">sin revision</span>`;
+  const cls = ev === "confirm" ? "badge-ok" : ev === "refuta" ? "badge-bad" : "badge-warn";
+  let out = `<span class="${cls}">${esc(ev)}</span>`;
+  const acc = typeof rev === "object" ? rev.accion : null;
+  if (acc) {
+    const acls = acc === "sacar" ? "badge-ok" : "badge-bad";
+    out += ` <span class="${acls}">${esc(acc)}</span>`;
+  }
+  return out;
+}
+
+function findingsHtml(findings, suppressed, blacklisted) {
+  const suppSet = new Set(suppressed || []);
+  const head = `<tr><th class="num">Score</th><th>Proceso</th><th>Proveedor</th><th>Señales</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Última vez</th><th></th></tr>`;
+  const activeRows = findings.map((f, i) => {
     const badges = [
       f.unapproved ? `<span class="badge-bad">no aprobado</span>` : "",
       f.beaconing ? `<span class="badge-bad">beacon</span>` : "",
@@ -304,24 +381,122 @@ function findingsHtml(findings) {
       <td class="num">${f.sessions ?? 0}</td>
       <td class="num">${f.seen_count ?? 0}</td>
       <td class="mono small">${esc(f.last_seen || "")}</td>
+      <td>
+        <button class="small blacklist-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Lista negra (cuarentena): aislar hasta revision LLM">⊘</button>
+        <button class="small suppress-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Ocultar fila: los eventos se mantienen en la base de datos">×</button>
+      </td>
     </tr>
-    <tr class="finding-detail" data-fd="${i}" hidden><td colspan="7">${findingDetail(f)}</td></tr>`;
+    <tr class="finding-detail" data-fd="${i}" hidden><td colspan="8">${findingDetail(f)}</td></tr>`;
   }).join("");
-  return `<table>
-    <thead><tr><th class="num">Score</th><th>Proceso</th><th>Proveedor</th><th>Señales</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Última vez</th></tr></thead>
-    <tbody>${rows}</tbody></table>`;
+  let hiddenSection = "";
+  if (suppSet.size) {
+    hiddenSection = `<details><summary>Ocultos (${suppSet.size})</summary><table>
+      <tbody>${[...suppSet].sort().map((s) => {
+        const cut = s.indexOf("|");
+        const p = cut >= 0 ? s.slice(0, cut) : s;
+        const prov = cut >= 0 ? s.slice(cut + 1) : "";
+        return `<tr><td>${esc(p)}</td><td class="mono">${esc(prov || "-")}</td><td><button class="small restore-finding" data-process="${esc(p)}" data-provider="${esc(prov)}">restaurar</button></td></tr>`;
+      }).join("")}</tbody></table></details>`;
+  }
+  let quarantineSection = "";
+  if (blacklisted && blacklisted.length) {
+    const qrows = blacklisted.map((f, i) => {
+      const jev = f.jev_verdict ? verdictBadge(f.jev_verdict) : `<span class="hint">sin Jev</span>`;
+      return `<tr class="finding-row" data-qi="${i}">
+        <td><span class="score-badge ${scoreClass(f.score)}">${f.score}</span></td>
+        <td>${esc(f.process)}</td>
+        <td class="mono">${esc(f.provider || "-")}${kindBadge(f.kind)}</td>
+        <td>${jev} ${reviewBadge(f.review)}</td>
+        <td class="num">${f.sessions ?? 0}</td>
+        <td class="num">${f.seen_count ?? 0}</td>
+        <td class="mono small">${esc(f.last_seen || "")}</td>
+        <td>
+          <button class="small unblacklist-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Sacar de cuarentena">sacar</button>
+          <button class="small review-finding" data-eids="${(f.event_ids || []).join(",")}" title="Revisar estos eventos con el LLM local">revisar</button>
+        </td>
+      </tr>
+      <tr class="finding-detail" data-qd="${i}" hidden><td colspan="8">${findingDetail(f)}</td></tr>`;
+    }).join("");
+    quarantineSection = `<h4>Cuarentena (${blacklisted.length})</h4>
+      <p class="hint">En lista negra: aislados a la espera de revision LLM. Los eventos siguen en la base de datos.</p>
+      <table><thead>${head}</thead><tbody>${qrows}</tbody></table>
+      <div class="row"><button class="primary review-quarantine">Revisar toda la cuarentena (LLM local)</button></div>`;
+  }
+  const main = findings.length
+    ? `<table><thead>${head}</thead><tbody>${activeRows}</tbody></table>`
+    : `<div class="hint">Sin hallazgos activos.</div>`;
+  return main + hiddenSection + quarantineSection;
 }
 
 async function refreshFindings() {
   try {
     const d = await api("/api/findings");
     const wrap = document.getElementById("findings-wrap");
-    wrap.innerHTML = findingsHtml(d.findings || []);
+    wrap.innerHTML = findingsHtml(d.findings || [], d.suppressed || [], d.blacklisted || []);
     wrap.querySelectorAll("tr.finding-row").forEach((r) => {
-      r.addEventListener("click", () => {
-        const det = wrap.querySelector(`tr.finding-detail[data-fd="${r.dataset.fi}"]`);
+      r.addEventListener("click", (ev) => {
+        if (ev.target.closest("button")) return;
+        const sel = r.dataset.fi != null
+          ? `tr.finding-detail[data-fd="${r.dataset.fi}"]`
+          : `tr.finding-detail[data-qd="${r.dataset.qi}"]`;
+        const det = wrap.querySelector(sel);
         if (det) det.hidden = !det.hidden;
       });
+    });
+    wrap.querySelectorAll("button.suppress-finding").forEach((b) => {
+      b.onclick = async (ev) => {
+        ev.stopPropagation();
+        b.disabled = true;
+        const p = b.dataset.process, prov = b.dataset.provider;
+        try {
+          await api(`/api/findings/suppress?process=${encodeURIComponent(p)}&provider=${encodeURIComponent(prov)}`, { method: "POST" });
+          SUPPRESSED.add(`${p}|${prov}`);
+          refreshFindings();
+          loadLatestTriage();
+        } catch (e) { toast(String(e), "error"); b.disabled = false; }
+      };
+    });
+    wrap.querySelectorAll("button.blacklist-finding").forEach((b) => {
+      b.onclick = async (ev) => {
+        ev.stopPropagation();
+        b.disabled = true;
+        const p = b.dataset.process, prov = b.dataset.provider;
+        try {
+          await api(`/api/findings/blacklist?process=${encodeURIComponent(p)}&provider=${encodeURIComponent(prov)}`, { method: "POST" });
+          refreshFindings();
+        } catch (e) { toast(String(e), "error"); b.disabled = false; }
+      };
+    });
+    wrap.querySelectorAll("button.unblacklist-finding").forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        const p = b.dataset.process, prov = b.dataset.provider;
+        try {
+          await api(`/api/findings/unblacklist?process=${encodeURIComponent(p)}&provider=${encodeURIComponent(prov)}`, { method: "POST" });
+          refreshFindings();
+        } catch (e) { toast(String(e), "error"); b.disabled = false; }
+      };
+    });
+    wrap.querySelectorAll("button.review-finding").forEach((b) => {
+      b.onclick = async () => {
+        const ids = (b.dataset.eids || "").split(",").map(Number).filter((n) => !Number.isNaN(n));
+        if (!ids.length) { toast("Sin eventos para revisar."); return; }
+        runReview({ event_ids: ids });
+      };
+    });
+    const qb = wrap.querySelector("button.review-quarantine");
+    if (qb) qb.onclick = () => runReview({ scope: "quarantine" });
+    wrap.querySelectorAll("button.restore-finding").forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        const p = b.dataset.process, prov = b.dataset.provider;
+        try {
+          await api(`/api/findings/restore?process=${encodeURIComponent(p)}&provider=${encodeURIComponent(prov)}`, { method: "POST" });
+          SUPPRESSED.delete(`${p}|${prov}`);
+          refreshFindings();
+          loadLatestTriage();
+        } catch (e) { toast(String(e), "error"); b.disabled = false; }
+      };
     });
   } catch (e) { /* sin hallazgos */ }
 }
@@ -737,15 +912,36 @@ async function refreshDashboard() {
   } catch (e) { /* sin datos aún */ }
 }
 
+function renderMonitorState(enabled) {
+  const btn = document.getElementById("btn-monitor");
+  if (!btn) return;
+  btn.textContent = enabled ? "Monitoreo: ACTIVO" : "Monitoreo: PAUSADO";
+  btn.classList.toggle("paused", !enabled);
+  btn.setAttribute("aria-pressed", String(!enabled));
+}
+
 async function loadConfig() {
   try {
     const c = await api("/api/config");
     LLM_ENABLED = !!c.llm_enabled;
-    document.getElementById("jev-key").value = c.jev_api_key || "";
+    renderMonitorState(c.monitoring_enabled !== false);
+    const jevKey = document.getElementById("jev-key");
+    // El servidor nunca devuelve la key: solo el flag. No se rellena el
+    // input con la mascara (bug U-01: guardar sin escribir borraba la key).
+    jevKey.value = "";
+    jevKey.placeholder = c.jev_api_key_set ? "key ya guardada (oculta)" : "API key";
+    const jevState = document.getElementById("jev-key-state");
+    if (jevState) jevState.textContent = c.jev_api_key_set ? "Key guardada (DPAPI). Escribir una nueva la sustituye." : "Sin key guardada.";
     document.getElementById("llm-url").value = c.llm_base_url || "";
     document.getElementById("llm-model").value = c.llm_model || "";
     document.getElementById("llm-proxy-port").value = c.llm_proxy_port || 8098;
     document.getElementById("llm-proxy-target").value = c.llm_proxy_target || "127.0.0.1:8099";
+    const layaUrl = document.getElementById("laya-url");
+    if (layaUrl) {
+      layaUrl.value = c.laya_base_url || "";
+      document.getElementById("laya-model").value = c.laya_model || "";
+      document.getElementById("laya-toggle").checked = !!c.laya_enabled;
+    }
     const pt = document.getElementById("llm-proxy-toggle");
     pt.checked = !!c.llm_proxy_enabled;
     document.getElementById("alerts-toggle").checked = !!c.alerts_enabled;
@@ -754,6 +950,7 @@ async function loadConfig() {
     document.getElementById("retention-llm-days").value = c.retention_days_llm || 30;
     document.getElementById("llm-content-store").checked = !!c.llm_store_content;
     approvedProviders = c.approved_providers || [];
+    SUPPRESSED = new Set(c.suppressed_findings || []);
     document.getElementById("sysmon-toggle").checked = !!c.sysmon_enabled;
     const t = document.getElementById("tshark-toggle");
     t.checked = !!c.tshark_enabled;
@@ -782,7 +979,10 @@ function reviewRowHtml(r) {
   const badge = r.evaluacion != null
     ? `<span class="${REVIEW_EVAL_BADGE[r.evaluacion] || "badge-warn"}">${esc(r.evaluacion)}</span>`
     : `<span class="hint">no disponible${r.reason ? ` (${esc(r.reason)})` : ""}</span>`;
-  return `<div class="row"><b>#${r.event_id}</b> ${badge}` +
+  const acc = r.accion
+    ? `<span class="${r.accion === "sacar" ? "badge-ok" : "badge-bad"}">${esc(r.accion)}</span>`
+    : "";
+  return `<div class="row"><b>#${r.event_id}</b> ${badge} ${acc}` +
     (r.porque ? `<div class="small hint">${esc(r.porque)}</div>` : "") +
     (r.evidencia_faltante ? `<div class="small hint">Falta: ${esc(r.evidencia_faltante)}</div>` : "") +
     `</div>`;
@@ -821,7 +1021,7 @@ async function loadReviewHistory() {
     const rows = d.reviews || [];
     wrap.innerHTML = rows.length
       ? `<p class="hint">${rows.map(r =>
-        `#${r.event_id} · ${esc(r.evaluacion || "no disponible")} (${esc((r.ts || "").slice(0, 16))})`).join(" · ")}</p>`
+        `#${r.event_id} · ${esc(r.evaluacion || "no disponible")}${r.accion ? ` (${esc(r.accion)})` : ""} (${esc((r.ts || "").slice(0, 16))})`).join(" · ")}</p>`
       : `<div class="hint">Sin revisiones todavía.</div>`;
   } catch (e) { /* sin historial */ }
 }
@@ -836,6 +1036,21 @@ function bind() {
     if (!g) return;
     const hidden = g.classList.toggle("guide-hidden");
     $("btn-guide").setAttribute("aria-expanded", String(!hidden));
+  });
+  // Kill switch global: pausa/reanuda el monitoreo sin reiniciar el server.
+  $("btn-monitor").addEventListener("click", async () => {
+    const btn = $("btn-monitor");
+    const next = btn.classList.contains("paused");
+    btn.disabled = true;
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({ monitoring_enabled: next }) });
+      renderMonitorState(next);
+      toast(next ? "Monitoreo reanudado" : "Monitoreo pausado", "ok");
+    } catch (e) {
+      toast("Error: " + (e.message || e), "err");
+    } finally {
+      btn.disabled = false;
+    }
   });
   // Exports: rutas GET fijas; ninguna entrada del usuario viaja en la URL.
   $("btn-exp-json").addEventListener("click", () => {
@@ -860,14 +1075,42 @@ function bind() {
   });
   $("btn-save-jev").addEventListener("click", async () => {
     try {
-      await api("/api/config", { method: "POST", body: JSON.stringify({ jev_api_key: $("jev-key").value.trim() }) });
-      toast("Config Jev guardada (persistente).", "ok");
+      const key = $("jev-key").value.trim();
+      if (!key) { toast("No se ha escrito ninguna key: la guardada no se toca.", "ok"); return; }
+      await api("/api/config", { method: "POST", body: JSON.stringify({ jev_api_key: key }) });
+      $("jev-key").value = "";
+      toast("Config Jev guardada (persistente, cifrada con DPAPI).", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("btn-clear-jev").addEventListener("click", async () => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({ jev_api_key_clear: true }) });
+      toast("Key Jev borrada de la config.", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-test-jev").addEventListener("click", async () => {
     try {
       const r = await api("/api/test", { method: "POST", body: JSON.stringify({ target: "jev" }) });
       toast(r.ok ? `Jev OK (modelo ${r.model || "?"}).` : `Jev fallo: ${r.error}`, r.ok ? "ok" : "err");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("btn-save-laya").addEventListener("click", async () => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({
+        laya_base_url: $("laya-url").value.trim(), laya_model: $("laya-model").value.trim() }) });
+      toast("Config LAY\u00c1 guardada (persistente).", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("btn-test-laya").addEventListener("click", async () => {
+    try {
+      const r = await api("/api/test", { method: "POST", body: JSON.stringify({ target: "laya" }) });
+      toast(r.status === "ok" ? `LAY\u00c1 local OK (modelo ${r.model || "?"}, veredicto ${r.verdict || "?"}).` : `LAY\u00c1 local fallo: ${r.reason || r.status}`, r.status === "ok" ? "ok" : "err");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("laya-toggle").addEventListener("change", async (ev) => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({ laya_enabled: ev.target.checked }) });
+      toast(ev.target.checked ? "Segunda opini\u00f3n LAY\u00c1 activada." : "Segunda opini\u00f3n LAY\u00c1 desactivada.", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-save-llm").addEventListener("click", async () => {
@@ -1022,7 +1265,8 @@ function bind() {
   [["btn-rev-aut", "autonomous"],
    ["btn-rev-unapproved", "unapproved"],
    ["btn-rev-flagged", "flagged"],
-   ["btn-rev-untriaged", "untriaged"]].forEach(([id, scope]) => {
+   ["btn-rev-untriaged", "untriaged"],
+   ["btn-rev-quarantine", "quarantine"]].forEach(([id, scope]) => {
     $(id).addEventListener("click", () => runReview({ scope }));
   });
   $("btn-review-selected").addEventListener("click", () => {

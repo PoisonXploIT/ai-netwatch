@@ -37,7 +37,8 @@ import triage_sig
 import evidence
 import rules
 import secret_store
-from jev_triage import DEFAULT_BASE_URL, PINNED_MODEL, triage_events
+from jev_triage import (DEFAULT_BASE_URL, PINNED_MODEL, _questions_for,
+                        _state_for, triage_events)
 from llm_local import (explain_events, investigate_event,
                        is_loopback_url)
 from llm_proxy import LlmProxy
@@ -51,6 +52,8 @@ from tshark_source import (SniCapture, find_active_interface, sni_available,
                           tshark_path)
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
+# Fase F: dataset de finetuning alimentado por el triaje live.
+FINE_TUNE_DIR = DATA_DIR / "finetune"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONFIG_PATH = DATA_DIR / "config.json"
 VERSION = "2.0-alpha"
@@ -81,6 +84,9 @@ _cfg: dict = {
     "llm_store_content": True,
     "alerts_enabled": True,
     "alert_webhook_url": "",
+    # Kill switch global: apaga/enciende el tracking hacia la nube sin
+    # reiniciar el servidor (pausa el hilo del monitor).
+    "monitoring_enabled": True,
     # v2.2: motor de reglas (umbral de egress para la regla pendiente de
     # bytes remotos).
     "rules_enabled": True,
@@ -89,7 +95,26 @@ _cfg: dict = {
     "net_bytes_enabled": False,
     "net_bytes_duration_s": 30,
     "net_bytes_cycle_s": 600,
+    # LAYA (local, laya-serve en 127.0.0.1:8787): SEGUNDA OPINION opcional.
+    # Jev sigue siendo el juez; esto solo anade el veredicto local al lado.
+    "laya_enabled": False,
+    "laya_base_url": "http://127.0.0.1:8787/v1/systemone",
+    "laya_model": "multilingual",
 }
+
+
+def _ensure_laya_key() -> None:
+    """Carga LAYA_API_KEY de data/laya_serve.env en el entorno (nunca en claro en config.json)."""
+    if os.environ.get("LAYA_API_KEY"):
+        return
+    p = Path(__file__).resolve().parent / "data" / "laya_serve.env"
+    try:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if line.startswith("LAYA_API_KEY="):
+                os.environ["LAYA_API_KEY"] = line.split("=", 1)[1].strip()
+                return
+    except OSError:
+        pass
 
 
 def _effective_llm_base() -> str:
@@ -150,13 +175,18 @@ def _load_config() -> None:
               "llm_proxy_target", "extra_hosts", "sysmon_enabled",
               "tshark_enabled", "retention_days", "retention_days_llm",
               "llm_store_content", "alerts_enabled",
-              "alert_webhook_url", "catalog_approved",
+              "alert_webhook_url", "monitoring_enabled",
+              "catalog_approved",
               "approved_providers",
               # v2.1/v2.2: sin estas, un restart revertia reglas y bytes
               # remotos a los defaults (persistencia silenciosamente rota).
               "rules_enabled", "rule_egress_mb_per_day",
               "net_bytes_enabled", "net_bytes_duration_s",
-              "net_bytes_cycle_s", "llm_review_max"):  # noqa: E128
+              "net_bytes_cycle_s", "llm_review_max",
+              # UI: ocultados y lista negra (soft-delete/cuarentena) deben
+              # sobrevivir al restart, igual que reglas y bytes remotos.
+              "suppressed_findings", "blacklist",
+              "laya_enabled", "laya_base_url", "laya_model"):  # noqa: E128
         if k in data:
             _cfg[k] = data[k]
     for key, default in (("retention_days", 90),
@@ -169,6 +199,8 @@ def _load_config() -> None:
         _cfg["llm_store_content"] = True
     if not isinstance(_cfg.get("alerts_enabled"), bool):
         _cfg["alerts_enabled"] = True
+    if not isinstance(_cfg.get("monitoring_enabled"), bool):
+        _cfg["monitoring_enabled"] = True
     if not isinstance(_cfg.get("catalog_approved"), bool):
         _cfg["catalog_approved"] = True
     if not isinstance(_cfg.get("rules_enabled"), bool):
@@ -196,6 +228,19 @@ def _load_config() -> None:
         ap = []
     _cfg["approved_providers"] = [str(p).strip().lower() for p in ap
                                   if str(p).strip()]
+    # Ocultacion en UI de hallazgos/triaje (soft-delete: los eventos se
+    # quedan en db; solo se quita la fila de la vista).
+    if not isinstance(_cfg.get("suppressed_findings"), list):
+        _cfg["suppressed_findings"] = []
+    _cfg["suppressed_findings"] = [str(s) for s in _cfg["suppressed_findings"]
+                                    if isinstance(s, str) and s.strip()]
+    # Lista negra (cuarentena): hallazgos aparcados a la espera de revision
+    # LLM. Igual que suppressed: clave 'proceso|proveedor', los eventos
+    # siguen en db.
+    if not isinstance(_cfg.get("blacklist"), list):
+        _cfg["blacklist"] = []
+    _cfg["blacklist"] = [str(s) for s in _cfg["blacklist"]
+                          if isinstance(s, str) and s.strip()]
     # Webhook: solo loopback; un archivo editado a mano no lo apunta fuera.
     wh = str(_cfg.get("alert_webhook_url") or "")
     if wh and not is_loopback_url(wh):
@@ -278,6 +323,26 @@ def _set_sni_capture(enabled: bool) -> None:
     sni_capture.start()
     if monitor:
         monitor._sni_poll = sni_capture.poll_records
+
+
+def _set_monitoring(enabled: bool) -> None:
+    """Kill switch global: pausa/reanuda el hilo del monitor, la captura SNI
+    (tshark) y el proxy inspector. En OFF solo queda la UI/servidor: no se
+    registran conexiones, Sysmon, sesiones, SNI ni llamadas LLM, y no se lanza
+    el colector de bytes. No reinicia el servidor ni pierde datos previos."""
+    if monitor is not None:
+        if enabled:
+            monitor.resume()
+        else:
+            monitor.pause()
+    if enabled:
+        if _cfg.get("tshark_enabled"):
+            _set_sni_capture(True)
+        if _cfg.get("llm_proxy_enabled"):
+            _set_llm_proxy(True)
+    else:
+        _set_sni_capture(False)
+        _set_llm_proxy(False)
 
 
 def _set_llm_proxy(enabled: bool) -> bool:
@@ -443,10 +508,12 @@ def _rules_cycle() -> None:
 def _auto_classify_loop() -> None:
     """Hilo daemon del clasificador y reglas: 60 s entre ciclos.
     Deliberadamente NO en el hilo del monitor (una llamada LLM lenta no
-    bloquea el poll de 5 s)."""
+    bloquea el poll de 5 s). Kill switch: en OFF no clasifica ni evalua
+    reglas (no hay datos nuevos que procesar)."""
     while not _auto_stop.is_set():
-        _auto_classify_cycle()
-        _rules_cycle()
+        if _cfg.get("monitoring_enabled", True):
+            _auto_classify_cycle()
+            _rules_cycle()
         _auto_stop.wait(60)
 
 
@@ -544,6 +611,8 @@ def _netbytes_cycle() -> None:
     """v2.2: un ciclo del colector elevado (opt-in). Fail-safe total."""
     if store is None:
         return
+    if not _cfg.get("monitoring_enabled", True):
+        return  # kill switch: en pausa no se lanza el colector (ni UAC).
     duration_s = int(_cfg.get("net_bytes_duration_s", 30))
     out_path = DATA_DIR / f"netprobe_{int(time.time())}.jsonl"
     _netbytes_log(f"ciclo inicio dur={duration_s}s "
@@ -585,7 +654,8 @@ def _netbytes_loop() -> None:
     _netbytes_log("hilo netbytes iniciado")
     enabled_prev: bool | None = None
     while not _net_stop.is_set():
-        enabled = bool(_cfg.get("net_bytes_enabled"))
+        enabled = bool(_cfg.get("net_bytes_enabled")) and bool(
+            _cfg.get("monitoring_enabled", True))
         if enabled != enabled_prev:
             # El config se carga en memoria al arrancar: una edicion del
             # fichero con el servidor vivo NO se ve hasta restart.
@@ -781,6 +851,8 @@ def _start() -> None:
                          on_new_event=_on_new_ai_event,
                          on_beacon=_on_beacon)
     monitor.start()
+    if not _cfg.get("monitoring_enabled", True):
+        _set_monitoring(False)
     _auto_stop.clear()
     threading.Thread(target=_auto_classify_loop, daemon=True,
                      name="ai-netwatch-auto-classify").start()
@@ -807,17 +879,26 @@ def _stop() -> None:
 
 
 def _mask(cfg: dict) -> dict:
+    """La key Jev nunca sale del servidor: se devuelve vacia y un flag.
+
+    Devolver la mascara ('***') era el bug U-01: la UI reponia el input con
+    esa mascara y un 'Guardar' sin escribir nada sobrescribia la key real.
+    Con cadena vacia + `jev_api_key_set` la UI puede mostrar 'ya guardada'
+    sin exponer el secreto ni permitir destruirlo por accidente.
+    """
     out = dict(cfg)
-    if out.get("jev_api_key"):
-        out["jev_api_key"] = "***"
+    out["jev_api_key_set"] = bool(out.get("jev_api_key"))
+    out["jev_api_key"] = ""
     return out
 
 
 class ConfigRequest(BaseModel):
     alerts_enabled: bool | None = None
     alert_webhook_url: str | None = None
+    monitoring_enabled: bool | None = None
     jev_enabled: bool | None = None
     jev_api_key: str | None = None
+    jev_api_key_clear: bool | None = None
     llm_enabled: bool | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
@@ -838,6 +919,9 @@ class ConfigRequest(BaseModel):
     net_bytes_duration_s: int | None = None
     net_bytes_cycle_s: int | None = None
     llm_review_max: int | None = None
+    laya_enabled: bool | None = None
+    laya_base_url: str | None = None
+    laya_model: str | None = None
 
 
 class TriageRequest(BaseModel):
@@ -872,6 +956,9 @@ def get_config():
 
 @app.post("/api/config")
 def set_config(req: ConfigRequest):
+    if req.monitoring_enabled is not None:
+        _cfg["monitoring_enabled"] = bool(req.monitoring_enabled)
+        _set_monitoring(_cfg["monitoring_enabled"])
     if req.alerts_enabled is not None:
         _cfg["alerts_enabled"] = bool(req.alerts_enabled)
     if req.alert_webhook_url is not None:
@@ -885,8 +972,32 @@ def set_config(req: ConfigRequest):
             alerts.webhook_url = url
     if req.jev_enabled is not None:
         _cfg["jev_enabled"] = req.jev_enabled
-    if req.jev_api_key is not None:
-        _cfg["jev_api_key"] = (req.jev_api_key or "").strip()
+    if req.jev_api_key_clear:
+        # Borrado explicito (boton 'Quitar key'): unico camino para vaciar.
+        _cfg["jev_api_key"] = ""
+    elif req.jev_api_key is not None:
+        key = (req.jev_api_key or "").strip()
+        if not key or key == "***":
+            # Campo vacio o mascara devuelta por GET: conservar la existente.
+            pass
+        else:
+            _cfg["jev_api_key"] = key
+    if req.laya_enabled is not None:
+        _cfg["laya_enabled"] = bool(req.laya_enabled)
+    if req.laya_base_url is not None:
+        from urllib import parse as urlparse
+        url = (req.laya_base_url or "").strip()
+        parsed = urlparse.urlparse(url)
+        if url and (
+            parsed.scheme not in ("http", "https") or not parsed.netloc
+            or not is_loopback_url(url)
+        ):
+            raise HTTPException(
+                400, "laya_base_url: solo http(s) loopback (p. ej. http://127.0.0.1:8787/v1/systemone)"
+            )
+        _cfg["laya_base_url"] = url
+    if req.laya_model is not None:
+        _cfg["laya_model"] = (req.laya_model or "").strip()
     if req.llm_enabled is not None:
         _cfg["llm_enabled"] = req.llm_enabled
     if req.llm_base_url is not None:
@@ -1021,6 +1132,21 @@ def test_ai(req: TestRequest):
         cls = answers.get("f0_class") or {}
         return {"ok": True, "model": data.get("model"),
                 "answer": cls.get("choice") if isinstance(cls, dict) else None}
+    if req.target == "laya":
+        try:
+            _ensure_laya_key()
+            from jev_triage import triage_events as _te
+            r = _te(
+                [{"title": "selftest", "process": "netwatch-selftest",
+                  "dest_ip": "127.0.0.1", "dest_port": 0,
+                  "catalog_domain": "selftest"}],
+                "local", _cfg.get("laya_base_url"), _cfg.get("laya_model"),
+                backend="local")
+        except Exception as e:  # noqa: BLE001
+            return {"status": "error", "reason": f"{type(e).__name__}: {e}"}
+        return {"status": r.get("status"), "reason": r.get("reason"),
+                "model": r.get("model"),
+                "verdict": (r.get("verdicts") or {}).get("0", {}).get("verdict")}
     if req.target == "llm":
         from llm_local import _chat, is_loopback_url
         base = _effective_llm_base().strip()
@@ -1127,6 +1253,50 @@ def list_events(limit: int = 200, process: str | None = None,
     return {"events": rows, "grouped": grouped}
 
 
+def _finetune_capture(result: dict, fresh_events: list[dict]) -> None:
+    """Fase F: captura ADITIVA de la respuesta cruda de Jev del triaje live.
+
+    Aneja una linea por evento NUEVO a data/finetune/jev_raw.jsonl con
+    {event_id, ts, state, questions, raw}; las claves f{gi}_* de `raw`
+    quedan mapeadas al event_id real mediante ese campo. Duplicados por
+    event_id: se omiten. Nunca lanza: un fallo aqui no rompe /api/triage.
+    """
+    if result.get("status") != "ok" or not fresh_events:
+        return
+    raw = result.get("raw") or {}
+    if not raw:
+        return
+    try:
+        path = FINE_TUNE_DIR / "jev_raw.jsonl"
+        existing: set[int] = set()
+        if path.exists():
+            for line in path.read_text(encoding="utf-8").splitlines():
+                try:
+                    existing.add(int(json.loads(line)["event_id"]))
+                except Exception:
+                    continue
+        lines: list[str] = []
+        for j, e in enumerate(fresh_events):
+            eid = int(e["id"])
+            if eid in existing:
+                continue
+            raw_ev = raw.get(str(j)) or {}
+            if not raw_ev:
+                continue
+            rec = {"event_id": eid, "ts": e.get("ts"),
+                   "state": _state_for(e),
+                   "questions": _questions_for(j),
+                   "raw": raw_ev}
+            lines.append(json.dumps(rec, ensure_ascii=False))
+        if not lines:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    except Exception:
+        pass
+
+
 @app.post("/api/triage")
 def triage(req: TriageRequest):
     st = _req_store()
@@ -1152,15 +1322,22 @@ def triage(req: TriageRequest):
     # triaje OK (mismo id y misma firma). Display + coste: Jev solo ve
     # lo nuevo; un triaje con error vacia la base y el siguiente es
     # completo (auto-sanante).
-    reuse, last_model = _triage_reuse_map(st)
+    reuse, last_model, laya_reuse = _triage_reuse_map(st)
     fresh_idx: list[int] = []
     reused_at: dict[int, dict] = {}
+    laya_reused: dict[int, dict] = {}
+    laya_fresh_idx: list[int] = []
     for i, e in enumerate(events):
         r = reuse.get(int(e["id"]))
         if r is not None and r["sig"] == e["sig"]:
             reused_at[i] = r
         else:
             fresh_idx.append(i)
+        lr = laya_reuse.get(int(e["id"]))
+        if lr is not None and lr["sig"] == e["sig"]:
+            laya_reused[i] = lr
+        else:
+            laya_fresh_idx.append(i)
 
     result: dict = {"status": "skipped", "reason": "ai_disabled"}
     if _cfg.get("jev_enabled") and _cfg.get("jev_api_key"):
@@ -1183,6 +1360,37 @@ def triage(req: TriageRequest):
             if v is not None:
                 verdicts[str(i)] = v
     result["verdicts"] = verdicts
+    # Fase F: captura cruda del triaje live (aditiva, fail-safe).
+    _finetune_capture(result, [events[i] for i in fresh_idx])
+
+    # LAYA (local): segunda opinion ADITIVA y fail-safe, con cache por firma
+    # (como Jev). Jev sigue siendo el juez; si el serve local falla, el triaje
+    # Jev no cambia. Veredictos clave = indice GLOBAL del evento.
+    laya: dict | None = None
+    if _cfg.get("laya_enabled"):
+        lv: dict[str, dict] = {str(i): r["verdict"] for i, r in laya_reused.items()}
+        err: str | None = None
+        if laya_fresh_idx:
+            try:
+                _ensure_laya_key()
+                lres = triage_events([events[i] for i in laya_fresh_idx],
+                                     "local", _cfg.get("laya_base_url"),
+                                     _cfg.get("laya_model"), backend="local")
+                if lres.get("status") == "ok":
+                    for j, i in enumerate(laya_fresh_idx):
+                        v = (lres.get("verdicts") or {}).get(str(j))
+                        if v is not None:
+                            lv[str(i)] = v
+                else:
+                    err = lres.get("reason")
+            except Exception as e:  # noqa: BLE001
+                err = str(e)[:200]
+        if lv:
+            laya = {"status": "ok", "model": _cfg.get("laya_model"),
+                    "count": len(lv), "verdicts": lv,
+                    "fresh": len(laya_fresh_idx), "reused": len(laya_reused)}
+        elif err:
+            laya = {"status": "error", "reason": err}
 
     def _flagged(v: dict) -> bool:
         return (v.get("severity_score") is not None
@@ -1218,7 +1426,7 @@ def triage(req: TriageRequest):
          "pre_score": e["pre_score"], "pre_flags": e["pre_flags"],
          "sig": e["sig"], "reused": i in reused_at}
         for i, e in enumerate(events)],
-        "jev": result, "llm_explanations": explanations,
+        "jev": result, "laya": laya, "llm_explanations": explanations,
         "dedup": {"reused": len(reused_at), "fresh": len(fresh_idx)}}
     st.save_triage(result.get("status", "error"), result.get("model"), payload)
     return payload
@@ -1298,7 +1506,8 @@ def _investigate_context(e: dict) -> dict:
     }
 
 
-_REVIEW_SCOPES = ("autonomous", "unapproved", "flagged", "untriaged")
+_REVIEW_SCOPES = ("autonomous", "unapproved", "flagged", "untriaged",
+                  "quarantine")
 
 
 def _review_scope_events(st, scope: str) -> list[dict]:
@@ -1324,6 +1533,11 @@ def _review_scope_events(st, scope: str) -> list[dict]:
         return [e for e in rows
                 if e["provider"]
                 and not _is_approved_provider(e["provider"])]
+    if scope == "quarantine":
+        black = _blacklisted_keys()
+        return [e for e in rows
+                if _finding_key(str(e.get("process") or ""),
+                                str(e.get("provider") or "")) in black]
     t = st.latest_triage()
     if not t:
         return []
@@ -1379,14 +1593,16 @@ def review(req: ReviewRequest):
         r = investigate_event(base, model, _investigate_context(e))
         pq = str(r.get("porque") or "")
         ef = str(r.get("evidencia_faltante") or "")
+        acc = r.get("accion")
         row = {"event_id": int(e["id"]),
                "evaluacion": r.get("evaluacion"),
+               "accion": acc,
                "porque": pq,
                "evidencia_faltante": ef}
         if r.get("status") == "ok":
             # investigate_event valida evaluacion en ok; str() por si acaso.
             st.save_review(int(e["id"]),
-                           str(r.get("evaluacion") or ""), pq, ef)
+                           str(r.get("evaluacion") or ""), pq, ef, acc)
         else:
             # Fail-safe por evento: no persistir transitorios, pero si
             # devolver la fila con evaluacion None (no fabricar).
@@ -1845,22 +2061,22 @@ def _latest_review_by_event() -> dict[int, dict]:
     return out
 
 
-def _triage_reuse_map(st) -> tuple[dict[int, dict], str | None]:
+def _triage_reuse_map(st) -> tuple[dict[int, dict], str | None, dict[int, dict]]:
     """I1: base de reutilizacion del ultimo triaje OK.
 
-    Devuelve ({event_id: {sig, verdict, explanation}}, modelo).
-    Solo cuenta un triaje con status ok (payload.jev.status == "ok"):
-    si el ultimo triaje fallo o fue skipped, la base queda vacia y el
-    siguiente es completo (auto-sanante). Las explicaciones se indexan
-    por event_id (campo id de cada item).
+    Devuelve ({event_id: {sig, verdict, explanation}}, modelo,
+    {event_id: {sig, verdict}} de LAYA). Solo cuenta un triaje con status
+    ok (payload.jev.status == "ok"): si el ultimo triaje fallo o fue
+    skipped, la base queda vacia y el siguiente es completo (auto-sanante).
+    Las explicaciones se indexan por event_id (campo id de cada item).
     """
     last = st.latest_triage()
     if not last or last.get("status") != "ok":
-        return {}, None
+        return {}, None, {}
     payload = last.get("payload") or {}
     jev = payload.get("jev") or {}
     if jev.get("status") != "ok":
-        return {}, None
+        return {}, None, {}
     verdicts = jev.get("verdicts") or {}
     expl_by_id: dict[int, dict] = {}
     for x in (payload.get("llm_explanations") or []):
@@ -1870,18 +2086,38 @@ def _triage_reuse_map(st) -> tuple[dict[int, dict], str | None]:
             except (TypeError, ValueError):
                 continue
     reuse: dict[int, dict] = {}
+    laya_reuse: dict[int, dict] = {}
+    laya = payload.get("laya") or {}
+    laya_ok = laya.get("status") == "ok"
+    laya_v = (laya.get("verdicts") or {}) if laya_ok else {}
     for i, ev in enumerate(payload.get("events") or []):
         v = verdicts.get(str(i))
         sig = ev.get("sig")
-        if v is None or not sig:
+        if sig is None:
             continue
         try:
             eid = int(ev["id"])
         except (KeyError, TypeError, ValueError):
             continue
-        reuse[eid] = {"sig": str(sig), "verdict": v,
-                     "explanation": expl_by_id.get(eid)}
-    return reuse, jev.get("model")
+        if v is not None:
+            reuse[eid] = {"sig": str(sig), "verdict": v,
+                          "explanation": expl_by_id.get(eid)}
+        lv = laya_v.get(str(i))
+        if lv is not None:
+            laya_reuse[eid] = {"sig": str(sig), "verdict": lv}
+    return reuse, jev.get("model"), laya_reuse
+
+
+def _finding_key(process: str, provider: str) -> str:
+    return f"{process}|{provider}"
+
+
+def _suppressed_keys() -> set[str]:
+    return {str(s) for s in (_cfg.get("suppressed_findings") or [])}
+
+
+def _blacklisted_keys() -> set[str]:
+    return {str(s) for s in (_cfg.get("blacklist") or [])}
 
 
 @app.get("/api/findings")
@@ -1945,7 +2181,70 @@ def findings():
             "event_ids": [e["id"] for e in members][:20],
         })
     out.sort(key=lambda f: (-f["score"], -(f["seen_count"] or 0)))
-    return {"findings": out}
+    supp = _suppressed_keys()
+    black = _blacklisted_keys()
+    visible: list[dict] = []
+    quarantined: list[dict] = []
+    for f in out:
+        k = _finding_key(str(f["process"]), str(f["provider"]))
+        if k in supp:
+            continue
+        if k in black:
+            quarantined.append(f)
+        else:
+            visible.append(f)
+    return {"findings": visible, "suppressed": sorted(s for s in supp),
+            "blacklisted": quarantined}
+
+
+@app.post("/api/findings/suppress")
+def suppress_finding(process: str, provider: str = ""):
+    """Soft-delete de una fila (proceso, proveedor) en la UI: los eventos
+    siguen en la base de datos; solo se oculta la fila de hallazgos/triaje."""
+    k = _finding_key(process.strip(), provider.strip())
+    if not process.strip():
+        raise HTTPException(400, "process requerido")
+    if k not in _cfg["suppressed_findings"]:
+        _cfg["suppressed_findings"].append(k)
+        _save_config()
+    return {"ok": True, "key": k, "suppressed": len(_cfg["suppressed_findings"])}
+
+
+@app.post("/api/findings/restore")
+def restore_finding(process: str, provider: str = ""):
+    k = _finding_key(process.strip(), provider.strip())
+    if k in _cfg["suppressed_findings"]:
+        _cfg["suppressed_findings"].remove(k)
+        _save_config()
+    return {"ok": True, "key": k, "suppressed": len(_cfg["suppressed_findings"])}
+
+
+@app.post("/api/findings/blacklist")
+def blacklist_finding(process: str, provider: str = ""):
+    """Lista negra (cuarentena): aparca la fila a la espera de revision LLM.
+    Los eventos siguen en db; el hallazgo pasa a 'cuarentena' hasta que un
+    LLM lo examine (scope 'quarantine' de /api/review)."""
+    if not process.strip():
+        raise HTTPException(400, "process requerido")
+    k = _finding_key(process.strip(), provider.strip())
+    if k not in _cfg["blacklist"]:
+        _cfg["blacklist"].append(k)
+        _save_config()
+    # Si estaba oculto (suppressed), sacarlo de ahi: cuarentena y oculto
+    # son estados distintos; la cuarentena manda.
+    if k in _cfg["suppressed_findings"]:
+        _cfg["suppressed_findings"].remove(k)
+        _save_config()
+    return {"ok": True, "key": k, "blacklisted": len(_cfg["blacklist"])}
+
+
+@app.post("/api/findings/unblacklist")
+def unblacklist_finding(process: str, provider: str = ""):
+    k = _finding_key(process.strip(), provider.strip())
+    if k in _cfg["blacklist"]:
+        _cfg["blacklist"].remove(k)
+        _save_config()
+    return {"ok": True, "key": k, "blacklisted": len(_cfg["blacklist"])}
 
 
 @app.get("/api/facets")

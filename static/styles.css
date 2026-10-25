@@ -145,6 +145,18 @@ html[data-theme="light"] button.icon .ic-moon { display: block; }
 html[data-theme="dark"] button.icon .ic-sun { display: block; }
 button.linkbtn { font-size: 13px; }
 
+/* Kill switch global: boton de emergencia de monitoreo on/off. */
+button.monitor-toggle {
+  border-color: var(--v-ok);
+  color: var(--v-ok);
+  font-weight: 600;
+}
+button.monitor-toggle.paused {
+  border-color: var(--v-bad);
+  color: var(--v-bad);
+  background: var(--v-bad-bg);
+}
+
 .table-wrap { overflow-x: auto; }
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -176,6 +188,7 @@ td .cellnum .bar { width: 90px; }
 .v-exfil { color: var(--v-bad); background: var(--v-bad-bg); }
 .v-telemetry { color: var(--v-warn); background: var(--v-warn-bg); }
 .v-unrelated, .v-none { color: var(--v-mut); background: var(--v-mut-bg); }
+.v-undetermined { color: var(--v-mut); background: var(--v-mut-bg); border: 1px dashed currentColor; }
 
 .sevbar { display: inline-flex; gap: 3px; align-items: center; }
 .sevbar i { width: 14px; height: 5px; border-radius: 2px; background: var(--bar-bg); display: inline-block; }
