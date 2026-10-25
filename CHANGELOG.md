@@ -9,9 +9,10 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   severidad solo por color).
 - Ampliar el `select` de ruff (hoy solo E9/F82).
 - Medir el efecto del modo `jev_minimal` (S-07) sobre la concordancia Jev/LAYA.
-- Tag `v2.7` cuando cierre el bloque de seguridad.
+- Tag `v2.7` cuando cierre el bloque de accesibilidad (#6) y la re-registracion
+  elevada de la tarea `AI-NETWATCH-NetBytes` este verificada en otra maquina.
 
-## v2.7 (en curso, sin tag) — bloque de seguridad y UI
+## v2.6 (2026-10-25) — seguridad, UI visual y segunda opinion local
 
 - U-01: la key de Jev ya no se autodestruye al guardar (la mascara `***`
   devuelta por GET se conserva).
@@ -93,6 +94,47 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   -> exports JSON/CSV/PDF/chain/STIX, con comprobacion de que ningun export
   contiene la key y de que alterar una fila rompe la cadena de hashes.
   Suite: 491 OK.
+
+### Cierre de v2.6 (2026-10-25, tarde)
+
+- Juicio local en prosa (`llm_local.investigate_event`): ademas de la etiqueta
+  tipada (`confirm/refuta/insuficiente`) devuelve `coincide`
+  (`coincide/discrepa/dudoso`) y `juicio`, un parrafo en lenguaje llano que
+  explica que hace el proceso, que dice el patron temporal y si el veredicto de
+  Jev es defendible. Persiste en `llm_reviews` (columnas `coincide`, `juicio`,
+  con migracion `ALTER TABLE` idempotente).
+- LLM local apuntado al servicio real: `http://127.0.0.1:8080` con
+  `qwen3.8-flash-next-q2_0` (antes `:8099` / `dirk-qwen3.8-27b-iq3`, puerto
+  cerrado -> `WinError 10061` en las explicaciones).
+- Pestanas de triaje reparadas: la CSP `script-src 'self'` bloqueaba los
+  `onclick` inline, asi que Jev/LAYA no cambiaban. Ahora `data-tt` + listener
+  delegado.
+- Bug del contador de acuerdo: se sumaba `cmpN` pero nunca `cmpOk`, el acuerdo
+  salia siempre 0 %.
+- Panel de **Discrepancias Jev vs LAYA**: tercera pestana con ambas etiquetas,
+  ambas confianzas y criticidad; columna "vs LAYA" en la tabla de Jev para verlas
+  sin cambiar de pestana.
+- Triaje grafico: dos donuts SVG (distribucion de veredictos de Jev y acuerdo
+  Jev/LAYA) en lugar de una barra apilada. La regla `.tcompare .bar > div` ganaba
+  por especificidad y pintaba todos los segmentos del mismo color.
+- Revisiones LLM: `save_review` es upsert por evento (repetir la revision no
+  acumula filas duplicadas; antes `#11` aparecia tres veces). El historial
+  muestra proceso, destino, badges y el juicio en prosa.
+- LLM Inspector: resumen agregado (llamadas, latencia media/mediana/p95, tokens
+  prompt/respuesta, llamadas fallidas), histograma SVG de latencia y egress
+  total en bytes.
+- Ficha de la key de Jev: chip de estado (`activa - fingerprint 73bfffcf`) en
+  lugar del estado metido en el `placeholder`; input con `aria-label`.
+- LAYA: el lanzador `tools/laya_serve_ft.py` carga por defecto el checkpoint
+  fine-tuned `ft-multilingual-2026-10-08-v4` (antes la v1 de 2026-10-04). El
+  supervisor `arranque-laya.ps1` sirve el FT (parametros `-FtLauncher` y
+  `-Checkpoint`) en lugar del checkpoint publico del Hub.
+- Tests: 504 OK (ruff + mypy limpios). Nuevos: juicio en prosa y upsert
+  (`test_investigate`), pestanas y graficas (`test_ui_density`).
+
+Medido con la v2.6 real: acuerdo Jev/LAYA 23/29 (79 %); las 6 discrepancias son
+`expected_ai_use` de Jev frente a `background_exfil_suspect`/`unrelated` de LAYA.
+Jev sigue siendo el juez: la discrepancia se registra, no re-puntua.
 
 ## Pendiente del bloque UI
 

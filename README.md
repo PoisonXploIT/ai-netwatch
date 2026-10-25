@@ -1,6 +1,33 @@
-# AI NetWatch (v2.0-alpha)
+# AI NetWatch (v2.6)
 
 Monitor local de **salidas de red hacia proveedores cloud IA** (OpenAI/Azure, Anthropic, Google, TypeSafe/Jev, Groq, OpenRouter, Mistral, Cohere, Hugging Face, DeepSeek, xAI, Together, Replicate...). Lo que ve: **proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo TCP/UDP + periodicidad + dominio real por SNI, en TLS TCP y QUIC/HTTP-3** de cada conexion establecida a un destino IA. Incluye estadisticas diarias (7+ dias), export JSON/CSV y tema claro/oscuro.
+
+## Novedades de v2.6 (2026-10-25)
+
+- **Segunda opinion local con LAYA**: un modelo fine-tuned propio (checkpoint
+  `ft-multilingual-2026-10-08-v4`) corre en `127.0.0.1:8787` y tria los mismos
+  eventos que Jev. La UI compara ambos lado a lado: gauge de acuerdo, columna
+  "vs LAYA" en la tabla de Jev y una pestana propia de **Discrepancias**.
+  Jev sigue siendo el juez; LAYA es additive y fail-safe.
+- **Juicio en prosa del LLM local**: ademas de la etiqueta tipada
+  (`confirm/refuta/insuficiente`), el modelo escribe un parrafo en lenguaje llano
+  explicando que hace ese proceso, que dice el patron temporal (sesiones, horas,
+  beaconing, autonomia) y si el veredicto tipado es defendible, con la evidencia
+  que falta para decidir.
+- **Triaje grafico**: donut de distribucion de veredictos, donut de acuerdo
+  Jev/LAYA, barras de criticidad y de confianza, histograma de sesiones por hora
+  UTC y barras por proveedor. Todo SVG, con la geometria en atributos y el color
+  en CSS (CSP estricta, sin `unsafe-inline`).
+- **Seguridad**: guard de origen en todos los POST, CORS deny-all, CSP estricta,
+  token de sesion, audit log sin secretos, key de Jev cifrada con DPAPI y
+  expuesta solo como fingerprint de 8 caracteres, prompts y respuestas del
+  inspector cifrados, puerto del inspector restringido a 8000-9999 con deteccion
+  de colision.
+- **LLM Inspector**: resumen agregado (llamadas, latencia media/mediana/p95,
+  tokens, llamadas fallidas), histograma de latencia y egress total en bytes.
+- **Colector de bytes remotos** (ETW Kernel-Network, opt-in): tarea programada
+  elevada que corre `pythonw.exe` sin abrir consola cada 10 minutos.
+- Suite: 504 tests, ruff y mypy en CI.
 
 - Solo loopback (`127.0.0.1`), puerto 8790.
 - **Jev (TypeSafe)** como juez de criticidad, a demanda (boton *Triar eventos con Jev*): clasificacion `expected_ai_use / background_exfil_suspect / telemetry_noise / unrelated`, criticidad 0-3, accion inmediata y **probabilidad de falso positivo** derivada.
