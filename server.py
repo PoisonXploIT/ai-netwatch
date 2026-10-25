@@ -64,6 +64,23 @@ CONFIG_PATH = DATA_DIR / "config.json"
 # /api/health la leen de aqui. Prohibido hardcodearla en el HTML.
 VERSION = "2.6"
 
+
+def _asset_stamp() -> str:
+    """Sello de los assets estaticos.
+
+    `?v=VERSION` no busteaba la cache: la version no sube con cada commit, y
+    el navegador reutilizaba un app.js/styles.css viejos (visto el 2026-10-25:
+    la UI cambiaba en disco y en el navegador seguia la copia anterior). El
+    sello usa el mtime de los ficheros, asi que cualquier cambio de codigo
+    fuerza la recarga.
+    """
+    try:
+        mt = sum((STATIC_DIR / f).stat().st_mtime
+                 for f in ("app.js", "styles.css", "theme.js"))
+    except OSError:
+        mt = 0
+    return f"v{VERSION}-{int(mt)}"
+
 app = FastAPI(title="AI NetWatch")
 
 # --- S4: token de sesion + audit log ---
@@ -2618,6 +2635,7 @@ def index():
     # Version y token se inyectan aqui: la version solo existe en VERSION
     # (U-02) y el token de sesion solo vive en memoria (no se escribe a disco).
     html = html.replace("{{VERSION}}", f"v{VERSION}")
+    html = html.replace("{{ASSETV}}", _asset_stamp())
     html = html.replace(
         "</head>",
         f'<meta name="netwatch-token" content="{_SESSION_TOKEN}">\n</head>',

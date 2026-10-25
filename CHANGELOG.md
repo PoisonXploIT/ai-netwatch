@@ -37,6 +37,27 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 - #11 (U2): cada fila de eventos tiene boton "detalle" con el registro completo
   (id, destino, SNI, catalogo, capa, anomalia, flags, MITRE) y, en las filas
   agrupadas, los miembros (hasta 10) con sus IPs.
+- #6 (continuacion): la Guia pasa a ser una pestana mas (`panel-guia`), ya no un
+  bloque suelto al final del `main`. El boton del header lleva a ella.
+- Densidad: Config agrupada en 4 bloques (Motor de triaje, LLM local, Fuentes de
+  datos, Alertas y retencion); el Panel usa `chips` en lugar de una `.row` por
+  item y la tabla de proveedores se pagina (12 filas + "ver los N restantes");
+  Autonomia pasa de lista de filas a tabla (`aut-table`) paginada (25 + "mostrar
+  mas"); el LLM Inspector pinta 25 llamadas y un boton muestra el resto (antes
+  volcaba hasta 100 sin recortar).
+- Strip de estado bajo el header (`/api/health`, 1 req/min en Resumen): version,
+  estado, kill switch, eventos, llamadas LLM, fuentes activas y key de Jev. Evita
+  el "no hay datos" sin explicacion; las tarjetas vacias incluyen un aviso de
+  como reanudar el monitoreo.
+- Contadores en las pestanas (Hallazgos/Eventos/IA) y pestanas sticky al hacer
+  scroll. Atajos 1..6 para cambiar de pestana (ignorados dentro de un campo).
+- Cache de assets: `?v={{ASSETV}}` = version + suma de mtimes de app.js/styles.css
+  /theme.js. Con `?v=VERSION` el navegador guardaba un app.js viejo aunque el
+  codigo cambiara (causa real del "no hay pestanas", medida el 2026-10-25).
+- `bind()` va envuelto en try/catch: si la UI no arranca, el strip lo dice en vez
+  de dejar la pagina en blanco.
+- Tests: `tests/test_ui_density.py` (13) y `test_ui_a11y` ampliado a 6 pestanas.
+  Suite: 487 OK.
 
 ## Hecho en v2.5(1) (tag v2.5(1))
 

@@ -16,7 +16,7 @@ HTML = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
 JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
 CSS = (ROOT / "static" / "styles.css").read_text(encoding="utf-8")
 
-TABS = ("resumen", "hallazgos", "eventos", "ia", "config")
+TABS = ("resumen", "hallazgos", "eventos", "ia", "config", "guia")
 
 
 class A11yTest(TestCase):

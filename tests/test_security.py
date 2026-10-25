@@ -459,8 +459,12 @@ class TestHealth(SecurityBase):
         # La CSP solo vale si no hay scripts inline: el tema es externo.
         html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
         self.assertNotIn("<script>", html)
-        self.assertIn('<script src="/static/theme.js?v={{VERSION}}"></script>', html)
-        self.assertIn('<script src="/static/app.js?v={{VERSION}}"></script>', html)
+        self.assertIn('<script src="/static/theme.js?v={{ASSETV}}"></script>', html)
+        self.assertIn('<script src="/static/app.js?v={{ASSETV}}"></script>', html)
+        # El sello cambia con el mtime de los assets: ?v=VERSION solo no
+        # busteaba la cache y el navegador seguia sirviendo el JS viejo.
+        self.assertIn("{{ASSETV}}", html)
+        self.assertIn("_asset_stamp", (ROOT / "server.py").read_text(encoding="utf-8"))
 
     def test_no_inline_styles(self):
         # style="..." obligaria a permitir 'unsafe-inline' en la CSP.

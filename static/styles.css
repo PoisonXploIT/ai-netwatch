@@ -100,7 +100,7 @@ main { padding: 8px 24px 32px; max-width: 1280px; }
 .card h2 { margin: 0 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
 .card h3 { margin: 18px 0 8px; font-size: 14px; }
 /* A1: la guía nace oculta; el botón del header la muestra/oculta. */
-.guide-hidden { display: none !important; }
+/* (A1) La guia ya no es un bloque suelto: es una pestana mas (panel-guia). */
 /* A4: columnas ordenables en la tabla de proveedores del panel. */
 .dash-providers th.sortable { cursor: pointer; user-select: none; }
 .dash-providers th.active { font-weight: 700; text-decoration: underline; }
@@ -261,8 +261,48 @@ pre {
 }
 details h4 { margin: 8px 0 2px; font-size: 12px; }
 
+/* v2.6(6) UX: strip de estado, config agrupada, chips y paginacion. */
+.status-strip {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  margin: 4px 0 12px; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card); font-size: 12.5px; color: var(--muted);
+}
+.status-strip b { color: var(--text); font-variant-numeric: tabular-nums; }
+.status-strip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--v-ok); }
+.status-strip .dot.warn { background: var(--v-warn); }
+.status-strip .dot.bad { background: var(--v-bad); }
+
+.cfg-group {
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 6px 10px; margin: 8px 0; background: var(--zebra);
+}
+.cfg-group h3 {
+  margin: 0 0 2px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--muted);
+}
+.cfg-group .row { margin: 4px 0; }
+
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.chip {
+  display: inline-flex; gap: 6px; align-items: center;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px 8px; background: var(--card); font-size: 12.5px;
+}
+.chip .num { color: var(--muted); font-variant-numeric: tabular-nums; }
+.chip a { color: inherit; text-decoration: none; }
+.chip a:hover { color: var(--accent); }
+
+.pager { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.empty {
+  border: 1px dashed var(--border); border-radius: 10px;
+  padding: 10px 12px; margin: 8px 0; color: var(--muted); font-size: 13px;
+}
+.tab .count { font-size: 11px; opacity: .75; font-variant-numeric: tabular-nums; }
+
 /* v2.6 UX: pestanas + vista de hallazgos */
-.tabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 6px 0; }
+.tab:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tab { background: var(--btn-bg); border: 1px solid var(--btn-border);
   color: var(--text); padding: 7px 14px; border-radius: 8px;
   cursor: pointer; font-size: 14px; }

@@ -368,6 +368,7 @@ function renderEvents() {
     ? `<div class="row"><button class="linkbtn" id="btn-events-more">Mostrar ${EVENTS.events.length - list.length} mas (${EVENTS.events.length} en total)</button></div>`
     : "";
   wrap.innerHTML = eventsTableHtml(list, EVENTS.grouped) + more;
+  setTabCount("eventos", EVENTS.events.length);
   wireInvestigate(wrap);
   wireEventDetail(wrap);
   const mb = document.getElementById("btn-events-more");
@@ -405,6 +406,7 @@ const REFRESH_JOBS = [
   { tab: "config", fn: refreshRules, every: 60000 },      // 1/min
   { tab: "resumen", fn: refreshStats, every: 60000 },     // 1/min
   { tab: "resumen", fn: refreshDashboard, every: 60000 }, // 1/min
+  { tab: "resumen", fn: refreshHealth, every: 60000 },    // 1/min
   // Global: las alertas salen como toast, no dependen de la pestaña.
   { tab: null, fn: refreshAlerts, every: 60000 },         // 1/min
 ];
@@ -437,6 +439,45 @@ function showTab(name) {
 }
 
 function scoreClass(s) { return s >= 60 ? "sc-high" : s >= 30 ? "sc-mid" : "sc-low"; }
+
+// Contador en la pestana: permite ver donde hay datos sin abrir la pestana.
+function setTabCount(name, n) {
+  const tab = document.querySelector(`.tab[data-tab="${name}"]`);
+  if (!tab) return;
+  let c = tab.querySelector(".count");
+  if (!c) {
+    c = document.createElement("span");
+    c.className = "count";
+    tab.appendChild(c);
+  }
+  c.textContent = n ? `(${n})` : "";
+}
+
+// Strip de estado bajo el header: evita el "no hay datos" sin explicacion.
+async function refreshHealth() {
+  const strip = document.getElementById("status-strip");
+  if (!strip) return;
+  try {
+    const h = await api("/api/health");
+    const dot = h.status === "ok" ? ""
+      : (h.monitoring_enabled === false ? "warn" : "bad");
+    const src = Object.entries(h.sources || {}).filter(([k, v]) => {
+      if (k === "monitor" || k === "jev_key_set") return false;
+      return v === true;
+    }).map(([k]) => k);
+    const paused = h.monitoring_enabled === false
+      ? `<b>monitor pausado</b> (kill switch: no es un fallo)` : "monitor activo";
+    strip.innerHTML = `<span class="dot ${dot}"></span>` +
+      `<span>v${esc(h.version || "?")} · estado <b>${esc(h.status)}</b></span>` +
+      `<span>${paused}</span>` +
+      `<span>eventos <b>${h.events ?? 0}</b></span>` +
+      `<span>llamadas LLM <b>${h.llm_calls ?? 0}</b></span>` +
+      `<span>fuentes: ${src.length ? esc(src.join(", ")) : "ninguna"}</span>` +
+      `<span>Jev: ${h.jev_key_set ? "key OK" : "sin key"}</span>`;
+  } catch (e) {
+    strip.innerHTML = `<span class="dot bad"></span><span>sin respuesta del servidor (${esc(String(e.message || e))})</span>`;
+  }
+}
 
 function findingDetail(f) {
   const parts = [];
@@ -586,6 +627,7 @@ function renderFindings() {
     ? `<div class="row"><button class="linkbtn" id="btn-findings-more">Mostrar ${list.length - shown.length} mas (${list.length} de ${total})</button></div>`
     : `<p class="hint">${list.length} hallazgos mostrados de ${total} (filtrados).</p>`;
   wrap.innerHTML = findingsHtml(shown, FINDINGS.suppressed, FINDINGS.blacklisted) + more;
+  setTabCount("hallazgos", list.length);
   wireFindings(wrap);
   const mb = document.getElementById("btn-findings-more");
   if (mb) mb.onclick = () => { findingsShown += 25; renderFindings(); };
@@ -724,7 +766,7 @@ function wireInvestigate(wrap) {
 }
 
 function llmCallsHtml(calls) {
-  if (!calls.length) return `<div class="hint">Sin llamadas registradas. Con el inspector activo, apunta el cliente al puerto del proxy.</div>`;
+  if (!calls.length) return `<div class="empty">Sin llamadas registradas. Con el inspector activo, apunta el cliente al puerto del proxy.</div>`;
   const totReq = calls.reduce((s, c) => s + (c.request_bytes || 0), 0);
   const totResp = calls.reduce((s, c) => s + (c.response_bytes || 0), 0);
   const head = `<div class="small mono">Total (últimas ${calls.length}): egress ${fmtBytes(totReq)} hacia el LLM · ${fmtBytes(totResp)} de vuelta</div>`;
@@ -744,10 +786,28 @@ function llmCallsHtml(calls) {
   }).join("");
 }
 
+let LLM_CALLS = [];
+let llmCallsShown = 25;
+
+function renderLlmCalls() {
+  const wrap = document.getElementById("llm-calls-wrap");
+  if (!wrap) return;
+  const shown = LLM_CALLS.slice(0, llmCallsShown);
+  const rest = LLM_CALLS.length - shown.length;
+  const pager = rest > 0
+    ? `<div class="pager"><button class="linkbtn" id="btn-llm-more">Mostrar las ${rest} restantes (${LLM_CALLS.length} en total)</button></div>`
+    : "";
+  wrap.innerHTML = llmCallsHtml(shown) + pager;
+  const mb = document.getElementById("btn-llm-more");
+  if (mb) mb.onclick = () => { llmCallsShown += 25; renderLlmCalls(); };
+}
+
 async function refreshLlmCalls() {
   try {
     const d = await api("/api/llm/calls?limit=100");
-    document.getElementById("llm-calls-wrap").innerHTML = llmCallsHtml(d.calls);
+    LLM_CALLS = d.calls || [];
+    setTabCount("ia", LLM_CALLS.length);
+    renderLlmCalls();
   } catch (e) { /* server caído */ }
 }
 
@@ -807,6 +867,8 @@ function autQuery() {
   return p.toString();
 }
 
+let autShown = 25;
+
 async function refreshAutonomy() {
   const wrap = document.getElementById("autonomy-wrap");
   if (!wrap) return;
@@ -835,7 +897,7 @@ async function refreshAutonomy() {
       counters.textContent = `Veredictos (eventos vivos): autónomo ${c.autonomous ?? 0} · programado ${c.scheduled ?? 0} · usuario ${c.user_driven ?? 0} · desconocido ${c.unknown ?? 0}`;
     }
     if (!a.events.length) {
-      html += '<p class="hint">Sin eventos con los filtros actuales.</p>';
+      html += '<div class="empty">Sin eventos con los filtros actuales. Si el monitoreo está pausado (kill switch), reanúdalo desde la cabecera.</div>';
     } else if (a.grouped) {
       // v2.6(4): colapsar por proveedor — un proveedor recibe de varios
       // procesos (y de muchos pid:XXXX sin resolver); una fila por
@@ -858,19 +920,28 @@ async function refreshAutonomy() {
       }
       const ordered = [...byProv.values()].sort(
         (x, y) => (x.verdict === "unknown") - (y.verdict === "unknown"));
-      html += ordered.map((b) => {
-        const vb = autonomyBadge(b.verdict, null)
-          || '<span class="hint">desconocido</span>';
-        const procs = [...b.procs];
-        const shown = procs.slice(0, 6).join(", ");
-        const rest = procs.length - Math.min(6, procs.length);
-        return `<div class="row">
-        <span class="mono">${esc(b.provider)}${kindBadge(b.kind)}</span>
-        <span class="hint">${vb} · ${procs.length} proceso(s): ${esc(shown)}${rest > 0 ? ` (+${rest})` : ""} · ${b.sessions} sesiones · ${b.polls} polls · último ${esc(b.last)}</span>
-      </div>`;
-      }).join("");
+      const shown = ordered.slice(0, autShown);
+      const rest = ordered.length - shown.length;
+      html += `<table class="aut-table">
+        <thead><tr><th>Proveedor</th><th>Veredicto</th><th>Procesos</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Último</th></tr></thead>
+        <tbody>${shown.map((b) => {
+          const vb = autonomyBadge(b.verdict, null)
+            || '<span class="hint">desconocido</span>';
+          const procs = [...b.procs];
+          const shownProcs = procs.slice(0, 4).join(", ");
+          const more = procs.length - Math.min(4, procs.length);
+          return `<tr>
+            <td class="mono">${esc(b.provider)}${kindBadge(b.kind)}</td>
+            <td>${vb}</td>
+            <td class="small">${esc(shownProcs)}${more > 0 ? ` (+${more})` : ""}</td>
+            <td class="num">${b.sessions}</td>
+            <td class="num">${b.polls}</td>
+            <td class="mono small">${esc(b.last)}</td>
+          </tr>`;
+        }).join("")}</tbody></table>` +
+        (rest > 0 ? `<div class="pager"><button class="linkbtn" id="btn-aut-more">Mostrar ${rest} más (${ordered.length} proveedores)</button></div>` : "");
     } else {
-      html += a.events.map(e => {
+      html += a.events.slice(0, autShown).map(e => {
         const left = `${esc(e.process)} → ${esc(e.dest_host || e.dest_ip)}:${e.dest_port}`;
         const vb = autonomyBadge(e.autonomy_verdict, e.autonomy_score)
           || '<span class="hint">desconocido</span>';
@@ -878,9 +949,13 @@ async function refreshAutonomy() {
         <span class="mono">${left}</span>
         <span class="hint">${vb} · flags ${esc(e.autonomy_flags || "")} · score ${e.autonomy_score ?? "?"} · último ${esc(e.last_seen)}</span>
       </div>`;
-      }).join("");
+      }).join("") + (a.events.length > autShown
+        ? `<div class="pager"><button class="linkbtn" id="btn-aut-more">Mostrar ${a.events.length - autShown} más</button></div>`
+        : "");
     }
     wrap.innerHTML = html;
+    const mb = document.getElementById("btn-aut-more");
+    if (mb) mb.onclick = () => { autShown += 25; refreshAutonomy(); };
   } catch (e) { /* sin datos aún */ }
 }
 
@@ -1003,6 +1078,7 @@ async function refreshRules() {
 let dashDays = 7;
 let dashSortKey = "seen_count";
 let dashSortDir = -1;
+let dashProvShown = 12;
 
 function providersTableHtml(items) {
   if (!items.length) return `<div class="hint">Sin proveedores en la ventana.</div>`;
@@ -1016,61 +1092,78 @@ function providersTableHtml(items) {
   });
   const th = (key, label) =>
     `<th class="sortable${dashSortKey === key ? " active" : ""}" data-sort="${key}">${label}</th>`;
-  const rows = sorted.map(i => `<tr>
+  const shown = sorted.slice(0, dashProvShown);
+  const rest = sorted.length - shown.length;
+  const rows = shown.map(i => `<tr>
     <td class="mono">${esc(i.name)}</td>
     <td>${kindLabel[i.kind] || esc(i.kind || "")}</td>
     <td>${aiLayerHtml(i.layer)}</td>
     ${numCell(i.seen_count, i.seen_count / max)}
   </tr>`).join("");
+  const pager = rest > 0
+    ? `<div class="pager"><button class="linkbtn" id="btn-prov-more">Ver los ${rest} restantes (${sorted.length} proveedores)</button></div>`
+    : "";
   return `<table class="dash-providers">
     <thead><tr>${th("name", "Proveedor")}<th>Tipo</th><th>Capa</th>${th("seen_count", "Presencias")}</tr></thead>
     <tbody>${rows}</tbody>
-  </table>`;
+  </table>${pager}`;
 }
 
 function renderDashboard(d) {
   const wrap = document.getElementById("dashboard-wrap");
   if (!wrap) return;
+  // v2.6(6): densidad. Antes: una .row por item (12 px de margen cada una).
+  // Ahora: chips inline y una sola tabla de proveedores paginada.
   const topList = (items, label) => items.length
-    ? `<p class="hint">${label}</p>` + items.map(i =>
-      `<div class="row"><span class="mono">${esc(i.name)}</span>` +
+    ? `<p class="hint">${label}</p><div class="chips">` + items.map(i =>
+      `<span class="chip"><span class="mono">${esc(i.name)}</span>` +
       (i.sdk ? ` <span class="hint">[${esc(i.sdk)}]</span>` : "") +
-      `<span class="hint">${i.seen_count} presencias</span></div>`).join("")
+      `<span class="num">${i.seen_count}</span></span>`).join("") + `</div>`
     : "";
   const layers = d.layers.length
-    ? d.layers.map(l => `${l.layer}: ${l.seen_count}`).join(" · ")
+    ? d.layers.map(l => `${l.layer}: ${l.seen_count}`).join(" / ")
     : "sin datos";
   const llm = d.llm_calls
-    ? `llamadas: ${d.llm_calls.calls} · tokens: ${(d.llm_calls.prompt_tokens || 0) + (d.llm_calls.completion_tokens || 0)} · bytes locales: ${fmtBytes((d.llm_calls.request_bytes || 0) + (d.llm_calls.response_bytes || 0))}`
+    ? `${d.llm_calls.calls} llamadas · ${(d.llm_calls.prompt_tokens || 0) + (d.llm_calls.completion_tokens || 0)} tokens · ${fmtBytes((d.llm_calls.request_bytes || 0) + (d.llm_calls.response_bytes || 0))}`
     : "inspector sin datos";
-  const daily = d.daily.map(x => `${x.date}: ${x.events} ev / ${x.triages} tri`).join(" · ");
+  const daily = d.daily.map(x => `${x.date.slice(5)}: ${x.events} ev / ${x.triages} tri`).join(" · ");
   // v2.3: cloud_bytes disponible -> total + desglose por proveedor con
   // label api/web/cdn y hostname resuelto cuando el provider es 'desconocido'.
   const cb = d.cloud_bytes || {};
   const kindLabel = { api: "API", web: "web", cdn: "CDN" };
-  const provRows = (cb.by_provider || []).map(p =>
-    `<div class="row"><span class="mono">${esc(p.provider)}</span>` +
+  const provAll = cb.by_provider || [];
+  const provShown = provAll.slice(0, 8);
+  const provRest = provAll.length - provShown.length;
+  const provRows = provShown.map(p =>
+    `<span class="chip"><span class="mono">${esc(p.provider)}</span>` +
     (p.host && p.host !== p.provider ? ` <span class="hint">(${esc(p.host)})</span>` : "") +
     (kindLabel[p.kind] ? ` <span class="hint">[${kindLabel[p.kind]}]</span>` : "") +
-    ` <span class="mono">${fmtBytes(p.bytes)}</span></div>`).join("");
+    ` <span class="num">${fmtBytes(p.bytes)}</span></span>`).join("");
+  const restLine = provRest > 0
+    ? `<span class="hint">+${provRest} proveedor(es) más</span>` : "";
   const cloudLine = cb.available
-    ? `<div class="row"><b>Bytes cloud (TLS remoto)</b>: <span class="mono">${fmtBytes(cb.total_bytes || 0)}</span>${cb.spawn_method ? ` <span class="hint">(${esc(cb.spawn_method)})</span>` : ""}</div>${provRows}`
+    ? `<div class="row"><b>Bytes cloud (TLS remoto)</b>: <span class="mono">${fmtBytes(cb.total_bytes || 0)}</span>${cb.spawn_method ? ` <span class="hint">(${esc(cb.spawn_method)})</span>` : ""}</div><div class="chips">${provRows}${restLine}</div>`
     : `<div class="row"><span class="hint">Bytes cloud: no disponible para TLS remoto (${esc(cb.reason || "")}).</span></div>`;
   // A4: resumen agregado de la ventana (totales y cardinalidades).
   const s = d.summary || {};
   const sumLine = s.events != null
-    ? `<div class="row"><span class="hint">Resumen (${d.days} días): ${s.events} eventos · ${s.seen_total} presencias · ${s.processes} procesos · ${s.providers} proveedores</span></div>`
+    ? `<div class="chips"><span class="chip"><span class="hint">Resumen (${d.days} días)</span><b class="num">${s.events} eventos</b><span class="num">${s.seen_total} presencias</span><span class="num">${s.processes} procesos</span><span class="num">${s.providers} proveedores</span></span></div>`
+    : "";
+  const empty = !d.top_providers.length && !d.daily.length
+    ? `<div class="empty">Sin datos en la ventana. Si el monitoreo está pausado (kill switch), reanúdalo con el botón de la cabecera; los eventos aparecen en cuanto hay conexiones IA.</div>`
     : "";
   wrap.innerHTML = `
-    <div class="row"><span class="hint">Actividad (${d.days} días): ${daily || "sin datos"}</span></div>
+    ${empty}
+    <div class="chips">
+      <span class="chip"><span class="hint">Capas</span><span class="num">${layers}</span></span>
+      <span class="chip"><a href="#shadow-card">Shadow AI</a><span class="num">${d.shadow_count}</span></span>
+      <span class="chip"><span class="hint">LLM Inspector</span><span class="num">${llm}</span></span>
+    </div>
     ${sumLine}
-    <p class="hint">Top proveedores por presencia (clic en cabecera para ordenar)</p>
+    <div class="row"><span class="hint">Actividad (${d.days} días): ${daily || "sin datos"}</span></div>
     ${providersTableHtml(d.top_providers)}
     ${topList(d.top_processes, "Top procesos")}
     <div id="dash-sdk-block"></div>
-    <div class="row"><span class="hint">Capas: ${layers}</span></div>
-    <div class="row"><a href="#shadow-card" class="hint">Shadow AI: ${d.shadow_count} proveedor(es) no aprobado(s)</a></div>
-    <div class="row"><span class="hint">LLM Inspector (local): ${llm}</span></div>
     ${cloudLine}`;
   // A4: orden por cabecera (sin re-fetch; solo re-render con el dato cacheado).
   wrap.querySelectorAll("th.sortable").forEach(thEl => {
@@ -1081,6 +1174,8 @@ function renderDashboard(d) {
       renderDashboard(d);
     };
   });
+  const pm = document.getElementById("btn-prov-more");
+  if (pm) pm.onclick = () => { dashProvShown += 12; renderDashboard(d); };
 }
 
 async function refreshDashboard() {
@@ -1229,13 +1324,8 @@ function bind() {
   const $ = (id) => document.getElementById(id);
 
   $("btn-theme").addEventListener("click", themeToggle);
-  // A1: la guía nace oculta; el botón la muestra/oculta (ya no hace scroll).
-  $("btn-guide").addEventListener("click", () => {
-    const g = document.getElementById("guide-card");
-    if (!g) return;
-    const hidden = g.classList.toggle("guide-hidden");
-    $("btn-guide").setAttribute("aria-expanded", String(!hidden));
-  });
+  // A1: la guia es ya una pestana; el boton del header lleva a ella.
+  $("btn-guide").addEventListener("click", () => showTab("guia"));
   // Kill switch global: pausa/reanuda el monitoreo sin reiniciar el server.
   $("btn-monitor").addEventListener("click", async () => {
     const btn = $("btn-monitor");
@@ -1501,6 +1591,16 @@ function bind() {
   document.querySelectorAll(".tab").forEach((t) =>
     t.addEventListener("click", () => showTab(t.dataset.tab)));
 
+  // Atajos 1..6 para moverse entre pestanas (ignorados dentro de un campo).
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const tag = (e.target && e.target.tagName) || "";
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(tag)) return;
+    const map = { "1": "resumen", "2": "hallazgos", "3": "eventos", "4": "ia", "5": "config", "6": "guia" };
+    const t = map[e.key];
+    if (t) showTab(t);
+  });
+
   loadConfig();
   loadLatestTriage();
   loadReviewHistory();
@@ -1510,4 +1610,14 @@ function bind() {
   startRefreshJobs();
 }
 
-document.addEventListener("DOMContentLoaded", bind);
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    bind();
+  } catch (e) {
+    // Fail-safe: si la UI no arranca, el strip lo dice en vez de quedar
+    // en blanco (el bug de "no hay pestanas" era dificil de diagnosticar).
+    const strip = document.getElementById("status-strip");
+    if (strip) strip.textContent = "Error al inicializar la UI: " + (e.message || e);
+    console.error("bind() fallo", e);
+  }
+});
