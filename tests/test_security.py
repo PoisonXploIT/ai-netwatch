@@ -14,6 +14,7 @@ Ejecutar desde la raiz:  python -m unittest discover tests -v
 import json
 import asyncio
 import os
+import socket
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+def _free_port(start: int = 8123) -> int:
+    """Puerto loopback libre: si el inspector esta activo, 8123 no lo esta."""
+    for port in range(start, start + 40):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.bind(("127.0.0.1", port))
+            s.close()
+            return port
+        except OSError:
+            continue
+    raise RuntimeError("no hay puerto loopback libre para el proxy")
 
 import server  # noqa: E402
 import audit  # noqa: E402
@@ -364,8 +378,9 @@ class TestProxyPortGuard(SecurityBase):
     def test_allowed_range_accepted(self):
         server._cfg["llm_proxy_target"] = "127.0.0.1:8099"
         server._cfg["llm_proxy_port"] = 8098
-        server.set_config(server.ConfigRequest(llm_proxy_port=8123))
-        self.assertEqual(server._cfg["llm_proxy_port"], 8123)
+        port = _free_port()
+        server.set_config(server.ConfigRequest(llm_proxy_port=port))
+        self.assertEqual(server._cfg["llm_proxy_port"], port)
 
     def test_busy_port_rejected(self):
         import socket as _socket

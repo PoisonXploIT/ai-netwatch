@@ -12,6 +12,7 @@ Cobertura:
 Ejecutar desde la raiz:  python -m unittest discover tests -v
 """
 import json
+import socket
 import sys
 import tempfile
 import threading
@@ -23,6 +24,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _free_port(start: int = 8123) -> int:
+    """Puerto loopback libre: el inspector real puede tener ocupado 8123."""
+    for port in range(start, start + 40):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.bind(("127.0.0.1", port))
+            s.close()
+            return port
+        except OSError:
+            continue
+    raise RuntimeError("no hay puerto loopback libre para el proxy")
 sys.path.insert(0, str(ROOT))
 
 import server  # noqa: E402
@@ -434,8 +448,9 @@ class TestProxyConfig(ConfigBase):
             self.assertEqual(ctx.exception.status_code, 400)
 
     def test_toggle_starts_and_stops(self):
+        port = _free_port()
         server.set_config(server.ConfigRequest(
-            llm_proxy_port=8123, llm_proxy_target="127.0.0.1:8099"))
+            llm_proxy_port=port, llm_proxy_target="127.0.0.1:8099"))
         server.set_config(server.ConfigRequest(llm_proxy_enabled=True))
         self.assertTrue(server.llm_proxy is not None)
         self.assertEqual(server.get_config()["llm_proxy_running"], True)

@@ -874,10 +874,17 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             self.conn.commit()
 
     def list_reviews(self, limit: int = 50) -> list[dict]:
-        """B: ultimas revisiones LLM (mas recientes primero)."""
+        """B: ultimas revisiones LLM (mas recientes primero), con el
+        contexto minimo del evento para poder leerlas en la UI."""
         with self._lock:
             rows = self.conn.execute(
-                "SELECT * FROM llm_reviews ORDER BY id DESC LIMIT ?",
+                "SELECT r.*, e.process AS ev_process, e.dest_ip AS ev_dest_ip,"
+                " e.dest_port AS ev_port, e.sni_domain AS ev_sni,"
+                " e.catalog_domain AS ev_catalog, e.seen_count AS ev_seen,"
+                " e.sessions AS ev_sessions"
+                " FROM llm_reviews r"
+                " LEFT JOIN events e ON e.id = r.event_id"
+                " ORDER BY r.id DESC LIMIT ?",
                 (max(1, int(limit)),)).fetchall()
             return [dict(r) for r in rows]
 

@@ -126,6 +126,46 @@ class AssetCacheTest(TestCase):
         self.assertIn("v2.6-", second)
 
 
+class TriageTabsTest(TestCase):
+    """Las pestanas Jev/LAYA/Discrepancias deben funcionar con CSP estricta
+    (script-src 'self' bloquea los onclick inline) y mostrar las
+    discrepancias sin tener que cambiar de pestana."""
+
+    def test_no_inline_onclick_in_generated_triage(self):
+        self.assertNotIn('onclick="ttabShow', JS)
+        self.assertIn('data-tt="jev"', JS)
+        self.assertIn('closest(".ttab")', JS)
+
+    def test_jev_table_shows_vs_laya(self):
+        self.assertIn('<th>vs LAYA</th>', JS)
+        self.assertIn("function vsCell", JS)
+
+    def test_discrepancy_panel_exists(self):
+        self.assertIn("Discrepancias Jev vs LAY", JS)
+        self.assertIn('id="ttab-disc"', JS)
+        self.assertIn("function ttabShow", JS)
+        self.assertIn('d.hidden = which !== "disc"', JS)
+
+    def test_agreement_counter_is_not_stuck_at_zero(self):
+        # El bug clasico: se contaba cmpN pero nunca cmpOk.
+        self.assertIn("CMP_OK = CMP.filter((r) => r.agree).length", JS)
+        self.assertIn("CMP_N = CMP.filter((r) => r.both).length", JS)
+
+    def test_review_history_shows_the_prose(self):
+        self.assertIn('class="juicio"', JS)
+        self.assertIn("r.ev_process", JS)
+        self.assertIn("evidencia_faltante", JS)
+
+    def test_inspector_has_aggregate_stats(self):
+        self.assertIn("function llmSummary", JS)
+        self.assertIn("latencia media", JS)
+        self.assertIn('class="latbar"', JS)
+
+    def test_css_has_the_new_classes(self):
+        for cls in (".tcompare", ".vs-ok", ".vs-bad", ".revrow", ".latbar"):
+            self.assertIn(cls, CSS)
+
+
 if __name__ == "__main__":
     from unittest import main
     main()

@@ -217,12 +217,21 @@ async function refreshStats() {
 function ttabShow(which) {
   const j = document.getElementById("ttab-jev");
   const l = document.getElementById("ttab-laya");
+  const d = document.getElementById("ttab-disc");
   if (j) j.hidden = which !== "jev";
   if (l) l.hidden = which !== "laya";
+  if (d) d.hidden = which !== "disc";
   document.querySelectorAll(".ttab").forEach((b) => b.classList.toggle("active", b.dataset.tt === which));
 }
 
 const TRIAGE_ROWS = 25;  // Filas visibles por tabla de triaje; el resto, desplegable.
+
+function vsCell(aVerdict, bVerdict) {
+  if (aVerdict == null || bVerdict == null) return `<td class="vs">sin dato</td>`;
+  return aVerdict === bVerdict
+    ? `<td class="vs vs-ok">coincide</td>`
+    : `<td class="vs vs-bad">difiere</td>`;
+}
 
 function triageHtml(data) {
   if (!data) return "";
@@ -230,6 +239,20 @@ function triageHtml(data) {
   let jevHtml = "";
   let layaHtml = "";
   const jev = data.jev || {};
+  const layaRaw = data.laya || {};
+  const LAYA_V = layaRaw.verdicts || {};
+  // Comparacion Jev vs LAYA por evento (una sola vez, la usan los tres paneles).
+  const CMP = (data.events || []).map((e, i) => {
+    const jv = (jev.verdicts || {})[String(i)] || {};
+    const lv = LAYA_V[String(i)] || {};
+    return { e, jv, lv,
+      both: jv.verdict != null && lv.verdict != null,
+      agree: jv.verdict != null && lv.verdict != null && jv.verdict === lv.verdict };
+  }).filter((r) => !SUPPRESSED.has(`${r.e.process}|${providerFromDest(r.e.dest)}`));
+  const CMP_N = CMP.filter((r) => r.both).length;
+  const CMP_OK = CMP.filter((r) => r.agree).length;
+  const DISC = CMP.filter((r) => r.both && !r.agree);
+  const CMP_PCT = CMP_N ? Math.round((CMP_OK / CMP_N) * 100) : 0;
   if (jev.status === "ok") {
     const evs = data.events || [];
     let triaged = 0;
@@ -253,6 +276,7 @@ function triageHtml(data) {
         <td>${esc(e.process)}${inv}</td>
         <td class="mono">${esc(e.dest)}</td>
         <td>${cls}</td>
+        ${vsCell(v.verdict, (LAYA_V[String(i)] || {}).verdict)}
         ${numCell(v.confidence, v.confidence)}
         ${numCell(v.prob_false_positive == null ? null : Math.round(v.prob_false_positive * 100) + "%", v.prob_false_positive)}
         ${sevCell(v.severity_score)}
@@ -267,51 +291,66 @@ function triageHtml(data) {
     const countNote = triaged < evs.length
       ? ` <span class="hint">(triados ${triaged} de ${evs.length})</span>` : "";
     jevHtml = `<h3>Veredictos Jev${countNote}</h3><table>
-      <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificación</th><th class="num">Confianza</th><th class="num">Prob. falso positivo</th><th class="num">Criticidad</th><th class="num">Acción inmediata</th></tr></thead>
+      <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificación</th><th>vs LAYA</th><th class="num">Confianza</th><th class="num">Prob. falso positivo</th><th class="num">Criticidad</th><th class="num">Acción inmediata</th></tr></thead>
       <tbody>${rows}</tbody></table>${moreJev}`;
   } else if (jev.status === "skipped") {
     jevHtml = `<div class="hint">Jev no disponible (${esc(jev.reason || "")}). Vista clásica intacta.</div>`;
   } else if (jev.status === "error") {
     jevHtml = `<div class="hint error">Error Jev: ${esc(jev.reason || "")}</div>`;
   }
-  const laya = data.laya || {};
+  const laya = layaRaw;
   if (laya.status === "ok") {
-    const evs = data.events || [];
-    const jvAll = jev.verdicts || {};
-    let cmpOk = 0, cmpN = 0;
-    const lrowList = evs.map((e, i) => {
-      if (SUPPRESSED.has(`${e.process}|${providerFromDest(e.dest)}`)) return null;
-      const v = (laya.verdicts || {})[String(i)] || {};
-      const jv = jvAll[String(i)] || {};
+    const lrowList = CMP.map((r) => {
+      const v = r.lv;
       const cls = v.verdict != null ? verdictBadge(v.verdict, v.confidence) : `<span class="hint">no triado</span>`;
-      let cmp = `<span class="hint">-</span>`;
-      if (v.verdict != null && jv.verdict != null) {
-        cmpN++;
-        if (v.verdict === jv.verdict) { cmp = `<span class="cmp-ok">coincide</span>`; }
-        else { cmp = `<span class="cmp-bad">difiere</span> <span class="hint">(Jev: ${esc(jv.verdict)})</span>`; }
-      }
+      const cmp = r.both
+        ? (r.agree ? `<span class="cmp-ok">coincide</span>`
+                   : `<span class="cmp-bad">difiere</span> <span class="hint">(Jev: ${esc(r.jv.verdict)})</span>`)
+        : `<span class="hint">-</span>`;
       return { sev: Number(v.severity_score || 0),
-        html: `<tr><td>${esc(e.process)}</td><td class="mono">${esc(e.dest)}</td><td>${cls}</td><td>${cmp}</td>${numCell(v.confidence, v.confidence)}${sevCell(v.severity_score)}${numCell(v.immediate_action, v.immediate_action)}</tr>` };
-    }).filter(Boolean);
+        html: `<tr><td>${esc(r.e.process)}</td><td class="mono">${esc(r.e.dest)}</td><td>${cls}</td><td>${cmp}</td>${numCell(v.confidence, v.confidence)}${sevCell(v.severity_score)}${numCell(v.immediate_action, v.immediate_action)}</tr>` };
+    });
     lrowList.sort((a, b) => b.sev - a.sev);
     const lrows = lrowList.map((r, i) => i < TRIAGE_ROWS ? r.html : r.html.replace("<tr", "<tr class=\"extra extra-laya\" hidden")).join("");
     const moreLaya = lrowList.length > TRIAGE_ROWS
       ? `<div class="row"><button class="linkbtn" data-more="laya">Mostrar los ${lrowList.length - TRIAGE_ROWS} restantes</button></div>`
       : "";
-    const pct = cmpN ? Math.round((cmpOk / cmpN) * 100) : 0;
-    layaHtml = `<h3>Veredictos LAY\u00c1 (local) <span class="hint">${esc(laya.model || "")} \u00b7 acuerdo con Jev: ${cmpOk}/${cmpN} (${pct}%)</span></h3><table>
+    layaHtml = `<h3>Veredictos LAY\u00c1 (local) <span class="hint">${esc(laya.model || "")} \u00b7 acuerdo con Jev: ${CMP_OK}/${CMP_N} (${CMP_PCT}%)</span></h3><table>
       <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificaci\u00f3n</th><th>vs Jev</th><th class="num">Confianza</th><th class="num">Criticidad</th><th class="num">Acci\u00f3n inmediata</th></tr></thead>
       <tbody>${lrows}</tbody></table>${moreLaya}`;
   } else if (laya.status === "error") {
     layaHtml = `<div class="hint error">LAY\u00c1 local: ${esc(laya.reason || "")}</div>`;
   }
+  const discHtml = DISC.length
+    ? `<h3>Discrepancias Jev vs LAY\u00c1 <span class="hint">${DISC.length} de ${CMP_N} comparables</span></h3>
+       <table><thead><tr><th>Proceso</th><th>Destino</th><th>Jev</th><th>LAYA</th><th class="num">Conf. Jev</th><th class="num">Conf. LAYA</th><th class="num">Criticidad</th></tr></thead>
+       <tbody>${DISC.map((r) => `<tr><td>${esc(r.e.process)}</td><td class="mono">${esc(r.e.dest)}</td><td>${verdictBadge(r.jv.verdict, r.jv.confidence)}</td><td>${verdictBadge(r.lv.verdict, r.lv.confidence)}</td>${numCell(r.jv.confidence, r.jv.confidence)}${numCell(r.lv.confidence, r.lv.confidence)}${sevCell(r.lv.severity_score != null ? r.lv.severity_score : r.jv.severity_score)}</tr>`).join("")}</tbody></table>
+       <p class="hint">Jev es el juez: la discrepancia no cambia nada, solo se registra. Si el veredicto de LAYA es de mayor criticidad, revisa el evento antes de sacar de cuarentena.</p>`
+    : "";
   if (jevHtml || layaHtml) {
-    parts.push(`<div class="ttabs">
-      <button class="btn ttab active" data-tt="jev" onclick="ttabShow('jev')">Jev (juez)</button>
-      <button class="btn ttab" data-tt="laya" onclick="ttabShow('laya')">LAY\u00c1 (local)</button>
+    const VCOUNT = {};
+    CMP.forEach((r) => { if (r.jv.verdict) VCOUNT[r.jv.verdict] = (VCOUNT[r.jv.verdict] || 0) + 1; });
+    const vtotal = Object.values(VCOUNT).reduce((s, v) => s + v, 0) || 1;
+    const stack = Object.entries(VCOUNT).sort((a, b) => b[1] - a[1]).map(([v, n]) =>
+      `<div class="vseg ${(VERDICT_META[v] || {}).cls || "v-none"}" data-pct="${Math.round((n / vtotal) * 100)}" title="${esc((VERDICT_META[v] || { label: v }).label)}: ${n}"></div>`).join("");
+    const legend = Object.entries(VCOUNT).sort((a, b) => b[1] - a[1]).map(([v, n]) =>
+      `${esc((VERDICT_META[v] || { label: v }).label)} ${n}`).join(" · ");
+    parts.push(`<div class="tcompare">
+      <div class="bar vstack">${stack}</div>
+      <span class="hint">${legend}</span>
+    </div>
+    <div class="tcompare">
+      <div class="bar gauge"><div data-pct="${CMP_PCT}"></div></div>
+      <span class="hint">Jev vs LAYA: ${CMP_OK}/${CMP_N} coinciden (${CMP_PCT}%)${DISC.length ? ` \u00b7 ${DISC.length} discrepancias` : ""}</span>
+    </div>
+    <div class="ttabs">
+      <button class="btn ttab active" data-tt="jev">Jev (juez)</button>
+      <button class="btn ttab" data-tt="laya">LAY\u00c1 (local)</button>
+      ${DISC.length ? `<button class="btn ttab" data-tt="disc">Discrepancias (${DISC.length})</button>` : ""}
     </div>
     <div id="ttab-jev">${jevHtml}</div>
-    <div id="ttab-laya" hidden>${layaHtml}</div>`);
+    <div id="ttab-laya" hidden>${layaHtml}</div>
+    ${DISC.length ? `<div id="ttab-disc" hidden>${discHtml}</div>` : ""}`);
   }
   const dd = data.dedup;
   if (dd && typeof dd.reused === "number" && typeof dd.fresh === "number") {
@@ -939,12 +978,37 @@ function wireInvestigate(wrap) {
   });
 }
 
-function llmCallsHtml(calls) {
-  if (!calls.length) return `<div class="empty">Sin llamadas registradas. Con el inspector activo, apunta el cliente al puerto del proxy.</div>`;
+function llmSummary(calls) {
+  const lat = calls.map((c) => c.latency_ms).filter((v) => v != null).sort((a, b) => a - b);
+  const avg = lat.length ? Math.round(lat.reduce((s, v) => s + v, 0) / lat.length) : 0;
+  const med = lat.length ? lat[Math.floor(lat.length / 2)] : 0;
+  const p95 = lat.length ? lat[Math.floor(lat.length * 0.95)] : 0;
+  const tokIn = calls.reduce((s, c) => s + (c.prompt_tokens || 0), 0);
+  const tokOut = calls.reduce((s, c) => s + (c.completion_tokens || 0), 0);
+  const models = [...new Set(calls.map((c) => c.model || "—"))];
+  const fails = calls.filter((c) => c.status === 0 || c.status == null).length;
   const totReq = calls.reduce((s, c) => s + (c.request_bytes || 0), 0);
   const totResp = calls.reduce((s, c) => s + (c.response_bytes || 0), 0);
-  const head = `<div class="small mono">Total (últimas ${calls.length}): egress ${fmtBytes(totReq)} hacia el LLM · ${fmtBytes(totResp)} de vuelta</div>`;
-  return head + calls.map((c) => {
+  const maxLat = Math.max(1, ...lat, 1);
+  const bars = lat.slice(0, 40).map((v, i) => {
+    const h = Math.max(2, Math.round((v / maxLat) * 22));
+    return `<rect class="latbar" x="${i * 6}" y="${22 - h}" width="5" height="${h}"></rect>`;
+  }).join("");
+  return `<div class="llmsum">
+    <div class="kpis">
+      <div class="kpi"><span class="kpi-val">${calls.length}</span><span class="kpi-lbl">llamadas registradas</span><span class="kpi-note">modelos: ${esc(models.join(", "))}</span></div>
+      <div class="kpi"><span class="kpi-val">${avg} ms</span><span class="kpi-lbl">latencia media</span><span class="kpi-note">mediana ${med} ms · p95 ${p95} ms</span></div>
+      <div class="kpi"><span class="kpi-val">${tokIn + tokOut}</span><span class="kpi-lbl">tokens</span><span class="kpi-note">${tokIn} prompt / ${tokOut} respuesta</span></div>
+      <div class="kpi ${fails ? "kpi-bad" : ""}"><span class="kpi-val">${fails}</span><span class="kpi-lbl">llamadas fallidas</span><span class="kpi-note">sin respuesta o error</span></div>
+    </div>
+    <div class="latviz"><svg class="latspark" viewBox="0 0 240 24" width="240" height="24" role="img" aria-label="latencia de cada llamada">${bars}</svg><span class="hint">cada barra es una llamada; la altura es la latencia (max ${maxLat} ms)</span></div>
+    <div class="small mono">Egress medido total: ${fmtBytes(totReq)} hacia el LLM · ${fmtBytes(totResp)} de vuelta</div>
+  </div>`;
+}
+
+function llmCallsHtml(calls) {
+  if (!calls.length) return `<div class="empty">Sin llamadas registradas. Con el inspector activo, apunta el cliente al puerto del proxy.</div>`;
+  return llmSummary(calls) + calls.map((c) => {
     const status = c.status == null ? "?" : (c.status === 0 ? "sin respuesta" : `HTTP ${c.status}`);
     const proc = c.client_process ? ` · proceso: ${esc(c.client_process)}` : "";
     const rel = (c.related_event_ids && c.related_event_ids.length)
@@ -1532,17 +1596,38 @@ async function loadReviewHistory() {
   const wrap = document.getElementById("review-history");
   if (!wrap) return;
   try {
-    const d = await api("/api/reviews?limit=10");
+    const d = await api("/api/reviews?limit=15");
     const rows = d.reviews || [];
-    wrap.innerHTML = rows.length
-      ? `<p class="hint">${rows.map(r =>
-        `#${r.event_id} · ${esc(r.evaluacion || "no disponible")}${r.accion ? ` (${esc(r.accion)})` : ""} (${esc((r.ts || "").slice(0, 16))})`).join(" · ")}</p>`
-      : `<div class="hint">Sin revisiones todavía.</div>`;
+    if (!rows.length) { wrap.innerHTML = `<div class="hint">Sin revisiones todavía.</div>`; return; }
+    const COINCIDE = { coincide: "badge-ok", discrepa: "badge-bad", dudoso: "badge-warn" };
+    wrap.innerHTML = rows.map((r) => {
+      const badge = r.evaluacion
+        ? `<span class="${REVIEW_EVAL_BADGE[r.evaluacion] || "badge-warn"}">${esc(r.evaluacion)}</span>`
+        : `<span class="hint">no disponible</span>`;
+      const acc = r.accion ? `<span class="${r.accion === "sacar" ? "badge-ok" : "badge-bad"}">${esc(r.accion)}</span>` : "";
+      const coin = r.coincide ? `<span class="${COINCIDE[r.coincide] || "badge-warn"}">${esc(r.coincide)}</span>` : "";
+      const dest = r.ev_sni || r.ev_catalog || r.ev_dest_ip || "?";
+      const seen = r.ev_sessions != null ? ` · ${r.ev_sessions} sesión(es), ${r.ev_seen || 0} vistas` : "";
+      return `<div class="revrow"><details open>
+        <summary>#${r.event_id} ${esc(r.ev_process || "")} -> ${esc(dest)} ${badge} ${acc} ${coin} <span class="hint">${esc((r.ts || "").slice(0, 16))}</span></summary>
+        ${r.juicio ? `<p class="juicio">${esc(r.juicio)}</p>` : ""}
+        ${r.porque ? `<p class="small hint">Porque: ${esc(r.porque)}</p>` : ""}
+        ${r.evidencia_faltante ? `<p class="small hint">Falta: ${esc(r.evidencia_faltante)}</p>` : ""}
+        ${seen ? `<p class="small hint">Patrón:${seen}</p>` : ""}
+      </details></div>`;
+    }).join("");
   } catch (e) { /* sin historial */ }
 }
 
 function bind() {
   const $ = (id) => document.getElementById(id);
+
+  // Las pestanas de triaje se generan en HTML dinamic: la CSP (script-src
+  // 'self') bloquea los onclick inline, asi que se atan por delegacion.
+  document.addEventListener("click", (ev) => {
+    const t = ev.target && ev.target.closest && ev.target.closest(".ttab");
+    if (t) ttabShow(t.dataset.tt);
+  });
 
   $("btn-theme").addEventListener("click", themeToggle);
   // A1: la guia es ya una pestana; el boton del header lleva a ella.

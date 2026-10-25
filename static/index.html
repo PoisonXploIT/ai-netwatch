@@ -190,7 +190,7 @@
     </section>
     <section class="card" id="llm-inspector-card">
     <h2>LLM Inspector (R3)</h2>
-    <p class="hint">Reverse proxy local frente al LLM local: registra cada llamada HTTP en claro — prompt, respuesta, modelo, tokens y latencia. Solo sirve para un LLM de loopback (HTTP plano); los proveedores remotos viajan cifrados y su contenido no se ve aquí.</p>
+    <p class="hint">Reverse proxy local frente al LLM local: registra cada llamada HTTP en claro — prompt, respuesta, modelo, tokens y latencia. Sirve para <b>auditar qué le está preguntando NetWatch al modelo y qué responde</b>: si un veredicto o una explicación parece incorrecta, aquí está el prompt exacto que la generó. Solo funciona con un LLM de loopback (HTTP plano); los proveedores remotos viajan cifrados y su contenido no se ve aquí.</p>
     <div class="row">
       <label class="check"><input type="checkbox" id="llm-proxy-toggle"> Inspector activo</label>
       <label>Puerto proxy</label>
