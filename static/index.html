@@ -2,10 +2,10 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<script src="/static/theme.js"></script>
+<script src="/static/theme.js?v={{VERSION}}"></script>
 <title>AI NetWatch — salidas a nube IA</title>
 <link rel="icon" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/styles.css?v={{VERSION}}">
 </head>
 <body>
 <header>
@@ -83,7 +83,18 @@
   <div class="tab-panel" id="panel-hallazgos" role="tabpanel" aria-labelledby="tab-hallazgos" data-tab="hallazgos">
     <section class="card wide" id="findings-card">
     <h2>Hallazgos</h2>
-    <p class="hint">Una linea por (proceso, proveedor) con un <b>score combinado 0-100</b> (anomalia determinista + criticidad Jev + autonomia + beaconing + no aprobado), ordenado por score. Clic en la fila para el detalle. Display-only.</p>
+    <p class="hint">Una linea por (proceso, proveedor) con un <b>score combinado 0-100</b> (anomalia determinista + criticidad Jev + autonomia + beaconing + no aprobado). Clic en la fila para el detalle. Display-only.</p>
+    <div class="filters">
+      <label class="check"><input type="checkbox" id="f-noise" checked> Ocultar ruido (score &lt; 10 y 1 sesion)</label>
+      <label class="check"><input type="checkbox" id="f-unapproved"> Solo no aprobados</label>
+      <label>Orden</label>
+      <select id="f-order">
+        <option value="score">Score</option>
+        <option value="last">Ultima vez</option>
+        <option value="sessions">Sesiones</option>
+      </select>
+      <button class="linkbtn" id="btn-findings-reset">Filtros por defecto</button>
+    </div>
     <div id="findings-wrap"></div>
     </section>
     <section class="card" id="shadow-card">
@@ -408,6 +419,6 @@
   <span>LLM local: solo loopback, sin API key</span>
 </footer>
 <div id="toast" role="status" aria-live="polite"></div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v={{VERSION}}"></script>
 </body>
 </html>

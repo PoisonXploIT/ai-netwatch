@@ -409,7 +409,7 @@ class TestVersionSingleSource(SecurityBase):
         self.assertRegex(server.VERSION, r"^\d+\.\d+$")
 
     def test_console_renders_the_server_version(self):
-        html = server.index()
+        html = server.index().body.decode("utf-8")
         self.assertIn(f"v{server.VERSION}", html)
         self.assertNotIn("{{VERSION}}", html)
         self.assertIn('<span class="badge-ver" id="ver-badge">', html)
@@ -448,16 +448,19 @@ class TestHealth(SecurityBase):
         self.assertTrue(out["last_event"])
 
     def test_index_injects_token(self):
-        html = server.index()
+        resp = server.index()
+        html = resp.body.decode("utf-8")
         self.assertIn('name="netwatch-token"', html)
         self.assertIn(server._SESSION_TOKEN, html)
+        # Sin esto, el navegador sirve la copia cacheada y la UI queda vieja.
+        self.assertEqual(resp.headers.get("cache-control"), "no-store")
 
     def test_no_inline_script_in_console(self):
         # La CSP solo vale si no hay scripts inline: el tema es externo.
         html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
         self.assertNotIn("<script>", html)
-        self.assertIn('<script src="/static/theme.js"></script>', html)
-        self.assertIn('<script src="/static/app.js"></script>', html)
+        self.assertIn('<script src="/static/theme.js?v={{VERSION}}"></script>', html)
+        self.assertIn('<script src="/static/app.js?v={{VERSION}}"></script>', html)
 
     def test_no_inline_styles(self):
         # style="..." obligaria a permitir 'unsafe-inline' en la CSP.

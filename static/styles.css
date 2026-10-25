@@ -124,6 +124,29 @@ input[type="text"], input:not([type]) {
   min-width: 240px;
 }
 input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+select, input[type="number"] {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+select:focus, input[type="number"]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.filters {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 12px; margin: 10px 0 12px;
+  background: var(--zebra); border: 1px solid var(--border); border-radius: 10px;
+}
+.filters label { font-size: 12.5px; min-width: 0; }
+.filters select { font-size: 12.5px; }
+details { margin: 10px 0; }
+summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+details[open] summary { color: var(--text); }
+.ttabs { display: flex; gap: 8px; margin: 12px 0; }
+.cmp-ok { color: var(--v-ok); font-weight: 600; }
+.cmp-bad { color: var(--v-bad); font-weight: 600; }
 
 button {
   background: var(--btn-bg);

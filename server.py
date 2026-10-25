@@ -2618,11 +2618,15 @@ def index():
     # Version y token se inyectan aqui: la version solo existe en VERSION
     # (U-02) y el token de sesion solo vive en memoria (no se escribe a disco).
     html = html.replace("{{VERSION}}", f"v{VERSION}")
-    return html.replace(
+    html = html.replace(
         "</head>",
         f'<meta name="netwatch-token" content="{_SESSION_TOKEN}">\n</head>',
         1,
     )
+    # Sin Cache-Control, el navegador sirve la copia cacheada y la UI se
+    # ve desactualizada (pestanas que no funcionan). Los assets llevan
+    # ?v=VERSION para que un cambio de codigo fuerce la recarga.
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

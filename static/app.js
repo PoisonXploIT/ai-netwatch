@@ -31,7 +31,8 @@ function verdictBadge(v, confidence) {
 // Celda numerica: valor arriba, barra debajo (alineado a la derecha).
 function numCell(value, pct) {
   if (value == null) return `<td class="num">—</td>`;
-  const bar = pct == null ? "" : `<div class="bar"><div style="width:${Math.max(2, Math.min(100, Math.round(pct * 100)))}%"></div></div>`;
+  // La CSP no permite style="...": el ancho se aplica con JS sobre el CSSOM.
+  const bar = pct == null ? "" : `<div class="bar"><div data-pct="${Math.max(2, Math.min(100, Math.round(pct * 100)))}"></div></div>`;
   return `<td class="num"><div class="cellnum"><span class="val">${esc(String(value))}</span>${bar}</div></td>`;
 }
 
@@ -165,15 +166,13 @@ function groupedEventsTableHtml(events) {
     <td>${aiLayerHtml(e.ai_layer)}</td>
     <td>${autonomyBadge(e.autonomy_verdict, e.autonomy_score)}</td>
     <td class="num">${e.sessions ?? 0}${beaconBadge(e)}</td>
-    <td class="num">${e.seen_count ?? 0}</td>
     <td class="num" title="IPs distintas para este proceso y proveedor (CDN rotatorio).">${e.ip_count ?? 0}</td>
-    <td class="mono small">${esc(e.first_seen || "")}</td>
     <td class="mono small">${esc(e.last_seen || "")}</td>
     <td><button class="linklike" data-detail="ev-d-g${i}" aria-expanded="false">detalle</button></td>
   </tr>
-  <tr class="ev-detail" id="ev-d-g${i}" hidden><td colspan="10">${groupDetailHtml(e)}</td></tr>`).join("");
+  <tr class="ev-detail" id="ev-d-g${i}" hidden><td colspan="8">${groupDetailHtml(e)}</td></tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Proveedor</th><th>IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente.">Sesiones</th><th class="num" title="Polls = muestras de presencia.">Polls</th><th class="num">#IPs</th><th>Primera vez</th><th>Última vez</th><th></th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Proveedor</th><th>IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente.">Sesiones</th><th class="num">#IPs</th><th>Última vez</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -184,20 +183,16 @@ function eventsTableHtml(events, grouped) {
   const rows = events.map((e, i) => `<tr>
     <td><label class="check small" title="Seleccionar para Revisar (batch)"><input type="checkbox" class="ev-check" data-evid="${e.id}"></label> ${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}${LLM_ENABLED ? `<div class="small"><button class="small" data-investigate="${e.id}">Investigar con LLM local</button></div>` : ""}</td>
     <td class="mono">${esc(e.dest_host || e.dest_ip)}:${e.dest_port}</td>
-    <td>${esc(e.protocol || "tcp")}</td>
     <td class="mono">${esc(e.sni_domain || "")}</td>
-    <td>${esc(e.catalog_domain || "")}</td>
     <td>${aiLayerHtml(e.ai_layer)}</td>
     <td>${autonomyBadge(e.autonomy_verdict, e.autonomy_score)}</td>
     <td class="num">${e.sessions ?? 1}${beaconBadge(e)}</td>
-    <td class="num">${e.seen_count}</td>
-    <td class="mono small">${esc(e.first_seen)}</td>
     <td class="mono small">${esc(e.last_seen)}</td>
     <td><button class="linklike" data-detail="ev-d-${i}" aria-expanded="false">detalle</button></td>
   </tr>
-  <tr class="ev-detail" id="ev-d-${i}" hidden><td colspan="12">${eventDetailHtml(e)}</td></tr>`).join("");
+  <tr class="ev-detail" id="ev-d-${i}" hidden><td colspan="8">${eventDetailHtml(e)}</td></tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Destino</th><th>Proto</th><th>Dominio (SNI)</th><th>Catálogo</th><th title="Sesiones = transiciones ausente→presente (F1); Polls = muestras de presencia.">IA (capa)</th><th>Autonomía</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Primera vez</th><th>Última vez</th><th></th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Destino</th><th>Dominio (SNI)</th><th title="Capa de deteccion: catalogo, heuristica o LLM local.">IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente (F1). Polls y primera vez estan en el detalle.">Sesiones</th><th>Última vez</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -210,21 +205,24 @@ async function refreshStats() {
       <td class="mono">${esc(x.date)}</td>
       <td class="num">${x.events}</td>
       <td class="num">${x.triages}</td>
-      <td><div class="bar"><div style="width:${Math.round((x.events / max) * 100)}%"></div></div></td>
+      <td><div class="bar"><div data-pct="${Math.round((x.events / max) * 100)}"></div></div></td>
     </tr>`).join("");
     document.getElementById("stats-wrap").innerHTML = `<table>
       <thead><tr><th>Día</th><th>Eventos</th><th>Triajes</th><th width="40%"></th></tr></thead>
       <tbody>${rows}</tbody></table>`;
+    paintBars(document.getElementById("stats-wrap"));
   } catch (e) { /* sin stats */ }
 }
 
 function ttabShow(which) {
   const j = document.getElementById("ttab-jev");
   const l = document.getElementById("ttab-laya");
-  if (j) j.style.display = which === "jev" ? "" : "none";
-  if (l) l.style.display = which === "laya" ? "" : "none";
+  if (j) j.hidden = which !== "jev";
+  if (l) l.hidden = which !== "laya";
   document.querySelectorAll(".ttab").forEach((b) => b.classList.toggle("active", b.dataset.tt === which));
 }
+
+const TRIAGE_ROWS = 25;  // Filas visibles por tabla de triaje; el resto, desplegable.
 
 function triageHtml(data) {
   if (!data) return "";
@@ -235,9 +233,9 @@ function triageHtml(data) {
   if (jev.status === "ok") {
     const evs = data.events || [];
     let triaged = 0;
-    const rows = evs.map((e, i) => {
+    const rowList = evs.map((e, i) => {
       // Soft-delete en UI: fila oculta si (proceso|proveedor) esta suprimido.
-      if (SUPPRESSED.has(`${e.process}|${providerFromDest(e.dest)}`)) return "";
+      if (SUPPRESSED.has(`${e.process}|${providerFromDest(e.dest)}`)) return null;
       const v = (jev.verdicts || {})[String(i)] || {};
       if (v.verdict != null) triaged++;
       // Sin veredicto: 'no triado' explicito (no un vacio que parezca fallo).
@@ -249,7 +247,9 @@ function triageHtml(data) {
       const inv = LLM_ENABLED
         ? `<div class="small"><button class="small" data-investigate="${e.id}">Investigar</button></div>`
         : "";
-      return `<tr>
+      return {
+        sev: Number(v.severity_score || 0),
+        html: `<tr>
         <td>${esc(e.process)}${inv}</td>
         <td class="mono">${esc(e.dest)}</td>
         <td>${cls}</td>
@@ -257,13 +257,18 @@ function triageHtml(data) {
         ${numCell(v.prob_false_positive == null ? null : Math.round(v.prob_false_positive * 100) + "%", v.prob_false_positive)}
         ${sevCell(v.severity_score)}
         ${numCell(v.immediate_action, v.immediate_action)}
-      </tr>`;
-    }).join("");
+      </tr>`};
+    }).filter(Boolean);
+    rowList.sort((a, b) => b.sev - a.sev);
+    const rows = rowList.map((r, i) => i < TRIAGE_ROWS ? r.html : r.html.replace("<tr", "<tr class=\"extra extra-jev\" hidden")).join("");
+    const moreJev = rowList.length > TRIAGE_ROWS
+      ? `<div class="row"><button class="linkbtn" data-more="jev">Mostrar los ${rowList.length - TRIAGE_ROWS} restantes</button></div>`
+      : "";
     const countNote = triaged < evs.length
       ? ` <span class="hint">(triados ${triaged} de ${evs.length})</span>` : "";
     jevHtml = `<h3>Veredictos Jev${countNote}</h3><table>
       <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificación</th><th class="num">Confianza</th><th class="num">Prob. falso positivo</th><th class="num">Criticidad</th><th class="num">Acción inmediata</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+      <tbody>${rows}</tbody></table>${moreJev}`;
   } else if (jev.status === "skipped") {
     jevHtml = `<div class="hint">Jev no disponible (${esc(jev.reason || "")}). Vista clásica intacta.</div>`;
   } else if (jev.status === "error") {
@@ -274,33 +279,39 @@ function triageHtml(data) {
     const evs = data.events || [];
     const jvAll = jev.verdicts || {};
     let cmpOk = 0, cmpN = 0;
-    const lrows = evs.map((e, i) => {
-      if (SUPPRESSED.has(`${e.process}|${providerFromDest(e.dest)}`)) return "";
+    const lrowList = evs.map((e, i) => {
+      if (SUPPRESSED.has(`${e.process}|${providerFromDest(e.dest)}`)) return null;
       const v = (laya.verdicts || {})[String(i)] || {};
       const jv = jvAll[String(i)] || {};
       const cls = v.verdict != null ? verdictBadge(v.verdict, v.confidence) : `<span class="hint">no triado</span>`;
       let cmp = `<span class="hint">-</span>`;
       if (v.verdict != null && jv.verdict != null) {
         cmpN++;
-        if (v.verdict === jv.verdict) { cmpOk++; cmp = `<span style="color:#2e9e5b;font-weight:600">coincide</span>`; }
-        else { cmp = `<span style="color:#d9534f;font-weight:600">difiere</span> <span class="hint">(Jev: ${esc(jv.verdict)})</span>`; }
+        if (v.verdict === jv.verdict) { cmp = `<span class="cmp-ok">coincide</span>`; }
+        else { cmp = `<span class="cmp-bad">difiere</span> <span class="hint">(Jev: ${esc(jv.verdict)})</span>`; }
       }
-      return `<tr><td>${esc(e.process)}</td><td class="mono">${esc(e.dest)}</td><td>${cls}</td><td>${cmp}</td>${numCell(v.confidence, v.confidence)}${sevCell(v.severity_score)}${numCell(v.immediate_action, v.immediate_action)}</tr>`;
-    }).join("");
+      return { sev: Number(v.severity_score || 0),
+        html: `<tr><td>${esc(e.process)}</td><td class="mono">${esc(e.dest)}</td><td>${cls}</td><td>${cmp}</td>${numCell(v.confidence, v.confidence)}${sevCell(v.severity_score)}${numCell(v.immediate_action, v.immediate_action)}</tr>` };
+    }).filter(Boolean);
+    lrowList.sort((a, b) => b.sev - a.sev);
+    const lrows = lrowList.map((r, i) => i < TRIAGE_ROWS ? r.html : r.html.replace("<tr", "<tr class=\"extra extra-laya\" hidden")).join("");
+    const moreLaya = lrowList.length > TRIAGE_ROWS
+      ? `<div class="row"><button class="linkbtn" data-more="laya">Mostrar los ${lrowList.length - TRIAGE_ROWS} restantes</button></div>`
+      : "";
     const pct = cmpN ? Math.round((cmpOk / cmpN) * 100) : 0;
     layaHtml = `<h3>Veredictos LAY\u00c1 (local) <span class="hint">${esc(laya.model || "")} \u00b7 acuerdo con Jev: ${cmpOk}/${cmpN} (${pct}%)</span></h3><table>
       <thead><tr><th>Proceso</th><th>Destino</th><th>Clasificaci\u00f3n</th><th>vs Jev</th><th class="num">Confianza</th><th class="num">Criticidad</th><th class="num">Acci\u00f3n inmediata</th></tr></thead>
-      <tbody>${lrows}</tbody></table>`;
+      <tbody>${lrows}</tbody></table>${moreLaya}`;
   } else if (laya.status === "error") {
     layaHtml = `<div class="hint error">LAY\u00c1 local: ${esc(laya.reason || "")}</div>`;
   }
   if (jevHtml || layaHtml) {
-    parts.push(`<div style="display:flex;gap:8px;margin:12px 0">
+    parts.push(`<div class="ttabs">
       <button class="btn ttab active" data-tt="jev" onclick="ttabShow('jev')">Jev (juez)</button>
       <button class="btn ttab" data-tt="laya" onclick="ttabShow('laya')">LAY\u00c1 (local)</button>
     </div>
     <div id="ttab-jev">${jevHtml}</div>
-    <div id="ttab-laya" style="display:none">${layaHtml}</div>`);
+    <div id="ttab-laya" hidden>${layaHtml}</div>`);
   }
   const dd = data.dedup;
   if (dd && typeof dd.reused === "number" && typeof dd.fresh === "number") {
@@ -338,14 +349,29 @@ function eventsQuery() {
   return p.toString();
 }
 
+let EVENTS = { events: [], grouped: false };
+let eventsShown = 40;
+
 async function refreshEvents() {
   try {
     const d = await api("/api/events?" + eventsQuery());
-    const wrap = document.getElementById("events-wrap");
-    wrap.innerHTML = eventsTableHtml(d.events, d.grouped);
-    wireInvestigate(wrap);
-    wireEventDetail(wrap);
+    EVENTS = { events: d.events || [], grouped: !!d.grouped };
+    renderEvents();
   } catch (e) { /* server caído */ }
+}
+
+function renderEvents() {
+  const wrap = document.getElementById("events-wrap");
+  if (!wrap) return;
+  const list = EVENTS.events.slice(0, eventsShown);
+  const more = EVENTS.events.length > list.length
+    ? `<div class="row"><button class="linkbtn" id="btn-events-more">Mostrar ${EVENTS.events.length - list.length} mas (${EVENTS.events.length} en total)</button></div>`
+    : "";
+  wrap.innerHTML = eventsTableHtml(list, EVENTS.grouped) + more;
+  wireInvestigate(wrap);
+  wireEventDetail(wrap);
+  const mb = document.getElementById("btn-events-more");
+  if (mb) mb.onclick = () => { eventsShown += 60; renderEvents(); };
 }
 
 async function loadFacets() {
@@ -511,10 +537,10 @@ function findingsHtml(findings, suppressed, blacklisted) {
       </tr>
       <tr class="finding-detail" data-qd="${i}" hidden><td colspan="8">${findingDetail(f)}</td></tr>`;
     }).join("");
-    quarantineSection = `<h4>Cuarentena (${blacklisted.length})</h4>
+    quarantineSection = `<details><summary>Cuarentena (${blacklisted.length})</summary>
       <p class="hint">En lista negra: aislados a la espera de revision LLM. Los eventos siguen en la base de datos.</p>
       <table><thead>${head}</thead><tbody>${qrows}</tbody></table>
-      <div class="row"><button class="primary review-quarantine">Revisar toda la cuarentena (LLM local)</button></div>`;
+      <div class="row"><button class="primary review-quarantine">Revisar toda la cuarentena (LLM local)</button></div></details>`;
   }
   const main = findings.length
     ? `<table><thead>${head}</thead><tbody>${activeRows}</tbody></table>`
@@ -525,8 +551,47 @@ function findingsHtml(findings, suppressed, blacklisted) {
 async function refreshFindings() {
   try {
     const d = await api("/api/findings");
-    const wrap = document.getElementById("findings-wrap");
-    wrap.innerHTML = findingsHtml(d.findings || [], d.suppressed || [], d.blacklisted || []);
+    FINDINGS = { findings: d.findings || [], suppressed: d.suppressed || [], blacklisted: d.blacklisted || [] };
+    renderFindings();
+  } catch (e) { /* sin hallazgos */ }
+}
+
+// Filtros y paginacion client-side: la lista completa ya esta en memoria,
+// no hace falta otra peticion.
+let FINDINGS = { findings: [], suppressed: [], blacklisted: [] };
+let findingsShown = 25;
+
+function filteredFindings() {
+  const hideNoise = !!document.getElementById("f-noise")?.checked;
+  const onlyUnapproved = !!document.getElementById("f-unapproved")?.checked;
+  const order = document.getElementById("f-order")?.value || "score";
+  const list = (FINDINGS.findings || []).filter((f) => {
+    if (hideNoise && f.score < 10 && (f.sessions ?? 0) <= 1) return false;
+    if (onlyUnapproved && !f.unapproved) return false;
+    return true;
+  });
+  if (order === "last") list.sort((a, b) => String(b.last_seen || "").localeCompare(String(a.last_seen || "")));
+  else if (order === "sessions") list.sort((a, b) => (b.sessions || 0) - (a.sessions || 0));
+  else list.sort((a, b) => (b.score || 0) - (a.score || 0));
+  return list;
+}
+
+function renderFindings() {
+  const wrap = document.getElementById("findings-wrap");
+  if (!wrap) return;
+  const list = filteredFindings();
+  const shown = list.slice(0, findingsShown);
+  const total = (FINDINGS.findings || []).length;
+  const more = list.length > shown.length
+    ? `<div class="row"><button class="linkbtn" id="btn-findings-more">Mostrar ${list.length - shown.length} mas (${list.length} de ${total})</button></div>`
+    : `<p class="hint">${list.length} hallazgos mostrados de ${total} (filtrados).</p>`;
+  wrap.innerHTML = findingsHtml(shown, FINDINGS.suppressed, FINDINGS.blacklisted) + more;
+  wireFindings(wrap);
+  const mb = document.getElementById("btn-findings-more");
+  if (mb) mb.onclick = () => { findingsShown += 25; renderFindings(); };
+}
+
+function wireFindings(wrap) {
     wrap.querySelectorAll("tr.finding-row").forEach((r) => {
       r.addEventListener("click", (ev) => {
         if (ev.target.closest("button")) return;
@@ -592,7 +657,14 @@ async function refreshFindings() {
         } catch (e) { toast(String(e), "error"); b.disabled = false; }
       };
     });
-  } catch (e) { /* sin hallazgos */ }
+}
+
+function paintBars(root) {
+  // Aplica los anchos de las barras sin style inline (bloqueado por la CSP).
+  if (!root) return;
+  root.querySelectorAll(".bar > div[data-pct]").forEach((el) => {
+    el.style.width = el.dataset.pct + "%";
+  });
 }
 
 function wireEventDetail(wrap) {
@@ -835,11 +907,16 @@ function collapseCurrent(cur) {
   return [...bySig.values()];
 }
 
+let BASELINE = null;
+let baselineShown = 20;
+
 function baselineHtml(b) {
-  const groups = b.groups || [];
-  if (!groups.length) {
+  const groupsAll = b.groups || [];
+  if (!groupsAll.length) {
     return '<p class="hint">Sin eventos vivos: sin baseline.</p>';
   }
+  const groups = groupsAll.slice(0, baselineShown);
+  const rest = groupsAll.length - groups.length;
   let rows = "";
   for (const g of groups) {
     const cur = collapseCurrent(g.current || []);
@@ -888,7 +965,9 @@ function baselineHtml(b) {
       <th class="num">pre_score</th>
     </tr></thead>
     <tbody>${rows}</tbody>
-  </table>`;
+  </table>` + (rest > 0
+    ? `<div class="row"><button class="linkbtn" id="btn-baseline-more">Mostrar ${rest} grupos mas (${groupsAll.length} en total)</button></div>`
+    : "");
 }
 
 async function refreshBaseline() {
@@ -897,7 +976,10 @@ async function refreshBaseline() {
   try {
     const r = await fetch("/api/baseline");
     if (r.status === 404) { wrap.innerHTML = ""; return; }
-    wrap.innerHTML = baselineHtml(await r.json());
+    BASELINE = await r.json();
+    wrap.innerHTML = baselineHtml(BASELINE);
+    const mb = document.getElementById("btn-baseline-more");
+    if (mb) mb.onclick = () => { baselineShown += 20; wrap.innerHTML = baselineHtml(BASELINE); };
   } catch (e) { /* sin datos a&uacute;n */ }
 }
 
@@ -1075,6 +1157,14 @@ async function loadLatestTriage() {
     const t = await api("/api/triages/latest");
     const wrap = document.getElementById("triage-results");
     wrap.innerHTML = triageHtml(t.payload);
+    paintBars(wrap);
+    wrap.querySelectorAll("button[data-more]").forEach((b) => {
+      b.onclick = () => {
+        wrap.querySelectorAll(`tr.extra-${b.dataset.more}`).forEach((r) => { r.hidden = false; });
+        paintBars(wrap);
+        b.remove();
+      };
+    });
     wireInvestigate(wrap); // A2: mismo boton Investigar que en la tabla de eventos.
   } catch (e) { /* sin triajes aún */ }
 }
@@ -1355,6 +1445,18 @@ function bind() {
     $("ev-process").value = "";
     $("ev-dest").value = "";
     refreshEvents();
+  });
+  // Filtros de hallazgos (client-side, sin peticiones extra).
+  ["f-noise", "f-unapproved", "f-order"].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener("change", renderFindings);
+  });
+  $("btn-findings-reset").addEventListener("click", () => {
+    $("f-noise").checked = true;
+    $("f-unapproved").checked = false;
+    $("f-order").value = "score";
+    findingsShown = 25;
+    renderFindings();
   });
   // A3: filtros de la tarjeta Autonomía (veredicto/proceso/proveedor/grupo).
   ["aut-verdict", "aut-group"].forEach((id) => {
