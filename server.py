@@ -16,10 +16,11 @@ import json
 import os
 import re
 import subprocess
+import secrets
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
@@ -28,6 +29,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import audit
 from ai_catalog import KNOWN_AI_DOMAINS
 from ai_classifier import classify_domain, destination_kind
 from alerts import AlertLog
@@ -61,6 +63,15 @@ VERSION = "2.0-alpha"
 
 app = FastAPI(title="AI NetWatch")
 
+# --- S4: token de sesion + audit log ---
+# Token generado al arrancar (en memoria, no en disco): la consola lo recibe
+# inline en el HTML y lo manda en cada POST. Un proceso local que no lo tenga
+# no puede ejecutar acciones con coste (triaje, reset, config).
+_SESSION_TOKEN = secrets.token_urlsafe(24)
+_START_TS = datetime.now(timezone.utc)
+_STATE_CHANGING = {"POST", "PUT", "DELETE", "PATCH"}
+audit_log = audit.AuditLog(DATA_DIR / "audit.log")
+
 # --- S2/S3: guard de origen (loopback estricto) ---
 # El server solo escucha en 127.0.0.1, pero cualquier pagina abierta en el
 # navegador del usuario puede alcanzarlo: rebinding DNS (evil.com -> 127.0.0.1)
@@ -88,17 +99,32 @@ def _host_of(value: str) -> str:
 @app.middleware("http")
 async def _origin_guard(request, call_next):
     host = _host_of(request.headers.get("host", ""))
+    origin = (request.headers.get("origin") or "").strip().lower()
     if host not in _LOOPBACK_HOSTS:
+        if request.method in _STATE_CHANGING:
+            audit_log.log("blocked", request.method, request.url.path, 403,
+                          origin=origin, client=request.client.host if request.client else "")
         return JSONResponse({"error": "host no permitido: solo 127.0.0.1/localhost"},
                             status_code=403)
-    if request.method not in ("GET", "HEAD"):
-        origin = (request.headers.get("origin") or "").strip().lower()
+    if request.method in _STATE_CHANGING:
         if origin and (origin == "null" or _host_of(origin) not in _LOOPBACK_HOSTS):
+            audit_log.log("blocked", request.method, request.url.path, 403,
+                          origin=origin, client=request.client.host if request.client else "")
             return JSONResponse({"error": "origen no permitido (CSRF/rebinding)"},
+                                status_code=403)
+        if request.headers.get("x-netwatch-token", "") != _SESSION_TOKEN:
+            audit_log.log("blocked", request.method, request.url.path, 403,
+                          origin=origin, client=request.client.host if request.client else "",
+                          detail={"motivo": "token de sesion ausente o invalido"})
+            return JSONResponse({"error": "token de sesion requerido para acciones"},
                                 status_code=403)
     response = await call_next(request)
     for header, value in _SECURITY_HEADERS.items():
         response.headers.setdefault(header, value)
+    if request.method in _STATE_CHANGING:
+        audit_log.log(request.url.path, request.method, request.url.path,
+                      response.status_code, origin=origin,
+                      client=request.client.host if request.client else "")
     return response
 
 
@@ -990,6 +1016,51 @@ class TestRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     confirm: bool = False
+
+
+_SYSMON_CACHE: tuple[float, bool] = (0.0, False)
+
+
+def _sysmon_cached() -> bool:
+    """sysmon_available() lanza PowerShell: se cachea 60 s para no convertir
+    /api/health en un coste por peticion."""
+    global _SYSMON_CACHE
+    now = time.time()
+    if now - _SYSMON_CACHE[0] > 60:
+        try:
+            _SYSMON_CACHE = (now, bool(sysmon_available()))
+        except Exception:
+            _SYSMON_CACHE = (now, False)
+    return _SYSMON_CACHE[1]
+
+
+@app.get("/api/health")
+def health():
+    """S9: watchdog. Barato y sin subprocess en la via rapida: el watchdog
+    (scripts/services-up.ps1) solo necesita saber si el server vive, si el
+    monitor esta activo y que fuentes tienen senal.
+    """
+    alive = monitor is not None and monitor.is_alive() and not monitor.is_paused()
+    events = store.count_events() if store is not None else 0
+    last_seen = store.last_event_ts() if store is not None else None
+    return {
+        "status": "ok" if alive else "degradado",
+        "version": VERSION,
+        "uptime_seconds": int((datetime.now(timezone.utc) - _START_TS).total_seconds()),
+        "monitoring_enabled": bool(_cfg.get("monitoring_enabled", True)),
+        "events": events,
+        "last_event": last_seen,
+        "llm_calls": (llm_calls.summary().get("calls", 0) if llm_calls else 0),
+        "retention_days": int(_cfg.get("retention_days") or 90),
+        "sources": {
+            "monitor": "activo" if alive else ("pausado" if monitor is not None else "no iniciado"),
+            "sysmon": _sysmon_cached(),
+            "tshark": sni_available(),
+            "sni_capture": sni_capture is not None,
+            "llm_proxy": llm_proxy is not None,
+            "jev_key_set": bool(_cfg.get("jev_api_key")),
+        },
+    }
 
 
 @app.get("/api/config")
@@ -2440,7 +2511,15 @@ def evidence_stix(days: int = 7):
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    # El token de sesion se inyecta aqui (solo accesible desde la propia
+    # consola: el guard de Host bloquea el rebinding, y CORS deny-all impide
+    # leerlo desde otra pagina). No se escribe a disco.
+    return html.replace(
+        "</head>",
+        f'<meta name="netwatch-token" content="{_SESSION_TOKEN}">\n</head>',
+        1,
+    )
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

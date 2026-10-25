@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import server  # noqa: E402
+import audit  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
@@ -45,15 +46,18 @@ class SecurityBase(unittest.TestCase):
         self._old_store = server.store
         self._old_cfg = server._cfg
         self._old_path = server.CONFIG_PATH
+        self._old_audit = server.audit_log
         server.store = self.store
         server.monitor = None
         server._cfg = _fresh_cfg()
         server.CONFIG_PATH = Path(self.tmp.name) / "config.json"
+        server.audit_log = audit.AuditLog(Path(self.tmp.name) / "audit.log")
 
     def tearDown(self) -> None:
         server.store = self._old_store
         server._cfg = self._old_cfg
         server.CONFIG_PATH = self._old_path
+        server.audit_log = self._old_audit
         self.store.close()
         self.tmp.cleanup()
 
@@ -184,10 +188,13 @@ class TestOriginGuard(SecurityBase):
     scope Starlette minimo: es lo mismo que ve el server en una peticion real.
     """
 
-    def _req(self, method: str, host: str, origin: str | None = None) -> Request:
+    def _req(self, method: str, host: str, origin: str | None = None,
+             token: bool = True) -> Request:
         headers = [(b"host", host.encode())]
         if origin is not None:
             headers.append((b"origin", origin.encode()))
+        if token and method in server._STATE_CHANGING:
+            headers.append((b"x-netwatch-token", server._SESSION_TOKEN.encode()))
         return Request({"type": "http", "method": method, "path": "/api/config",
                         "headers": headers, "query_string": b"",
                         "scheme": "http"})
@@ -238,6 +245,71 @@ class TestOriginGuard(SecurityBase):
         self.assertTrue(cors, "no se ha registrado CORSMiddleware")
         self.assertEqual(cors[0].kwargs["allow_origins"], [])
         self.assertFalse(cors[0].kwargs.get("allow_credentials"))
+
+    def test_post_without_session_token_blocked(self):
+        # Un proceso local que no conoce el token no puede POSTar.
+        self.assertEqual(self._run(self._req("POST", "127.0.0.1:8790",
+                                            token=False)), 403)
+
+    def test_post_with_wrong_token_blocked(self):
+        req = Request({"type": "http", "method": "POST", "path": "/api/reset",
+                       "headers": [(b"host", b"127.0.0.1:8790"),
+                                   (b"x-netwatch-token", b"no-es-el-token")],
+                       "query_string": b"", "scheme": "http"})
+        self.assertEqual(self._run(req), 403)
+
+    def test_get_no_token_needed(self):
+        self.assertEqual(self._run(self._req("GET", "127.0.0.1:8790",
+                                            token=False)), 200)
+
+    def test_audit_records_state_changing(self):
+        asyncio.run(server._origin_guard(
+            self._req("POST", "127.0.0.1:8790"), self._pass_through))
+        tail = server.audit_log.tail(5)
+        self.assertTrue(tail)
+        self.assertEqual(tail[-1]["path"], "/api/config")
+        self.assertEqual(tail[-1]["status"], 200)
+        self.assertEqual(tail[-1]["method"], "POST")
+
+    def test_audit_records_blocked_attempts(self):
+        asyncio.run(server._origin_guard(
+            self._req("POST", "127.0.0.1:8790", "https://evil.com"),
+            self._pass_through))
+        tail = server.audit_log.tail(5)
+        self.assertEqual(tail[-1]["action"], "blocked")
+        self.assertEqual(tail[-1]["status"], 403)
+        self.assertEqual(tail[-1]["origin"], "https://evil.com")
+
+    def test_token_not_persisted_on_disk(self):
+        # El token vive en memoria: no debe aparecer en config.json.
+        server._save_config()
+        text = server.CONFIG_PATH.read_text(encoding="utf-8")
+        self.assertNotIn(server._SESSION_TOKEN, text)
+
+
+class TestHealth(SecurityBase):
+    """S9: el watchdog necesita un endpoint que diga si el monitor vive."""
+
+    def test_health_reports_status_and_sources(self):
+        out = server.health()
+        self.assertIn(out["status"], ("ok", "degradado"))
+        self.assertEqual(out["status"], "degradado")  # monitor=None en tests
+        self.assertEqual(out["version"], server.VERSION)
+        self.assertGreaterEqual(out["uptime_seconds"], 0)
+        self.assertIn("monitor", out["sources"])
+        self.assertIn("jev_key_set", out["sources"])
+        self.assertFalse(out["sources"]["jev_key_set"])
+
+    def test_health_counts_events(self):
+        self.store.observe_connection("a.exe", "1.1.1.1", 443, None, "")
+        out = server.health()
+        self.assertEqual(out["events"], 1)
+        self.assertTrue(out["last_event"])
+
+    def test_index_injects_token(self):
+        html = server.index()
+        self.assertIn('name="netwatch-token"', html)
+        self.assertIn(server._SESSION_TOKEN, html)
 
 
 class TestJevKeyProtection(SecurityBase):

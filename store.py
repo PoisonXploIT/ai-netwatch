@@ -649,6 +649,19 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
             self.conn.commit()
             return int(cur.lastrowid or 0)
 
+    def count_events(self) -> int:
+        """Total de eventos vivos (para /api/health, barato)."""
+        with self._lock:
+            return int(self.conn.execute(
+                "SELECT COUNT(*) FROM events").fetchone()[0])
+
+    def last_event_ts(self) -> str | None:
+        """Timestamp del ultimo evento registrado (None si no hay)."""
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT MAX(last_seen) FROM events").fetchone()
+        return row[0] if row and row[0] else None
+
     def stats(self, days: int = 7) -> list[dict]:
         """Rollup diario de los ultimos `days` dias (incluye dias sin actividad)."""
         with self._lock:

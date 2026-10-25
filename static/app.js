@@ -43,8 +43,12 @@ function sevCell(score) {
   return `<td class="num"><div class="cellnum"><span class="val">${Number(score).toFixed(2)} / 3</span><span class="sevbar">${bars}</span></div></td>`;
 }
 
+const SESSION_TOKEN = (document.querySelector('meta[name="netwatch-token"]') || {}).content || "";
+
 async function api(path, opts = {}) {
-  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  if (SESSION_TOKEN) headers["X-NetWatch-Token"] = SESSION_TOKEN;
+  const res = await fetch(path, { headers, ...opts });
   if (!res.ok) {
     let msg = res.statusText;
     try { msg = (await res.json()).detail || msg; } catch (_) {}
