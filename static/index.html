@@ -58,15 +58,15 @@
     </div>
     <div class="row">
       <label>LLM local (técnico)</label>
-      <input id="llm-url" placeholder="http://127.0.0.1:8099" style="width:200px">
-      <input id="llm-model" placeholder="modelo" style="width:200px">
+      <input id="llm-url" placeholder="http://127.0.0.1:8099">
+      <input id="llm-model" placeholder="modelo">
       <button id="btn-save-llm">Guardar</button>
       <button id="btn-test-llm">Probar</button>
     </div>
     <div class="row">
       <label>LAYÁ (local, 2ª opinión)</label>
-      <input id="laya-url" placeholder="http://127.0.0.1:8787/v1/systemone" style="width:260px">
-      <input id="laya-model" placeholder="multilingual" style="width:130px">
+      <input id="laya-url" placeholder="http://127.0.0.1:8787/v1/systemone">
+      <input id="laya-model" placeholder="multilingual">
       <button id="btn-save-laya">Guardar</button>
       <button id="btn-test-laya">Probar</button>
     </div>
@@ -75,7 +75,7 @@
     </div>
     <div class="row">
       <label>Hosts extra (IP o dominio, coma)</label>
-      <input id="extra-hosts" placeholder="ej. 10.0.0.5, mi-servidor.local" style="width:340px">
+      <input id="extra-hosts" placeholder="ej. 10.0.0.5, mi-servidor.local">
       <button id="btn-save-extra">Guardar</button>
     </div>
     <div class="row">
@@ -89,14 +89,14 @@
     </div>
     <div class="row">
       <label>Webhook de alertas (loopback, opcional)</label>
-      <input id="alert-webhook" placeholder="http://127.0.0.1:9000/alert" style="width:340px">
+      <input id="alert-webhook" placeholder="http://127.0.0.1:9000/alert">
       <button id="btn-save-alerts">Guardar</button>
     </div>
     <div class="row">
       <label>Retenci&oacute;n eventos (d&iacute;as)</label>
-      <input id="retention-days" type="number" min="1" max="3650" style="width:90px">
+      <input id="retention-days" type="number" min="1" max="3650">
       <label>LLM calls (d&iacute;as)</label>
-      <input id="retention-llm-days" type="number" min="1" max="3650" style="width:90px">
+      <input id="retention-llm-days" type="number" min="1" max="3650">
       <button id="btn-save-retention">Guardar</button>
       <span class="hint">Eventos/triajes y llamadas LLM m&aacute;s antiguos que esto se borran (VACUUM incluido). LLM calls llevan vida m&aacute;s corta: guardan contenido en claro. El hist&oacute;rico diario de estad&iacute;sticas se conserva.</span>
     </div>
@@ -193,7 +193,7 @@
     </div>
     <p class="hint">Evidencia (v2.3): cadena de hashes sobre los eventos de la ventana (si se altera una fila se rompe el resto; verificable offline) y bundle STIX 2.1 para SIEM/CTI.</p>
     <div class="row">
-      <select id="ev-days" style="width:60px">
+      <select id="ev-days">
         <option>1</option><option selected>7</option><option>30</option><option>90</option>
       </select>
       <span class="hint">dias</span>
@@ -235,9 +235,9 @@
     <div class="row">
       <label class="check"><input type="checkbox" id="llm-proxy-toggle"> Inspector activo</label>
       <label>Puerto proxy</label>
-      <input id="llm-proxy-port" style="width:90px">
+      <input id="llm-proxy-port">
       <label>Target (LLM)</label>
-      <input id="llm-proxy-target" placeholder="127.0.0.1:8099" style="width:160px">
+      <input id="llm-proxy-target" placeholder="127.0.0.1:8099">
       <button id="btn-save-proxy">Guardar</button>
     </div>
     <p class="hint">Para inspeccionar, apunta el cliente al puerto del proxy (p. ej. SDK/cliente → <span class="mono">http://127.0.0.1:8098</span>). Las llamadas se guardan en <span class="mono">data/llm_calls.db</span> con prompts y respuestas completos: no expongas ese fichero.</p>

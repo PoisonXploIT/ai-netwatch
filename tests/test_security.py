@@ -242,6 +242,8 @@ class TestOriginGuard(SecurityBase):
         csp = resp.headers["content-security-policy"]
         self.assertIn("default-src 'self'", csp)
         self.assertIn("script-src 'self'", csp)  # sin unsafe-inline
+        self.assertIn("style-src 'self'", csp)   # sin unsafe-inline
+        self.assertNotIn("unsafe-inline", csp)
         self.assertIn("frame-ancestors 'none'", csp)
 
     def test_cors_deny_all_configured(self):
@@ -344,6 +346,61 @@ class TestLlmContentEncryption(SecurityBase):
         self.assertEqual(got["response"] or "", "")
 
 
+class TestProxyPortGuard(SecurityBase):
+    """S-08: el puerto del inspector no puede interponerse en otro servicio."""
+
+    def test_out_of_range_rejected(self):
+        for port in (1, 7999, 10000, 65535):
+            with self.assertRaises(HTTPException) as ctx:
+                server.set_config(server.ConfigRequest(llm_proxy_port=port))
+            self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_same_as_target_rejected(self):
+        server._cfg["llm_proxy_target"] = "127.0.0.1:8099"
+        with self.assertRaises(HTTPException) as ctx:
+            server.set_config(server.ConfigRequest(llm_proxy_port=8099))
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_allowed_range_accepted(self):
+        server._cfg["llm_proxy_target"] = "127.0.0.1:8099"
+        server._cfg["llm_proxy_port"] = 8098
+        server.set_config(server.ConfigRequest(llm_proxy_port=8123))
+        self.assertEqual(server._cfg["llm_proxy_port"], 8123)
+
+    def test_busy_port_rejected(self):
+        import socket as _socket
+        srv = None
+        port = None
+        for candidate in (8123, 8124, 8125, 8126):
+            try:
+                srv = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+                srv.bind(("127.0.0.1", candidate))
+                srv.listen(1)
+                port = candidate
+                break
+            except OSError:
+                srv.close()
+        if port is None:
+            self.skipTest("sin puerto libre en el rango del inspector")
+        try:
+            server._cfg["llm_proxy_target"] = "127.0.0.1:8099"
+            with self.assertRaises(HTTPException) as ctx:
+                server.set_config(server.ConfigRequest(llm_proxy_port=port))
+            self.assertEqual(ctx.exception.status_code, 409)
+        finally:
+            srv.close()
+
+    def test_audit_records_changed_fields(self):
+        server.set_config(server.ConfigRequest(llm_model="dirk",
+                                              retention_days=45))
+        tail = server.audit_log.tail(5)
+        entry = [e for e in tail if e["action"] == "config_change"][-1]
+        self.assertEqual(sorted(entry["detail"]["campos"]),
+                         ["llm_model", "retention_days"])
+        # Los valores no se escriben en el audit (pueden ser secretos).
+        self.assertNotIn("dirk", json.dumps(server.audit_log.tail(20)))
+
+
 class TestVersionSingleSource(SecurityBase):
     """U-02: una unica fuente de version (server.VERSION)."""
 
@@ -401,6 +458,11 @@ class TestHealth(SecurityBase):
         self.assertNotIn("<script>", html)
         self.assertIn('<script src="/static/theme.js"></script>', html)
         self.assertIn('<script src="/static/app.js"></script>', html)
+
+    def test_no_inline_styles(self):
+        # style="..." obligaria a permitir 'unsafe-inline' en la CSP.
+        html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("style=", html)
 
     def test_esc_covers_single_quote(self):
         # S-02: esc() debe escapar la comilla simple, usada en atributos.

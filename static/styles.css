@@ -241,6 +241,16 @@ section.card[data-tab].tab-active { display: block; }
 .sc-low { background: var(--v-ok); }
 .sc-mid { background: var(--v-warn); }
 .sc-high { background: var(--v-bad); }
+/* Anchos de campos de config: antes eran style="..." inline, lo que
+   obligaba a permitir 'unsafe-inline' en la CSP. Ahora van aqui. */
+#llm-url, #llm-model { width: 200px; }
+#laya-url { width: 260px; }
+#laya-model { width: 130px; }
+#extra-hosts, #alert-webhook { width: 340px; }
+#retention-days, #retention-llm-days { width: 90px; }
+#ev-days { width: 60px; }
+#llm-proxy-port { width: 90px; }
+#llm-proxy-target { width: 160px; }
 tr.finding-row { cursor: pointer; }
 tr.finding-row:hover { background: var(--row-hover); }
 .finding-detail td { background: var(--zebra); font-size: 13px;

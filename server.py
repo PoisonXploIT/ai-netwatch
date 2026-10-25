@@ -15,6 +15,8 @@ import io
 import json
 import os
 import re
+import secrets
+import socket
 import subprocess
 import secrets
 import sys
@@ -88,12 +90,12 @@ _SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
     # CSP estricta: todo recurso desde la propia consola. El script de tema
-    # paso a ser externo (static/theme.js) para no necesitar 'unsafe-inline'
-    # en scripts; los style="..." puntuales del HTML si lo requieren.
+    # paso a ser externo (static/theme.js) y los anchos de los campos de config
+    # viven en styles.css: ya no hace falta 'unsafe-inline' ni en scripts ni
+    # en estilos.
     "Content-Security-Policy": (
-        "default-src 'self'; script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; connect-src 'self'; "
-        "frame-ancestors 'none'; base-uri 'self'"
+        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
     ),
 }
 
@@ -1113,6 +1115,27 @@ def get_config():
     return out
 
 
+_PROXY_PORT_MIN = 8000
+_PROXY_PORT_MAX = 9999
+
+
+def _port_busy(port: int) -> bool:
+    """S-08: True si otro servicio local escucha ya en ese puerto loopback.
+
+    El inspector LLM se interpone en el trafico del target: si el usuario
+    pone el puerto de otro servicio (CERBERUS 8599, sec-dashboard 8799...)
+    el proxy pasa a recibir ese trafico sin que nadie lo busque.
+    """
+    if llm_proxy is not None and int(_cfg.get("llm_proxy_port") or 0) == port:
+        return False  # es nuestro propio proxy
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(1.0)
+            return sock.connect_ex(("127.0.0.1", port)) == 0
+    except OSError:
+        return False
+
+
 @app.post("/api/config")
 def set_config(req: ConfigRequest):
     if req.monitoring_enabled is not None:
@@ -1175,9 +1198,22 @@ def set_config(req: ConfigRequest):
     if req.llm_model is not None:
         _cfg["llm_model"] = (req.llm_model or "").strip()
     if req.llm_proxy_port is not None:
-        if not (1 <= int(req.llm_proxy_port) <= 65535):
-            raise HTTPException(400, "llm_proxy_port: entre 1 y 65535")
-        _cfg["llm_proxy_port"] = int(req.llm_proxy_port)
+        port = int(req.llm_proxy_port)
+        if not (_PROXY_PORT_MIN <= port <= _PROXY_PORT_MAX):
+            raise HTTPException(
+                400,
+                f"llm_proxy_port: usa {_PROXY_PORT_MIN}-{_PROXY_PORT_MAX}, "
+                "rango propio del inspector; fuera de el puedes interponerte "
+                "en otro servicio local")
+        target_port = str(_cfg.get("llm_proxy_target") or "").rpartition(":")[2]
+        if target_port and int(target_port) == port:
+            raise HTTPException(
+                400, "llm_proxy_port: no puede ser el mismo que el del target "
+                     "(se escucharía a si mismo)")
+        if _port_busy(port):
+            raise HTTPException(
+                409, f"llm_proxy_port {port}: otro servicio local escucha ahi")
+        _cfg["llm_proxy_port"] = port
     if req.llm_proxy_target is not None:
         target = (req.llm_proxy_target or "").strip()
         if not _valid_proxy_target(target):
@@ -1265,6 +1301,11 @@ def set_config(req: ConfigRequest):
                 p.strip().lower() for p in req.approved_providers
                 if p and p.strip()
             ]
+    changed = sorted(k for k in req.model_dump(exclude_none=True)
+                     if k != "jev_api_key_clear")
+    if changed:
+        audit_log.log("config_change", "POST", "/api/config", 200,
+                      detail={"campos": changed})
     _save_config()
     return _mask(_cfg)
 

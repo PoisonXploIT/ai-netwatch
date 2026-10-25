@@ -435,7 +435,7 @@ class TestProxyConfig(ConfigBase):
 
     def test_toggle_starts_and_stops(self):
         server.set_config(server.ConfigRequest(
-            llm_proxy_port=18099, llm_proxy_target="127.0.0.1:8099"))
+            llm_proxy_port=8123, llm_proxy_target="127.0.0.1:8099"))
         server.set_config(server.ConfigRequest(llm_proxy_enabled=True))
         self.assertTrue(server.llm_proxy is not None)
         self.assertEqual(server.get_config()["llm_proxy_running"], True)
