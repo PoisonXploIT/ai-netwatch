@@ -11,9 +11,12 @@ laya.serve.create_app (que reutiliza TODO el servidor: /health, /v1/systemone,
 Uso:
     C:\\Users\\Sammi\\laya-env\\Scripts\\python.exe tools\\laya_serve_ft.py
 Env opcional:
-    LAYA_FT_CHECKPOINT  ruta del checkpoint fine-tuned (por defecto la de Kaggle)
+    LAYA_FT_CHECKPOINT  ruta del checkpoint fine-tuned (por defecto la v4, la
+                        mejor evaluada: ft-multilingual-2026-10-08-v4)
     LAYA_HOST / LAYA_PORT (default 127.0.0.1:8787)
 La API key se toma de data/laya_serve.env (LAYA_API_KEY), igual que el cliente.
+Requiere un interprete donde este instalado `laya` (laya-env o
+AI\\laya-repo\\.venv); el .venv de ai-netwatch NO trae laya.
 """
 from __future__ import annotations
 
@@ -24,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 ENV = ROOT / "data" / "laya_serve.env"
 CKPT = os.environ.get(
     "LAYA_FT_CHECKPOINT",
-    r"C:\Users\Sammi\AI\laya-checkpoints\ft-multilingual-2026-10-04\laya_finetuned_typed_decisions",
+    r"C:\Users\Sammi\AI\laya-checkpoints\ft-multilingual-2026-10-08-v4\laya_finetuned_typed_decisions",
 )
 
 # Cargar data/laya_serve.env (LAYA_API_KEY, LAYA_HOST, LAYA_PORT, LAYA_DEVICE...).
