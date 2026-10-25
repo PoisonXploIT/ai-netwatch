@@ -399,8 +399,11 @@ function startRefreshJobs() {
 }
 
 function showTab(name) {
-  document.querySelectorAll(".tab").forEach((t) =>
-    t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach((t) => {
+    const on = t.dataset.tab === name;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", String(on));
+  });
   document.querySelectorAll("section.card[data-tab]").forEach((s) =>
     s.classList.toggle("tab-active", s.dataset.tab === name));
   // #10: al cambiar de pestaña, se cargan una vez los datos de esa pestaña.

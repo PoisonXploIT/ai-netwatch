@@ -267,3 +267,19 @@ tr.finding-row { cursor: pointer; }
 tr.finding-row:hover { background: var(--row-hover); }
 .finding-detail td { background: var(--zebra); font-size: 13px;
   white-space: pre-wrap; word-break: break-word; }
+
+/* Responsive: antes no habia ni un @media. A partir de 900px las tablas
+   ya desbordan, asi que se ajustan densidad y columnas del detalle. */
+@media (max-width: 900px) {
+  header { flex-wrap: wrap; gap: 8px; }
+  .header-right { margin-left: 0; }
+  .detail-dl { grid-template-columns: 1fr 1fr; }
+  th, td { padding: 6px 8px; }
+  table { font-size: 12.5px; }
+}
+@media (max-width: 640px) {
+  .detail-dl { grid-template-columns: 1fr; }
+  .tabs { gap: 4px; }
+  .tab { font-size: 12px; padding: 6px 8px; }
+  #llm-url, #llm-model, #laya-url, #extra-hosts, #alert-webhook { width: 100%; }
+}
