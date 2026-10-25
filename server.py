@@ -85,6 +85,14 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
+    # CSP estricta: todo recurso desde la propia consola. El script de tema
+    # paso a ser externo (static/theme.js) para no necesitar 'unsafe-inline'
+    # en scripts; los style="..." puntuales del HTML si lo requieren.
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; connect-src 'self'; "
+        "frame-ancestors 'none'; base-uri 'self'"
+    ),
 }
 
 
@@ -649,14 +657,44 @@ def _spawn_netcollector(duration_s: int, out_path: Path) -> str:
     return "uac"
 
 
+_NETBYTES_LOG_MAX_BYTES = 200_000
+_NETARTIFACT_MAX_AGE_S = 86400  # 24 h: un ETL/XML/JSONL huercos no sirve
+
+
+def _prune_collector_artifacts() -> int:
+    """S-04: retencion de los artefactos del colector elevado.
+
+    `logman`/`tracerpt` escriben ETL y XML en data/ y el JSONL de salida se
+    borra tras ingesarlo; si el ciclo falla (sin admin, timeout) quedan
+    huercos. _prune_retention solo toca SQLite, asi que aqui se limpian los
+    que superan 24 h. Devuelve cuantos ficheros se han eliminado.
+    """
+    removed = 0
+    now = time.time()
+    for pattern in ("netprobe_*.etl", "netprobe_*.xml", "netprobe_*.jsonl"):
+        for path in DATA_DIR.glob(pattern):
+            try:
+                if now - path.stat().st_mtime > _NETARTIFACT_MAX_AGE_S:
+                    path.unlink()
+                    removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 def _netbytes_log(msg: str) -> None:
     """Diagnostico append-only en data/netbytes.log: distingue 'el bucle
     corre' de 'config false en memoria', y que camino de spawn se tomo.
-    Sin esto, un fallo del camino elevado es invisible desde fuera."""
+    Sin esto, un fallo del camino elevado es invisible desde fuera.
+    Se rota al superar 200 KB para que no crezca sin limite."""
     try:
-        with open(DATA_DIR / "netbytes.log", "a", encoding="utf-8") as f:
+        log_path = DATA_DIR / "netbytes.log"
+        with open(log_path, "a", encoding="utf-8") as f:
             f.write(time.strftime("%Y-%m-%dT%H:%M:%S") + " "
                     + msg + "\n")
+        if log_path.stat().st_size > _NETBYTES_LOG_MAX_BYTES:
+            lines = log_path.read_text(encoding="utf-8").splitlines()[-1000:]
+            log_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     except OSError:
         pass
 
@@ -879,6 +917,7 @@ def _prune_retention() -> None:
             store.prune(days)
         if llm_calls is not None:
             llm_calls.prune(int(_cfg.get("retention_days_llm") or 30))
+        _prune_collector_artifacts()
     except Exception:
         pass
 

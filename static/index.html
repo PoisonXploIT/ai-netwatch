@@ -2,17 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<script>
-// Tema antes del primer paint (evita flash): localStorage > prefers-color-scheme.
-(function () {
-  var t = null;
-  try { t = localStorage.getItem("anw-theme"); } catch (e) {}
-  if (t !== "dark" && t !== "light") {
-    t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-  document.documentElement.setAttribute("data-theme", t);
-})();
-</script>
+<script src="/static/theme.js"></script>
 <title>AI NetWatch — salidas a nube IA</title>
 <link rel="icon" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/styles.css">

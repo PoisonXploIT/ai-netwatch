@@ -13,6 +13,7 @@ Ejecutar desde la raiz:  python -m unittest discover tests -v
 """
 import json
 import asyncio
+import os
 import sys
 import tempfile
 import unittest
@@ -235,9 +236,13 @@ class TestOriginGuard(SecurityBase):
         resp = asyncio.run(server._origin_guard(
             self._req("GET", "127.0.0.1:8790"), self._pass_through))
         for header in ("x-content-type-options", "x-frame-options",
-                       "referrer-policy"):
+                       "referrer-policy", "content-security-policy"):
             self.assertIn(header, resp.headers)
         self.assertEqual(resp.headers["x-frame-options"], "DENY")
+        csp = resp.headers["content-security-policy"]
+        self.assertIn("default-src 'self'", csp)
+        self.assertIn("script-src 'self'", csp)  # sin unsafe-inline
+        self.assertIn("frame-ancestors 'none'", csp)
 
     def test_cors_deny_all_configured(self):
         cors = [m for m in server.app.user_middleware
@@ -310,6 +315,36 @@ class TestHealth(SecurityBase):
         html = server.index()
         self.assertIn('name="netwatch-token"', html)
         self.assertIn(server._SESSION_TOKEN, html)
+
+    def test_no_inline_script_in_console(self):
+        # La CSP solo vale si no hay scripts inline: el tema es externo.
+        html = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("<script>", html)
+        self.assertIn('<script src="/static/theme.js"></script>', html)
+        self.assertIn('<script src="/static/app.js"></script>', html)
+
+    def test_esc_covers_single_quote(self):
+        # S-02: esc() debe escapar la comilla simple, usada en atributos.
+        js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("replace(/'/g, \"&#39;\")", js)
+
+    def test_collector_artifacts_pruned(self):
+        # S-04: los ETL/XML/JSONL huercos del colector no entran en la
+        # retencion de SQLite; se limpian tras 24 h.
+        old_dir = server.DATA_DIR
+        server.DATA_DIR = Path(self.tmp.name)
+        try:
+            stale = Path(self.tmp.name) / "netprobe_123.jsonl"
+            stale.write_text("{}", encoding="utf-8")
+            os.utime(stale, (0, 0))  # mtime de 1970: claramente antiguo
+            fresh = Path(self.tmp.name) / "netprobe_456.jsonl"
+            fresh.write_text("{}", encoding="utf-8")
+            removed = server._prune_collector_artifacts()
+            self.assertEqual(removed, 1)
+            self.assertFalse(stale.exists())
+            self.assertTrue(fresh.exists())
+        finally:
+            server.DATA_DIR = old_dir
 
 
 class TestJevKeyProtection(SecurityBase):
