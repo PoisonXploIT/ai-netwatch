@@ -28,7 +28,7 @@ from fastapi import HTTPException  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
 import secret_store  # noqa: E402
-from store import Store  # noqa: E402
+from store import LlmCallStore, Store  # noqa: E402
 
 
 def _fresh_cfg() -> dict:
@@ -290,6 +290,58 @@ class TestOriginGuard(SecurityBase):
         server._save_config()
         text = server.CONFIG_PATH.read_text(encoding="utf-8")
         self.assertNotIn(server._SESSION_TOKEN, text)
+
+
+class TestLlmContentEncryption(SecurityBase):
+    """S-03: el contenido del LLM Inspector no queda en claro en SQLite."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.llm = LlmCallStore(Path(self.tmp.name) / "llm.db")
+
+    def tearDown(self) -> None:
+        self.llm.close()
+        super().tearDown()
+
+    def test_prompt_stored_encrypted(self):
+        self.llm.record({"ts": "2026-10-25 10:00:00Z", "method": "POST",
+                         "path": "/v1/chat/completions", "status": 200,
+                         "model": "m", "prompt": "CLAVE-SECRETA-EN-EL-PROMPT",
+                         "response": "respuesta con PII"})
+        raw = self.llm.path.read_bytes()
+        if secret_store.available():
+            self.assertNotIn(b"CLAVE-SECRETA-EN-EL-PROMPT", raw)
+            self.assertNotIn(b"respuesta con PII", raw)
+            self.assertIn(secret_store.PREFIX.encode(), raw)
+        else:
+            self.assertIn(b"CLAVE-SECRETA-EN-EL-PROMPT", raw)
+
+    def test_roundtrip_returns_plaintext(self):
+        call_id = self.llm.record({"ts": "2026-10-25 10:00:00Z",
+                                   "prompt": "hola", "response": "adios"})
+        got = self.llm.get_call(call_id)
+        self.assertEqual(got["prompt"], "hola")
+        self.assertEqual(got["response"], "adios")
+        self.assertEqual(self.llm.list_calls(10)[0]["prompt"], "hola")
+
+    def test_legacy_plaintext_row_is_readable_and_migratable(self):
+        self.llm.conn.execute(
+            "INSERT INTO llm_calls (ts, prompt, response) VALUES (?,?,?)",
+            ("2026-01-01 00:00:00Z", "viejo-en-claro", "resp vieja"))
+        self.llm.conn.commit()
+        self.assertEqual(self.llm.list_calls(1)[0]["prompt"], "viejo-en-claro")
+        if secret_store.available():
+            self.assertEqual(self.llm.protect_existing(), 1)
+            raw = self.llm.path.read_bytes()
+            self.assertNotIn(b"viejo-en-claro", raw)
+            self.assertEqual(self.llm.list_calls(1)[0]["prompt"], "viejo-en-claro")
+
+    def test_empty_content_does_not_break(self):
+        call_id = self.llm.record({"ts": "2026-10-25 10:00:00Z",
+                                   "prompt": None, "response": ""})
+        got = self.llm.get_call(call_id)
+        self.assertEqual(got["prompt"] or "", "")
+        self.assertEqual(got["response"] or "", "")
 
 
 class TestHealth(SecurityBase):

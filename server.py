@@ -939,6 +939,7 @@ def _start() -> None:
     global store, monitor, sni_capture, llm_calls, alerts
     store = Store(DATA_DIR / "events.db")
     llm_calls = LlmCallStore(DATA_DIR / "llm_calls.db")
+    llm_calls.protect_existing()  # S-03: migrar lo que estaba en claro
     alerts = AlertLog(DATA_DIR / "alerts.log",
                       webhook_url=str(_cfg.get("alert_webhook_url") or ""))
     _prune_retention()

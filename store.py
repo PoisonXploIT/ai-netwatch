@@ -9,6 +9,8 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+import secret_store
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY,
@@ -151,7 +153,43 @@ CREATE INDEX IF NOT EXISTS idx_llm_calls_ts ON llm_calls(ts);
 
 
 class LlmCallStore:
-    """SQLite de llamadas LLM capturadas por el proxy inspector (R3)."""
+    """SQLite de llamadas LLM capturadas por el proxy inspector (R3).
+
+    S-03: el prompt y la respuesta son el dato mas sensible (pueden llevar
+    claves, PII o codigo propio). Se guardan cifrados con DPAPI de Windows
+    ('dpapi:<b64>'), ligados a la cuenta de usuario: el fichero .db ya no
+    contiene texto legible. Si DPAPI no esta disponible (no-Windows o fallo
+    de cifrado) se guarda en claro, sin romper nada: degradacion honesta.
+    """
+
+    @staticmethod
+    def _protect_text(value):
+        if value is None:
+            return None
+        text = str(value)
+        if not text:
+            return text
+        enc = secret_store.protect(text)
+        return enc if enc else text
+
+    @staticmethod
+    def _unprotect_text(value):
+        if not value:
+            return value or ""
+        if secret_store.is_protected(value):
+            out = secret_store.unprotect(value)
+            # Blob cifrado por otra cuenta/maquina: no se puede leer, se
+            # devuelve vacio en lugar de exponer el ciphertext.
+            return out if out is not None else ""
+        return value  # registro anterior, en claro
+
+    def _row_to_dict(self, row) -> dict:
+        out = dict(row)
+        out["prompt"] = self._unprotect_text(out.get("prompt"))
+        out["response"] = self._unprotect_text(out.get("response"))
+        out["content_encrypted"] = secret_store.is_protected(
+            row["prompt"] if "prompt" in row.keys() else "")
+        return out
 
     def __init__(self, path: Path | str):
         self.path = Path(path)
@@ -183,8 +221,9 @@ class LlmCallStore:
                  call.get("prompt_tokens"), call.get("completion_tokens"),
                  call.get("request_bytes"), call.get("response_bytes"),
                  call.get("latency_ms"), call.get("client_addr"),
-                 call.get("prompt"), call.get("response")),
-            )
+                 self._protect_text(call.get("prompt")),
+                 self._protect_text(call.get("response")),
+            ))
             self.conn.commit()
             return int(cur.lastrowid or 0)
 
@@ -194,14 +233,14 @@ class LlmCallStore:
             rows = self.conn.execute(
                 "SELECT * FROM llm_calls ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
-            return [dict(r) for r in rows]
+            return [self._row_to_dict(r) for r in rows]
 
     def get_call(self, call_id: int) -> dict | None:
         with self._lock:
             row = self.conn.execute(
                 "SELECT * FROM llm_calls WHERE id=?", (call_id,)
             ).fetchone()
-            return dict(row) if row else None
+            return self._row_to_dict(row) if row else None
 
     def summary(self, days: int | None = None) -> dict:
         """Totales del inspector (locales): llamadas, tokens y bytes."""
@@ -218,6 +257,33 @@ class LlmCallStore:
                 args.append(_cutoff_ts(days))
             r = self.conn.execute(q, tuple(args)).fetchone()
             return {k: int(v or 0) for k, v in dict(r).items()}
+
+    def protect_existing(self) -> int:
+        """S-03: re-cifra con DPAPI los prompt/response en claro que ya
+        estaban guardados (bases creadas antes del cifrado). Devuelve el
+        numero de filas migradas. Fail-safe: si DPAPI no esta, no toca nada."""
+        if not secret_store.available():
+            return 0
+        migrated = 0
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT id, prompt, response FROM llm_calls").fetchall()
+            for row in rows:
+                updates = {}
+                for column in ("prompt", "response"):
+                    value = row[column]
+                    if value and not secret_store.is_protected(value):
+                        enc = secret_store.protect(value)
+                        if enc:
+                            updates[column] = enc
+                if updates:
+                    sets = ", ".join(f"{c}=?" for c in updates)
+                    self.conn.execute(
+                        f"UPDATE llm_calls SET {sets} WHERE id=?",
+                        (*updates.values(), row["id"]))
+                    migrated += 1
+            self.conn.commit()
+        return migrated
 
     def clear(self) -> int:
         with self._lock:
