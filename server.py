@@ -59,7 +59,9 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 FINE_TUNE_DIR = DATA_DIR / "finetune"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONFIG_PATH = DATA_DIR / "config.json"
-VERSION = "2.0-alpha"
+# Fuente unica de version (U-02): la consola, los exports JSON/PDF/STIX y
+# /api/health la leen de aqui. Prohibido hardcodearla en el HTML.
+VERSION = "2.6"
 
 app = FastAPI(title="AI NetWatch")
 
@@ -2552,9 +2554,9 @@ def evidence_stix(days: int = 7):
 @app.get("/", response_class=HTMLResponse)
 def index():
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    # El token de sesion se inyecta aqui (solo accesible desde la propia
-    # consola: el guard de Host bloquea el rebinding, y CORS deny-all impide
-    # leerlo desde otra pagina). No se escribe a disco.
+    # Version y token se inyectan aqui: la version solo existe en VERSION
+    # (U-02) y el token de sesion solo vive en memoria (no se escribe a disco).
+    html = html.replace("{{VERSION}}", f"v{VERSION}")
     return html.replace(
         "</head>",
         f'<meta name="netwatch-token" content="{_SESSION_TOKEN}">\n</head>',

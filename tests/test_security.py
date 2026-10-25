@@ -344,6 +344,33 @@ class TestLlmContentEncryption(SecurityBase):
         self.assertEqual(got["response"] or "", "")
 
 
+class TestVersionSingleSource(SecurityBase):
+    """U-02: una unica fuente de version (server.VERSION)."""
+
+    def test_version_is_not_the_alpha_placeholder(self):
+        self.assertNotEqual(server.VERSION, "2.0-alpha")
+        self.assertRegex(server.VERSION, r"^\d+\.\d+$")
+
+    def test_console_renders_the_server_version(self):
+        html = server.index()
+        self.assertIn(f"v{server.VERSION}", html)
+        self.assertNotIn("{{VERSION}}", html)
+        self.assertIn('<span class="badge-ver" id="ver-badge">', html)
+
+    def test_html_has_no_hardcoded_version(self):
+        raw = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("badge-ver\">v2", raw)
+        self.assertNotIn("AI NetWatch v2", raw)
+
+    def test_health_and_exports_share_the_version(self):
+        self.assertEqual(server.health()["version"], server.VERSION)
+        data = json.loads(server.export_json().body)
+        self.assertEqual(data["version"], server.VERSION)
+        self.store.observe_connection("a.exe", "1.1.1.1", 443, "api.openai.com", "")
+        stix = server.evidence_stix(days=7).body.decode("utf-8", "replace")
+        self.assertIn(server.VERSION, stix)
+
+
 class TestHealth(SecurityBase):
     """S9: el watchdog necesita un endpoint que diga si el monitor vive."""
 
