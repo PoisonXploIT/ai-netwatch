@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS llm_reviews (
     ts TEXT NOT NULL,
     event_id INTEGER NOT NULL,
     evaluacion TEXT,
+    accion TEXT,
     porque TEXT,
     evidencia_faltante TEXT
 );
@@ -282,6 +283,12 @@ class Store:
             if "beacon_score" not in cols:
                 self.conn.execute(
                     "ALTER TABLE events ADD COLUMN beacon_score INTEGER")
+            # B2: recomendacion de accion (dejar|sacar) en la revision LLM.
+            rcols = {r[1] for r in self.conn.execute(
+                "PRAGMA table_info(llm_reviews)")}
+            if "accion" not in rcols:
+                self.conn.execute(
+                    "ALTER TABLE llm_reviews ADD COLUMN accion TEXT")
             self.conn.commit()
 
     def _today(self) -> str:
@@ -753,15 +760,16 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
                 "llm_reviews_removed": lr}
 
     def save_review(self, event_id: int, evaluacion: str,
-                    porque: str, evidencia_faltante: str) -> None:
+                    porque: str, evidencia_faltante: str,
+                    accion: str | None = None) -> None:
         """B: persiste una revision LLM local (asesoria display-only;
         nunca altera veredictos ni aprobaciones)."""
         with self._lock:
             self.conn.execute(
-                "INSERT INTO llm_reviews (ts, event_id, evaluacion, porque,"
-                " evidencia_faltante) VALUES (?,?,?,?,?)",
-                (_now(), int(event_id), evaluacion, porque,
-                 evidencia_faltante))
+                "INSERT INTO llm_reviews (ts, event_id, evaluacion, accion,"
+                " porque, evidencia_faltante) VALUES (?,?,?,?,?,?)",
+                (_now(), int(event_id), evaluacion, accion,
+                 porque, evidencia_faltante))
             self.conn.commit()
 
     def list_reviews(self, limit: int = 50) -> list[dict]:

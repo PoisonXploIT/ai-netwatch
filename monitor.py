@@ -26,13 +26,33 @@ _PIDMAP_REFRESH_S = 30.0
 _DNS_REFRESH_S = 60.0
 
 
+def _decodifica(b: bytes) -> str:
+    """Decodifica la salida de un subproceso con cadena de respaldo.
+
+    FIX 2026-10-11: en esta maquina PowerShell devuelve bytes cp1252 (p. ej. 0xa2) y el
+    decode utf-8 por defecto mataba el hilo lector (_readerthread) con UnicodeDecodeError;
+    subprocess.run devolvia stdout vacio y el fail-safe lo interpretaba como "sin datos":
+    ni conexiones, ni Sysmon, ni eventos. La captura quedo congelada desde 2026-09-30 19:51.
+    """
+    if not b:
+        return ""
+    if isinstance(b, str):
+        return b
+    for enc in ("utf-8", "cp1252", "latin-1"):
+        try:
+            return b.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return b.decode("utf-8", "replace")
+
+
 def _run_ps(script: str, timeout: int = 20) -> str:
     proc = subprocess.run(
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, timeout=timeout,
+        capture_output=True, timeout=timeout,
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
-    return proc.stdout
+    return _decodifica(proc.stdout)
 
 
 def _parse_conns(out: str, protocol: str) -> list[dict]:
@@ -238,10 +258,22 @@ class NetMonitor(threading.Thread):
         self.interval = interval
         self.extra_hosts: list[str] = [h.lower() for h in (extra_hosts or [])]
         self._stop = threading.Event()
+        # Kill switch: en pausa el monitor no registra conexiones, Sysmon,
+        # sesiones ni SNI (tracking detenido sin matar el hilo).
+        self._paused = threading.Event()
         self.errors: list[str] = []
 
     def stop(self) -> None:
         self._stop.set()
+
+    def pause(self) -> None:
+        self._paused.set()
+
+    def resume(self) -> None:
+        self._paused.clear()
+
+    def is_paused(self) -> bool:
+        return self._paused.is_set()
 
     def _match_extra(self, ip: str, host: str | None) -> str | None:
         for h in self.extra_hosts:
@@ -454,6 +486,9 @@ catalog_domain solo si estaba vacio.
         # solo el refresco periodico (24 h).
         last_prune = time.monotonic()
         while not self._stop.is_set():
+            if self._paused.is_set():
+                self._stop.wait(self.interval)
+                continue
             now = time.monotonic()
             try:
                 if now - last_pidmap >= _PIDMAP_REFRESH_S:

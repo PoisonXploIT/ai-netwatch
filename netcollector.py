@@ -150,7 +150,8 @@ def run_trace(base_name: str, duration_s: int, workdir: Path) -> Path | None:
                  "0x0000000000000030", "-o", str(base), "-ets"]
     try:
         subprocess.run(cmd_start, capture_output=True, timeout=30,
-                       check=False)
+                       check=False,
+                       creationflags=subprocess.CREATE_NO_WINDOW)
         # Sin admin/UAC denegada el ETL nunca aparece: no esperar la
         # duracion entera (degradacion rapida y honesta).
         # Con -ets el ETL sale como {base}.etl (sin sufijo _000001);
@@ -170,9 +171,11 @@ def run_trace(base_name: str, duration_s: int, workdir: Path) -> Path | None:
         time.sleep(remaining)
         # -ets: la sesion solo se cierra con stop -ets.
         subprocess.run(["logman", "stop", base_name, "-ets"],
-                       capture_output=True, timeout=30, check=False)
+                       capture_output=True, timeout=30, check=False,
+                       creationflags=subprocess.CREATE_NO_WINDOW)
         conv = ["tracerpt", "-of", "XML", "-o", str(xml_path), str(etl)]
-        subprocess.run(conv, capture_output=True, timeout=120, check=False)
+        subprocess.run(conv, capture_output=True, timeout=120, check=False,
+                       creationflags=subprocess.CREATE_NO_WINDOW)
     except (OSError, subprocess.SubprocessError):
         return None
     finally:

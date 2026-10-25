@@ -10,10 +10,17 @@ Ejecutar desde la raiz:  python -m unittest discover tests -v
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+def _ts(days_ago: int) -> str:
+    """Fecha relativa a hoy: los tests de retencion no caducan."""
+    return (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime(
+        "%Y-%m-%d %H:%M:%SZ")
+
 
 import server  # noqa: E402
 from store import LlmCallStore, Store  # noqa: E402
@@ -84,7 +91,7 @@ class TestDashboard(DashboardBase):
 
     def test_llm_summary(self):
         self.llm.record({
-            "ts": "2026-09-23 10:00:00Z", "method": "POST",
+            "ts": _ts(1), "method": "POST",
             "path": "/v1/chat/completions", "status": 200,
             "model": "m", "streaming": False,
             "prompt_chars": 10, "response_chars": 20,
@@ -138,7 +145,7 @@ class TestLlmSummaryDays(DashboardBase):
             "latency_ms": 1.0, "client_addr": None,
             "prompt": "", "response": ""})
         self.llm.record({
-            "ts": "2026-09-23 10:00:00Z", "method": "POST", "path": "/",
+            "ts": _ts(1), "method": "POST", "path": "/",
             "status": 200, "model": "m", "streaming": False,
             "prompt_chars": None, "response_chars": None,
             "prompt_tokens": 2, "completion_tokens": 2,

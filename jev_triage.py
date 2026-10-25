@@ -15,11 +15,20 @@ Preguntas EXACTAS (las parametrisan los eventos, no la prosa):
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 
 PINNED_MODEL = "jev-1.13.0"
 DEFAULT_BASE_URL = "https://api.typesafe.ai/v1/systemone"
+# Backend local: laya-serve (proceso aparte, CPU, sin VRAM). Key desde env
+# LAYA_API_KEY; nunca en claro en data/config.json.
+LOCAL_BASE_URL = "http://127.0.0.1:8787/v1/systemone"
+LOCAL_MODEL = "english"
+_BACKENDS = {
+    "cloud": {"base_url": DEFAULT_BASE_URL, "model": PINNED_MODEL},
+    "local": {"base_url": LOCAL_BASE_URL, "model": LOCAL_MODEL},
+}
 # Eventos por llamada TypeSafe (tamano de lote). El triaje cubre TODOS
 # los eventos en lotes de este tamano; no es un techo global.
 TRIAGE_CAP = 50
@@ -28,20 +37,29 @@ TRIAGE_CAP = 50
 _CLASS_CRITERIA = {
     "expected_ai_use": {
         "what": (
-            "User-triggered call to a known/authorized cloud AI endpoint:"
-            " interactive use, or an explicit triage/triaction the user started"
+            "Call to a known/authorized cloud AI endpoint: user-triggered"
+            " interactive use, OR autonomous traffic from an installed AI tool"
+            " (SDK calls, model/dataset downloads, provider APIs) at the host"
+            " that is the known endpoint for that tool"
         ),
         "not_for": (
-            "Outbound connections with no user action, off-hours sending, or"
-            " periodic heartbeat-like repeats"
+            "The same data leaving to an UNKNOWN or non-AI destination (that is"
+            " background_exfil_suspect); small periodic metadata pings (that is"
+            " telemetry_noise)"
         ),
     },
     "background_exfil_suspect": {
         "what": (
-            "Data leaving to a cloud/AI endpoint without user action, at unusual"
-            " hours, or with telemetry-like periodicity"
+            "Data leaving WITHOUT user action to a destination that is NOT the"
+            " known/authorized AI endpoint for that tool (unknown host, catalog"
+            " false positive, unexpected provider), at unusual hours, or with"
+            " sustained outbound churn / telemetry-like periodicity"
         ),
-        "not_for": ("Small low-sensitivity metadata pings (that is telemetry_noise)"),
+        "not_for": (
+            "Small low-sensitivity metadata pings (that is telemetry_noise);"
+            " autonomous traffic to the tool's own known AI endpoint (that is"
+            " expected_ai_use)"
+        ),
     },
     "telemetry_noise": {
         "what": (
@@ -117,6 +135,76 @@ def _questions_for(global_i: int, local_i: int | None = None) -> dict[str, dict]
     }
 
 
+def _local_questions() -> dict[str, dict]:
+    """Plantilla SIN indice para backend=local (laya-serve).
+
+    A3 REAL (data/laya_a3_gate.txt): /v1/systemone trata state=[] como UN
+    documento y ignora el indice f{i}; por eso el adaptador local usa
+    /v1/systemone/batch con states[] y UNA plantilla unica (ids class/sev/
+    act) aplicada a cada estado, mapeando results[i] al evento i.
+    noul con criteria true/false (C1): sin criteria el checkpoint english
+    clava 'no' casi siempre; labels NO se mandan (la doc avisa de que el
+    checkpoint sigue sus propios labels y un relabel sesga).
+    """
+    return {
+        "class": {
+            "type": "choice",
+            "instructions": (
+                "which classification applies to this cloud-AI network "
+                "event observed on a Windows host?"
+            ),
+            "criteria": _CLASS_CRITERIA,
+        },
+        "sev": {
+            "type": "score",
+            "instructions": (
+                "how critical is the exfiltration risk if this pattern "
+                "continues?"
+            ),
+            "criteria": _SEVERITY_LEVELS,
+        },
+        "act": {
+            "type": "noul",
+            "instructions": "does this event require IMMEDIATE action right now?",
+            "criteria": {
+                "false": "no immediate action needed",
+                "true": "yes, requires immediate action now",
+            },
+        },
+    }
+
+
+def _local_verdict(answers: dict) -> dict:
+    """Parseo de answers de laya al contrato de salida (C2/C3).
+
+    - choice:  verdict = answers['class']['choice']
+    - score:   severity_score = float tal cual (se redondea solo al presentar)
+    - noul:    'act' devuelve P(true) en [0,1], NO etiqueta:
+               immediate_action = 'yes' if noul >= 0.5 else 'no'
+    - C2:      prob_false_positive = 1 - answer_confidence (la masa sobre
+               el label reportado; la 'confidence' de laya es entropia
+               normalizada y NO es intercambiable con la de Jev).
+    """
+    cls = answers.get("class") or {}
+    sev = answers.get("sev") or {}
+    act = answers.get("act") or {}
+    choice = cls.get("choice") if isinstance(cls, dict) else None
+    conf = cls.get("answer_confidence") if isinstance(cls, dict) else None
+    score = sev.get("score") if isinstance(sev, dict) else None
+    noul = act.get("noul") if isinstance(act, dict) else None
+    try:
+        immediate = "yes" if float(noul) >= 0.5 else "no"
+    except (TypeError, ValueError):
+        immediate = None
+    return {
+        "verdict": choice,
+        "confidence": conf,
+        "severity_score": score,
+        "immediate_action": immediate,
+        "prob_false_positive": _prob_false_positive(choice, conf),
+    }
+
+
 def _state_for(event: dict) -> dict:
     # sni_domain = dominio real declarado en el handshake TLS (tshark):
     # mas fiable que dest_host (cache DNS, puede ser nombre de CDN).
@@ -175,21 +263,124 @@ def _ask(states: list[dict], idxs: list[int], api_key: str, base_url: str,
     return data.get("answers") if isinstance(data, dict) else None
 
 
-def triage_events(events: list[dict], api_key: str, base_url: str = DEFAULT_BASE_URL,
-                   model: str = PINNED_MODEL, timeout: int = 30) -> dict:
+def _ask_local(states: list[dict], api_key: str, base_url: str,
+               model: str, timeout: int) -> list[dict] | None:
+    """POST /v1/systemone/batch (laya 0.3.22+): states[] + UNA plantilla sin
+    indice; results[i].answers corresponde al estado i (orden de entrada).
+    Max 64 states por llamada (TRIAGE_CAP=50 < 64). Devuelve la lista de
+    answers o None si la respuesta no tiene forma esperable."""
+    data = _http_post_json(base_url + "/batch", {
+        "model": model, "states": states,
+        "questions": _local_questions(),
+    }, api_key, timeout)
+    results = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(results, list):
+        return None
+    out: list[dict] = []
+    for r in results:
+        a = r.get("answers") if isinstance(r, dict) else None
+        out.append(a if isinstance(a, dict) else {})
+    return out
+
+
+def _triage_local(states_all: list[dict], api_key: str, base_url: str,
+                  model: str, timeout: int) -> tuple[dict[str, dict], list[str],
+                                                     dict[str, dict]]:
+    """Camino local (laya-serve). Devuelve (verdicts por indice global,
+    errores, answers crudas por indice global). Fail-safe igual que
+    cloud: nunca lanza hacia fuera."""
+    n = len(states_all)
+    verdicts: dict[str, dict] = {}
+    raw: dict[str, dict] = {}
+    errors: list[str] = []
+
+    # CPU: ~1.7 s/estado medido (2026-09-30). Un batch de 50 tarda ~90 s,
+    # asi que el timeout local escala con el tamano del lote; el default
+    # de 30 s de cloud no sirve aqui.
+    def one(i: int) -> dict | None:
+        # Fallback 1 llamada por evento a /v1/systemone (tambien cubre la
+        # hipotesis de version sin /batch): state unico, misma plantilla.
+        data = _http_post_json(base_url, {
+            "model": model, "state": states_all[i],
+            "questions": _local_questions(),
+        }, api_key, max(timeout, 60))
+        a = data.get("answers") if isinstance(data, dict) else None
+        return a if isinstance(a, dict) else None
+
+    for start in range(0, n, TRIAGE_CAP):
+        idxs = list(range(start, min(start + TRIAGE_CAP, n)))
+        try:
+            res = _ask_local([states_all[i] for i in idxs], api_key,
+                             base_url, model, max(timeout, 60 + 5 * len(idxs)))
+            if res is not None and len(res) == len(idxs):
+                for gi, a in zip(idxs, res):
+                    verdicts[str(gi)] = _local_verdict(a)
+                    raw[str(gi)] = a
+                continue
+            errors.append(f"lote {idxs[0]}-{idxs[-1]}: bad_batch_shape")
+        except Exception as e:
+            errors.append(f"lote {idxs[0]}-{idxs[-1]}: {e}")
+        # Fallback por evento (tamien tolera /batch ausente o 404).
+        for i in idxs:
+            if str(i) in verdicts:
+                continue
+            try:
+                a = one(i)
+                if a is not None:
+                    verdicts[str(i)] = _local_verdict(a)
+                    raw[str(i)] = a
+                else:
+                    errors.append(f"evento {i}: bad_response_shape")
+            except Exception as e2:
+                errors.append(f"evento {i}: {e2}")
+    # Contrato: una entrada por evento (None si no hay respuesta), igual
+    # que el camino cloud.
+    full = {str(i): verdicts.get(str(i)) or _local_verdict({})
+           for i in range(n)}
+    return full, errors, raw
+
+
+def triage_events(events: list[dict], api_key: str,
+                  base_url: str | None = None, model: str | None = None,
+                  timeout: int = 30, backend: str = "cloud") -> dict:
     """Triaje batch de TODOS los eventos. Devuelve
-    {status, model, count, verdicts{idx: {...}}}.
+    {status, model, count, verdicts{idx: {...}}}, mas el campo ADITIVO
+    raw{idx: answers crudas} (dataset Fase F; no cambia el contrato).
 
     Procesa en lotes de TRIAGE_CAP (50) y fusiona veredictos por indice
     global: cubre todos los eventos sin exceder el limite probado por
     llamada. Si un lote falla, reintenta por sub-trozos de _CHUNK (10).
+
+    backend (Fase B): "cloud" (default; comportamiento actual, Jev) o
+    "local" (laya-serve en 127.0.0.1:8787, proceso aparte, sin VRAM). Con
+    local la key se toma de env LAYA_API_KEY (si no esta definida usa
+    api_key); el estado nunca sale de la maquina.
     """
+    if backend not in _BACKENDS:
+        raise ValueError(f"backend desconocido: {backend!r}")
+    if base_url is None:
+        base_url = _BACKENDS[backend]["base_url"]
+    if model is None:
+        model = _BACKENDS[backend]["model"]
     if not events:
         return {"status": "skipped", "reason": "no_events"}
     if not api_key:
         return {"status": "skipped", "reason": "no_api_key"}
     n = len(events)
     states_all = [_state_for(e) for e in events]
+
+    if backend == "local":
+        key = os.environ.get("LAYA_API_KEY") or api_key
+        verdicts, errors, raw = _triage_local(states_all, key, base_url,
+                                              model, timeout)
+        missing = [i for i in range(n) if verdicts[str(i)]["verdict"] is None]
+        if all(v["verdict"] is None for v in verdicts.values()):
+            return {"status": "error",
+                    "reason": "; ".join(errors)[:500] or "no_answers"}
+        return {"status": "ok", "model": model, "count": n,
+                "partial": bool(missing), "verdicts": verdicts,
+                "raw": raw}
+
     answers: dict = {}
     errors: list[str] = []
     for start in range(0, n, TRIAGE_CAP):
@@ -232,6 +423,12 @@ def triage_events(events: list[dict], api_key: str, base_url: str = DEFAULT_BASE
             "immediate_action": noul,
             "prob_false_positive": _prob_false_positive(choice, conf),
         }
+    # Campo ADITIVO (dataset Fase F): las answers crudas de Jev por indice
+    # global, con claves f{gi}_class/_sev/_act tal cual el API. No cambia
+    # ninguna clave existente del contrato.
+    raw = {str(i): {k: v for k, v in answers.items()
+                    if k.startswith(f"f{i}_")}
+           for i in range(n)}
     missing = [i for i in range(n) if f"f{i}_class" not in answers]
     return {"status": "ok", "model": model, "count": n,
-            "partial": bool(missing), "verdicts": verdicts}
+            "partial": bool(missing), "verdicts": verdicts, "raw": raw}

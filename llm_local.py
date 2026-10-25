@@ -35,7 +35,7 @@ def _chat(base_url: str, model: str, system: str, user: str, timeout: int = 120)
     body = {
         "model": model,
         "temperature": 0,
-        "max_tokens": 2048,
+        "max_tokens": 4096,
         "reasoning_effort": "low",
         "messages": [
             {"role": "system", "content": system},
@@ -67,6 +67,21 @@ def _parse_json(content: str) -> dict | None:
 INVESTIGATE_EVALS = ("confirm", "refuta", "insuficiente")
 
 
+def _normalize_accion(a: str | None) -> str | None:
+    """Normaliza la recomendacion de accion a 'dejar' | 'sacar' (None si
+    el modelo no la da o no se entiende)."""
+    s = str(a or "").strip().lower()
+    if not s:
+        return None
+    if s in ("sacar", "saca", "sacarlo", "liberar", "quitar", "retirar",
+             "release", "out"):
+        return "sacar"
+    if s in ("dejar", "dejarlo", "mantener", "conservar", "aislar",
+             "keep", "mantenerlo"):
+        return "dejar"
+    return None
+
+
 def investigate_event(base_url: str, model: str, context: dict) -> dict:
     """v2.4: asesoria LLM local sobre un evento (display-only).
 
@@ -84,10 +99,13 @@ def investigate_event(base_url: str, model: str, context: dict) -> dict:
         " evento de red ya clasificado por Jev. Jev sigue siendo el juez:"
         " tu papel es advisory y no modifica ningun veredicto ni aprobacion."
         " Compara el contexto con el veredicto Jev (si existe) y responde"
-        " SOLO con JSON estricto {evaluacion, porque, evidencia_faltante}"
-        " donde evaluacion es 'confirm' (el contexto respalda el veredicto),"
-        " 'refuta' (hay senales claras en contra) o 'insuficiente' (no hay"
-        " datos bastantes para opinar). Max 120 palabras por campo, espanol."
+        " SOLO con JSON estricto {evaluacion, accion, porque,"
+        " evidencia_faltante} donde evaluacion es 'confirm' (el contexto"
+        " respalda el veredicto), 'refuta' (hay senales claras en contra) o"
+        " 'insuficiente' (no hay datos bastantes para opinar), y accion es"
+        " 'sacar' (el hallazgo es esperado/legitimo/inofensivo y puede salir"
+        " de cuarentena) o 'dejar' (conviene mantenerlo aislado en lista"
+        " negra). Argumenta con detalle: max 300 palabras por campo, espanol."
     )
     try:
         content = _chat(base_url, model, system,
@@ -101,8 +119,9 @@ def investigate_event(base_url: str, model: str, context: dict) -> dict:
     return {
         "status": "ok",
         "evaluacion": str(d["evaluacion"])[:20],
-        "porque": str(d.get("porque") or "")[:400],
-        "evidencia_faltante": str(d.get("evidencia_faltante") or "")[:400],
+        "accion": _normalize_accion(d.get("accion")),
+        "porque": str(d.get("porque") or "")[:2000],
+        "evidencia_faltante": str(d.get("evidencia_faltante") or "")[:2000],
     }
 
 

@@ -13,7 +13,7 @@ import monitor
 class TestNoWindow(unittest.TestCase):
     def test_run_ps_uses_create_no_window(self):
         with mock.patch.object(monitor.subprocess, "run") as m:
-            m.return_value = mock.Mock(stdout="ok")
+            m.return_value = mock.Mock(stdout=b"ok")
             monitor._run_ps("Get-Process")
             kw = m.call_args.kwargs
             self.assertEqual(kw.get("creationflags"),

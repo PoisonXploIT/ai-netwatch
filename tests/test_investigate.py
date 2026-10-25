@@ -83,10 +83,25 @@ class TestInvestigateLlm(InvestigateBase):
     def test_fields_truncated(self):
         self._id = self._seed_event()
         r = self._run(json.dumps({"evaluacion": "confirm",
-                                  "porque": "x" * 500,
-                                  "evidencia_faltante": "y" * 500}))
-        self.assertEqual(len(r["porque"]), 400)
-        self.assertEqual(len(r["evidencia_faltante"]), 400)
+                                  "porque": "x" * 2500,
+                                  "evidencia_faltante": "y" * 2500}))
+        self.assertEqual(len(r["porque"]), 2000)
+        self.assertEqual(len(r["evidencia_faltante"]), 2000)
+
+    def test_accion_normalized(self):
+        self._id = self._seed_event()
+        r = self._run(json.dumps({"evaluacion": "confirm",
+                                  "accion": "dejarlo", "porque": "p",
+                                  "evidencia_faltante": "e"}))
+        self.assertEqual(r["accion"], "dejar")
+        r2 = self._run(json.dumps({"evaluacion": "confirm",
+                                   "accion": "liberar", "porque": "p",
+                                   "evidencia_faltante": "e"}))
+        self.assertEqual(r2["accion"], "sacar")
+        r3 = self._run(json.dumps({"evaluacion": "confirm",
+                                   "accion": "cosa rara", "porque": "p",
+                                   "evidencia_faltante": "e"}))
+        self.assertIsNone(r3["accion"])
 
     def test_bad_json_unavailable(self):
         self._id = self._seed_event()

@@ -1,0 +1,82 @@
+# -*- coding: utf-8 -*-
+"""Check: el 24% del A/B es por ORDEN de opciones, no por calidad del modelo.
+
+Repite la llamada local al server FT usando la plantilla con el MISMO orden de
+opciones que el entrenamiento (background_exfil_suspect primero) y compara con
+los veredictos cloud cacheados. No llama a Jev.
+"""
+from __future__ import annotations
+
+import json
+import sys
+import urllib.request
+import importlib.util
+from pathlib import Path
+
+ROOT = Path(r"C:\Users\Sammi\ai-netwatch")
+sys.path.insert(0, str(ROOT))
+import jev_triage as jt  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location("compare_backends", ROOT / "tools" / "compare_backends.py")
+cb = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(cb)
+
+
+def load_key() -> str:
+    for line in (ROOT / "data" / "laya_serve.env").read_text(encoding="utf-8").splitlines():
+        if line.startswith("LAYA_API_KEY="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+def post(url: str, body: dict, key: str, timeout: int = 600):
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode(), method="POST",
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def main() -> int:
+    ref = json.loads((ROOT / "data" / "compare_20260930.json").read_text(encoding="utf-8"))
+    events_ref = ref["events"]
+    n = len(events_ref)
+    events = cb._load_events(n)
+    states = [jt._state_for(e) for e in events]
+
+    # Plantilla con el orden del ENTRENAMIENTO (background_exfil_suspect primero).
+    order = ["background_exfil_suspect", "expected_ai_use", "telemetry_noise", "unrelated"]
+    class_crit = {k: jt._CLASS_CRITERIA[k] for k in order}
+    questions = {
+        "class": {"type": "choice",
+                  "instructions": "which classification applies to this cloud-AI network event observed on a Windows host?",
+                  "criteria": class_crit},
+        "sev": {"type": "score",
+                "instructions": "how critical is the exfiltration risk if this pattern continues?",
+                "criteria": jt._SEVERITY_LEVELS},
+        "act": {"type": "noul",
+                "instructions": "does this event require IMMEDIATE action right now?",
+                "criteria": {"false": "no immediate action needed",
+                             "true": "yes, requires immediate action now"}},
+    }
+    key = load_key()
+    data = post(jt.LOCAL_BASE_URL + "/batch",
+                {"model": "multilingual", "states": states, "questions": questions}, key)
+    results = data.get("results") or []
+    print("results:", len(results), "de", n)
+
+    cloud = [p.get("cloud") or {} for p in events_ref]
+    local = [jt._local_verdict((r or {}).get("answers") or {}) for r in results]
+    metrics, confusion = cb._ab_metrics(cloud, local)
+    out = {
+        "n": n,
+        "orden_entrenamiento": order,
+        "metrics": metrics,
+        "confusion": {f"{a}->{b}": c for a, row in confusion.items() for b, c in row.items() if c},
+    }
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
