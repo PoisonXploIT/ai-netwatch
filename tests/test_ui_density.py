@@ -66,6 +66,18 @@ class PaginationTest(TestCase):
         self.assertIn('class="chips"', JS)
         self.assertIn(".chips {", CSS)
 
+    def test_panel_has_visual_charts(self):
+        # El Panel no es solo texto: sparkline de actividad, barra apilada de
+        # capas, gauge de shadow y barras por proveedor.
+        for sel in (".spark", ".stack", ".bars .brow", ".gauge"):
+            self.assertIn(sel, CSS, f"falta el estilo de {sel}")
+        for fn in ("sparkHtml", "stackHtml", "gaugeHtml"):
+            self.assertIn(fn, JS)
+        # Tamano aplicado via CSSOM, no style inline (CSP style-src 'self').
+        self.assertIn(".spark i[data-h]", JS)
+        self.assertIn(".stack i[data-w]", JS)
+        self.assertNotIn('<div class="spark" style=', JS)
+
 
 class StatusStripTest(TestCase):
     def test_strip_exists_and_is_polled(self):

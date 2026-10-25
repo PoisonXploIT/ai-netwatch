@@ -10,6 +10,7 @@ Arranque:  python -m uvicorn server:app --host 127.0.0.1 --port 8790
 from __future__ import annotations
 
 import csv
+import hashlib
 import ipaddress
 import io
 import json
@@ -660,14 +661,21 @@ def _spawn_netcollector(duration_s: int, out_path: Path) -> str:
     - Tarea programada AI-NETWATCH-NetBytes (creada una vez, highest
       privileges): `schtasks /run` — sin prompt, funciona aunque el
       servidor corra desde un proceso de fondo oculto.
-    - Si no existe: fallback UAC (Start-Process -Verb RunAs); solo
-      funciona desde consola interactiva. Sin admin => no hay fichero:
-      degradacion honesta, sin numeros."""
+    - Si no existe: fallback UAC UNA sola vez por proceso (v2.6(6)). Antes
+      se reintentaba cada ciclo: un prompt de UAC y una ventana nueva cada
+      10 minutos mientras se trabaja. Sin la tarea creada, se degrada a
+      'sin datos' con el motivo en el log (no es un fallo silencioso)."""
+    global _uac_attempted
     if _netbytes_task_exists():
         _write_netbytes_cmd(duration_s, out_path)
         subprocess.run(["schtasks", "/run", "/TN", NETBYTES_TASK_NAME],
                        capture_output=True, timeout=60)
         return "task"
+    if _uac_attempted:
+        _netbytes_log("sin tarea elevada: no se reintenta (ejecuta una vez "
+                      "setup_netbytes_task.ps1); bytes remotos no disponibles")
+        return "none"
+    _uac_attempted = True
     py = sys.executable
     script = Path(__file__).resolve().parent / "netcollector.py"
     ps = (f"Start-Process -FilePath '{py}'"
@@ -679,6 +687,8 @@ def _spawn_netcollector(duration_s: int, out_path: Path) -> str:
 
 
 _NETBYTES_LOG_MAX_BYTES = 200_000
+_uac_attempted = False  # un solo intento UAC por proceso: nada de ventanas
+                        # ni prompts cada ciclo
 _NETARTIFACT_MAX_AGE_S = 86400  # 24 h: un ETL/XML/JSONL huercos no sirve
 
 
@@ -1011,6 +1021,18 @@ def _stop() -> None:
         llm_calls.close()
 
 
+def _key_fingerprint() -> str:
+    """Fingerprint de 8 chars (sha256) de la key Jev.
+
+    Permite a la UI decir CUAL key esta guardada sin exponerla. El hash no
+    permite reconstruir la key; aun asi no se imprime en logs ni exports.
+    """
+    raw = _cfg.get("jev_api_key") or ""
+    if not raw:
+        return ""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
+
+
 def _mask(cfg: dict) -> dict:
     """La key Jev nunca sale del servidor: se devuelve vacia y un flag.
 
@@ -1022,6 +1044,7 @@ def _mask(cfg: dict) -> dict:
     out = dict(cfg)
     out["jev_api_key_set"] = bool(out.get("jev_api_key"))
     out["jev_api_key"] = ""
+    out["jev_key_fingerprint"] = _key_fingerprint()
     return out
 
 
@@ -1130,6 +1153,7 @@ def get_config():
     out = _mask(_cfg)
     out["tshark_available"] = sni_available()
     out["llm_proxy_running"] = llm_proxy is not None
+    out["net_bytes_available"] = _netbytes_task_exists()
     return out
 
 

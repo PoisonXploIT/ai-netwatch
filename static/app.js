@@ -707,6 +707,49 @@ function paintBars(root) {
   root.querySelectorAll(".bar > div[data-pct]").forEach((el) => {
     el.style.width = el.dataset.pct + "%";
   });
+  root.querySelectorAll(".spark i[data-h]").forEach((el) => {
+    el.style.height = el.dataset.h + "%";
+  });
+  root.querySelectorAll(".stack i[data-w]").forEach((el) => {
+    el.style.width = el.dataset.w + "%";
+  });
+}
+
+// Graficas del Panel: sparkline de actividad y barra apilada de capas.
+// Sin style inline (CSP style-src 'self'): el tamano va en data-* y lo
+// aplica paintBars sobre el CSSOM.
+function sparkHtml(days) {
+  if (!days || !days.length) return "";
+  const max = Math.max(1, ...days.map((x) => x.events || 0));
+  const bars = days.map((x) => {
+    const h = Math.max(3, Math.round(((x.events || 0) / max) * 100));
+    return `<i data-h="${h}" class="${(x.events || 0) ? "" : "zero"}" title="${esc(x.date)}: ${x.events || 0} eventos, ${x.triages || 0} triajes"></i>`;
+  }).join("");
+  return `<div class="spark" role="img" aria-label="Eventos por dia (sparkline)">${bars}</div>`;
+}
+
+const LAYER_COLOR = {
+  catalog: "s-catalog", heuristic: "s-heuristic", llm: "s-llm", none: "s-none", "?": "s-none",
+};
+
+function stackHtml(items) {
+  const total = (items || []).reduce((s, i) => s + (i.seen_count || 0), 0);
+  if (!total) return "";
+  const seg = (items || []).map(i => {
+    const w = Math.max(1, Math.round(((i.seen_count || 0) / total) * 100));
+    return `<i class="${LAYER_COLOR[i.layer] || "s-none"}" data-w="${w}" title="${esc(i.layer)}: ${i.seen_count} presencias (${Math.round(w)}%)"></i>`;
+  }).join("");
+  const legend = (items || []).map(i =>
+    `<span class="chip"><span class="dot ${LAYER_COLOR[i.layer] || "s-none"}"></span>${esc(i.layer)} <b class="num">${i.seen_count}</b></span>`).join("");
+  return `<div class="stack" role="img" aria-label="Reparto de presencias por capa de deteccion">${seg}</div><div class="chips">${legend}</div>`;
+}
+
+function gaugeHtml(approved, unapproved) {
+  const total = approved + unapproved;
+  if (!total) return "";
+  const w = Math.max(1, Math.round((unapproved / total) * 100));
+  return `<div class="stack gauge" role="img" aria-label="Proveedores aprobados frente a no aprobados">` +
+    `<i class="s-catalog" data-w="${100 - w}"></i><i class="s-bad" data-w="${w}"></i></div>`;
 }
 
 function wireEventDetail(wrap) {
@@ -1152,12 +1195,24 @@ function renderDashboard(d) {
   const empty = !d.top_providers.length && !d.daily.length
     ? `<div class="empty">Sin datos en la ventana. Si el monitoreo está pausado (kill switch), reanúdalo con el botón de la cabecera; los eventos aparecen en cuanto hay conexiones IA.</div>`
     : "";
+  const provMax = Math.max(1, ...d.top_providers.map(p => p.seen_count || 0));
+  const provBars = d.top_providers.slice(0, 8).map(p => {
+    const w = Math.max(3, Math.round(((p.seen_count || 0) / provMax) * 100));
+    return `<div class="brow"><span class="mono">${esc(p.name)}</span>` +
+      `<div class="bar"><div data-pct="${w}"></div></div>` +
+      `<span class="num">${p.seen_count}</span></div>`;
+  }).join("");
+  const cbTotal = (cb.total_bytes || 0) + (d.llm_calls ? (d.llm_calls.request_bytes || 0) + (d.llm_calls.response_bytes || 0) : 0);
   wrap.innerHTML = `
     ${empty}
+    ${sparkHtml(d.daily)}
+    ${stackHtml(d.layers)}
+    ${gaugeHtml(Math.max(0, (d.summary && d.summary.providers ? d.summary.providers - d.shadow_count : 0)), d.shadow_count || 0)}
+    <div class="bars">${provBars}</div>
     <div class="chips">
-      <span class="chip"><span class="hint">Capas</span><span class="num">${layers}</span></span>
-      <span class="chip"><a href="#shadow-card">Shadow AI</a><span class="num">${d.shadow_count}</span></span>
+      <span class="chip"><span class="hint">Shadow AI</span><b class="num">${d.shadow_count}</b></span>
       <span class="chip"><span class="hint">LLM Inspector</span><span class="num">${llm}</span></span>
+      <span class="chip"><span class="hint">Bytes totales observados</span><span class="num">${fmtBytes(cbTotal)}</span></span>
     </div>
     ${sumLine}
     <div class="row"><span class="hint">Actividad (${d.days} días): ${daily || "sin datos"}</span></div>
@@ -1176,6 +1231,7 @@ function renderDashboard(d) {
   });
   const pm = document.getElementById("btn-prov-more");
   if (pm) pm.onclick = () => { dashProvShown += 12; renderDashboard(d); };
+  paintBars(wrap);
 }
 
 async function refreshDashboard() {
@@ -1213,9 +1269,15 @@ async function loadConfig() {
     // El servidor nunca devuelve la key: solo el flag. No se rellena el
     // input con la mascara (bug U-01: guardar sin escribir borraba la key).
     jevKey.value = "";
-    jevKey.placeholder = c.jev_api_key_set ? "key ya guardada (oculta)" : "API key";
+    jevKey.placeholder = c.jev_api_key_set ? "pegar la key nueva (la actual no se toca)" : "API key";
     const jevState = document.getElementById("jev-key-state");
-    if (jevState) jevState.textContent = c.jev_api_key_set ? "Key guardada (DPAPI). Escribir una nueva la sustituye." : "Sin key guardada.";
+    const jevDot = document.getElementById("jev-key-dot");
+    if (jevState) {
+      jevState.textContent = c.jev_api_key_set
+        ? `guardada (DPAPI) · fingerprint ${esc(c.jev_key_fingerprint || "????????")} · escribir una nueva la sustituye`
+        : "sin key: el triaje con Jev no funciona";
+    }
+    if (jevDot) jevDot.className = "dot " + (c.jev_api_key_set ? "ok" : "bad");
     document.getElementById("llm-url").value = c.llm_base_url || "";
     document.getElementById("llm-model").value = c.llm_model || "";
     document.getElementById("llm-proxy-port").value = c.llm_proxy_port || 8098;
@@ -1229,6 +1291,16 @@ async function loadConfig() {
     const pt = document.getElementById("llm-proxy-toggle");
     pt.checked = !!c.llm_proxy_enabled;
     document.getElementById("alerts-toggle").checked = !!c.alerts_enabled;
+    const nb = document.getElementById("netbytes-toggle");
+    if (nb) {
+      nb.checked = !!c.net_bytes_enabled;
+      const nbState = document.getElementById("netbytes-state");
+      if (nbState) {
+        nbState.textContent = c.net_bytes_enabled
+          ? (c.net_bytes_available ? "colector elevado disponible" : "activado, pero sin tarea elevada: no hay datos (ejecuta setup_netbytes_task.ps1 una vez)")
+          : "apagado (no se lanzan procesos elevados)";
+      }
+    }
     document.getElementById("alert-webhook").value = c.alert_webhook_url || "";
     document.getElementById("retention-days").value = c.retention_days || 90;
     document.getElementById("retention-llm-days").value = c.retention_days_llm || 30;
@@ -1434,6 +1506,15 @@ function bind() {
       toast(ev.target.checked
         ? "Captura SNI (tshark) activada."
         : "Captura SNI (tshark) desactivada.", "ok");
+    } catch (e) { toast(e.message, "err"); }
+  });
+  $("netbytes-toggle").addEventListener("change", async (ev) => {
+    try {
+      await api("/api/config", { method: "POST", body: JSON.stringify({ net_bytes_enabled: ev.target.checked }) });
+      toast(ev.target.checked
+        ? "Bytes remotos activados: el colector elevado se dispara cada ciclo."
+        : "Bytes remotos apagados: no se lanzan procesos elevados.", "ok");
+      loadConfig();
     } catch (e) { toast(e.message, "err"); }
   });
   $("llm-proxy-toggle").addEventListener("change", async (ev) => {

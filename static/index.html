@@ -212,13 +212,19 @@
     <h2>Configuración (persistente)</h2>
     <div class="cfg-group">
       <h3>Motor de triaje (Jev / LAYÁ)</h3>
+    <div class="keybox">
+      <div class="keyhead">
+        <span class="dot" id="jev-key-dot"></span>
+        <b>Key Jev (TypeSafe)</b>
+        <span id="jev-key-state" class="hint">sin key guardada</span>
+      </div>
     <div class="row">
-      <label>Jev (TypeSafe)</label>
-      <input id="jev-key" type="password" placeholder="API key">
-      <button id="btn-save-jev">Guardar</button>
+      <input id="jev-key" type="password" placeholder="pegar la key nueva">
+      <button id="btn-save-jev" class="primary">Guardar</button>
       <button id="btn-clear-jev">Quitar key</button>
       <button id="btn-test-jev">Probar</button>
-      <span id="jev-key-state" class="hint"></span>
+    </div>
+      <p class="hint">Se cifra con DPAPI de Windows en <span class="mono">data/config.json</span>. El servidor nunca devuelve la key: solo un fingerprint de 8 caracteres. No la pegues en chats, notas del vault, commits ni ficheros de texto.</p>
     </div>
     <div class="row">
       <label class="check"><input type="checkbox" id="jev-minimal"> Modo &quot;solo dominios&quot; (S-07): a Jev no salen proceso, IP ni puerto; solo el dominio observado y su patr&oacute;n temporal.</label>
@@ -254,6 +260,10 @@
     </div>
     <div class="row">
       <label class="check"><input type="checkbox" id="tshark-toggle"> tshark: dominio real por SNI (handshake TLS, inmune a CNAME/CDN)</label>
+    </div>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="netbytes-toggle"> Bytes remotos (colector elevado, ciclos de <span class="mono">net_bytes_cycle_s</span> s)</label>
+      <span id="netbytes-state" class="hint"></span>
     </div>
     <div class="row">
       <label>Hosts extra (IP o dominio, coma)</label>

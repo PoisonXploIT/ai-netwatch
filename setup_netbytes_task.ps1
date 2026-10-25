@@ -11,11 +11,23 @@
 
 $ErrorActionPreference = "Stop"
 $repo = $PSScriptRoot
-$wrapper = Join-Path $repo "netcollector_task.ps1"
+$wrapper = Join-Path $repo "netcollector_task.py"
 $taskName = "AI-NETWATCH-NetBytes"
 
 if (-not (Test-Path -LiteralPath $wrapper)) {
     throw "No encuentro el wrapper: $wrapper"
+}
+
+# pythonw.exe = interprete SIN consola. Con LogonType Interactive + Highest,
+# Task Scheduler crea consola para los apps de consola: por eso el wrapper
+# PowerShell (powershell.exe) abrìa una ventana cada ciclo y robaba el foco.
+# v2.6(6): el wrapper es python y el ejecutable es pythonw.
+$pythonw = Join-Path $repo ".venv\Scripts\pythonw.exe"
+if (-not (Test-Path -LiteralPath $pythonw)) {
+    $pythonw = 'C:\Users\Sammi\AppData\Local\Programs\Python\Python312\pythonw.exe'
+}
+if (-not (Test-Path -LiteralPath $pythonw)) {
+    throw "No existe pythonw.exe ni en el .venv ni en el interprete global."
 }
 
 # Verifico que soy admin; si no, fallo claro (no creo tarea a medias).
@@ -26,11 +38,8 @@ if (-not $isAdmin) {
     throw "Este script necesita una consola ELEVADA (como administrador)."
 }
 
-# -WindowStyle Hidden: la tarea corre en sesion interactiva (LogonType
-# Interactive), asi que el task engine le crea consola; sin esto se ve
-# una ventana de PowerShell cada ciclo. v2.6(3): oculta.
-$action = New-ScheduledTaskAction -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wrapper`""
+$action = New-ScheduledTaskAction -Execute $pythonw `
+    -Argument "`"$wrapper`""
 
 # On-demand start ya es el default (el inverso seria -DisallowDemandStart);
 # -StartWhenAvailable es un switch y su default (no iniciar) es lo que

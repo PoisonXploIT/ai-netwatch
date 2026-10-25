@@ -56,8 +56,38 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   codigo cambiara (causa real del "no hay pestanas", medida el 2026-10-25).
 - `bind()` va envuelto en try/catch: si la UI no arranca, el strip lo dice en vez
   de dejar la pagina en blanco.
-- Tests: `tests/test_ui_density.py` (13) y `test_ui_a11y` ampliado a 6 pestanas.
-  Suite: 487 OK.
+- Panel visual (no solo texto): sparkline de actividad diaria, barra apilada
+  del reparto por capa (catalogo/heuristica/LLM/sin capa) con leyenda, gauge
+  aprobados vs. no aprobados y barras horizontales por proveedor. Los tamanos
+  van en `data-pct`/`data-h`/`data-w` y los aplica `paintBars` (la CSP sigue
+  sin permitir `style` inline).
+- Key de Jev: bloque visual con estado (dot + fingerprint sha256 de 8 chars).
+  `/api/config` devuelve `jev_key_fingerprint`; nunca la key. El fingerprint
+  permite identificar CUAL key esta puesta sin exponerla.
+- Toggle de `net_bytes_enabled` en Config (antes no habia forma de apagar el
+  colector elevado desde la UI).
+- Ventanas de PowerShell/CMD cada 10 min (v2.6(6)): la tarea
+  `AI-NETWATCH-NetBytes` corre `powershell.exe` y Task Scheduler le crea
+  consola con `LogonType Interactive`. El wrapper ahora solo lanza
+  `pythonw.exe netcollector_task.py` (sin consola) y sale: la ventana vive
+  ~50 ms en vez de 30 s. Para eliminarla del todo hay que re-registrar la
+  tarea una vez, elevado:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File setup_netbytes_task.ps1`
+  (el script ya apunta a `pythonw.exe` + `netcollector_task.py`).
+- Fallback UAC: se intenta UNA vez por proceso. Antes se reintentaba cada
+  ciclo, lo que significaba un prompt de UAC y una ventana cada 10 minutos.
+- Tests: `tests/test_pipeline_e2e.py` (3) — pipeline de punta a punta en un
+  store temporal: colector -> sesiones -> SNI/DNS/bytes -> baseline -> triaje
+  Jev (stub) con dedup por firma -> hallazgos -> shadow -> autonomia -> panel
+  -> exports JSON/CSV/PDF/chain/STIX, con comprobacion de que ningun export
+  contiene la key y de que alterar una fila rompe la cadena de hashes.
+  Suite: 491 OK.
+
+## Pendiente del bloque UI
+
+- Re-registrar la tarea `AI-NETWATCH-NetBytes` (elevado) para que el
+  ejecutable sea `pythonw.exe` y desaparezca la consola.
+- Medir densidad con datos reales (el kill switch esta pausado: 3 eventos).
 
 ## Hecho en v2.5(1) (tag v2.5(1))
 
