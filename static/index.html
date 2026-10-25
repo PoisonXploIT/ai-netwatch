@@ -29,7 +29,20 @@
     <button class="tab" data-tab="ia" role="tab" id="tab-ia" aria-selected="false" aria-controls="panel-ia">IA (Jev / LLM)</button>
     <button class="tab" data-tab="config" role="tab" id="tab-config" aria-selected="false" aria-controls="panel-config">Config</button>
   </nav>
-  <section class="card" data-tab="resumen" id="panel-card" role="tabpanel" aria-labelledby="tab-resumen">
+
+
+
+
+
+
+
+
+
+
+
+
+  <div class="tab-panel cols-2" id="panel-resumen" role="tabpanel" aria-labelledby="tab-resumen" data-tab="resumen">
+    <section class="card wide" id="panel-dashboard">
     <h2>Panel</h2>
     <p class="hint">Actividad de los &uacute;ltimos 7 d&iacute;as agregando lo que ya existe: presencia (polls), no sesiones. Bytes cloud: opt-in; sin datos, "no disponible" con motivo &mdash; nunca un cero que engane.</p>
     <div id="dashboard-wrap"></div>
@@ -38,15 +51,149 @@
       <select id="dash-days"><option>1</option><option selected>7</option><option>30</option></select>
       <span class="hint">d&iacute;as (panel)</span>
     </div>
-  </section>
-
-  <section class="card" data-tab="hallazgos" id="findings-card" role="tabpanel" aria-labelledby="tab-hallazgos">
+    </section>
+    <section class="card" id="stats-card">
+    <h2>Estadísticas (últimos 7 días)</h2>
+    <p class="hint">El reset borra los eventos y triajes vivos, pero el histórico diario se conserva para la estadística.</p>
+    <div id="stats-wrap"></div>
+    <div class="row">
+      <button id="btn-reset" class="danger">Empezar de cero (reset)</button>
+      <span class="hint">No borra el histórico diario (7+ días).</span>
+    </div>
+    </section>
+    <section class="card" id="export-card">
+    <h2>Exportar</h2>
+    <p class="hint">Generado en memoria desde los datos vivos (eventos + último triaje). Sin secretos: ninguna API key aparece en ningún export.</p>
+    <div class="row">
+      <button id="btn-exp-json" class="primary">JSON</button>
+      <button id="btn-exp-csv" class="primary">CSV</button>
+      <button id="btn-exp-pdf" class="primary">PDF (informe)</button>
+    </div>
+    <p class="hint">Evidencia (v2.3): cadena de hashes sobre los eventos de la ventana (si se altera una fila se rompe el resto; verificable offline) y bundle STIX 2.1 para SIEM/CTI.</p>
+    <div class="row">
+      <select id="ev-days">
+        <option>1</option><option selected>7</option><option>30</option><option>90</option>
+      </select>
+      <span class="hint">dias</span>
+      <button id="btn-ev-chain" class="primary">Cadena de hashes (JSONL)</button>
+      <button id="btn-ev-stix" class="primary">STIX 2.1 (JSON)</button>
+    </div>
+    </section>
+  </div>
+  <div class="tab-panel" id="panel-hallazgos" role="tabpanel" aria-labelledby="tab-hallazgos" data-tab="hallazgos">
+    <section class="card wide" id="findings-card">
     <h2>Hallazgos</h2>
     <p class="hint">Una linea por (proceso, proveedor) con un <b>score combinado 0-100</b> (anomalia determinista + criticidad Jev + autonomia + beaconing + no aprobado), ordenado por score. Clic en la fila para el detalle. Display-only.</p>
     <div id="findings-wrap"></div>
-  </section>
-
-  <section class="card" data-tab="config" id="cfg-card" role="tabpanel" aria-labelledby="tab-config">
+    </section>
+    <section class="card" id="shadow-card">
+    <h2>Shadow AI</h2>
+    <p class="hint">IA detectada que no est&aacute; aprobada: cat&aacute;logo (por defecto) + proveedores que apruebes aqu&iacute;; match por sufijo de dominio. Cada nuevo no aprobado alerta <span class="mono">shadow_ai</span>.</p>
+    <div id="shadow-wrap"></div>
+    </section>
+    <section class="card" id="baseline-card">
+    <h2>Baseline y anomal&iacute;a (D1/D2)</h2>
+    <p class="hint">Lo que es &quot;normal&quot; por (proceso, proveedor), aprendido de lo retenido. Anomal&iacute;a determinista sin IA: flags con porqu&eacute; y <span class="mono">pre_score</span> 0-100; display-only.</p>
+    <div id="baseline-wrap"></div>
+    </section>
+  </div>
+  <div class="tab-panel" id="panel-eventos" role="tabpanel" aria-labelledby="tab-eventos" data-tab="eventos">
+    <section class="card wide" id="events-card">
+    <h2>Eventos (conexiones a destinos IA)</h2>
+    <p class="hint">Proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo (TCP/QUIC) + periodicidad. Columnas: SNI = dominio real del handshake TLS/QUIC (tshark); Catálogo = match por resolución activa; provider+kind (API/web/CDN). Filtros y agrupación por proveedor (v2.3).</p>
+    <div class="row" id="events-filters">
+      <label class="check"><input type="checkbox" id="ev-group" checked> Agrupar por proveedor</label>
+      <label>Capa</label>
+      <select id="ev-layer">
+        <option value="">Todas</option>
+        <option value="catalog">catálogo</option>
+        <option value="heuristic">heurística</option>
+        <option value="llm">LLM local</option>
+      </select>
+      <label>Autonomía</label>
+      <select id="ev-verdict">
+        <option value="">Todas</option>
+        <option value="autonomous">autónomo</option>
+        <option value="scheduled">programado</option>
+        <option value="user_driven">usuario</option>
+        <option value="unknown">desconocido</option>
+      </select>
+      <label class="check"><input type="checkbox" id="ev-shadow"> Solo no aprobados</label>
+      <label class="check"><input type="checkbox" id="ev-hide-cdn"> Ocultar CDN</label>
+      <select id="ev-process"><option value="">Todos los procesos</option></select>
+      <select id="ev-dest"><option value="">Todos los destinos</option></select>
+      <button id="btn-ev-clear">Limpiar</button>
+    </div>
+    <div id="events-wrap" class="table-wrap"></div>
+    </section>
+    <section class="card wide" id="autonomy-card">
+    <h2>Autonom&iacute;a (R2)</h2>
+    <p class="hint">Qu&eacute;n decide la salida a IA: <b>usuario</b>, <b>aut&oacute;nomo</b> o <b>programado</b>. Se&ntilde;ales: sesi&oacute;n bloqueada, inactividad, foreground y linaje (EID 1). Una salida aut&oacute;noma/programada alerta <span class="mono">autonomous_ai_call</span>.</p>
+    <div class="row" id="aut-filters">
+      <label>Veredicto</label>
+      <select id="aut-verdict">
+        <option value="">Todas</option>
+        <option value="autonomous">aut&oacute;nomo</option>
+        <option value="scheduled">programado</option>
+        <option value="user_driven">usuario</option>
+        <option value="unknown">desconocido</option>
+      </select>
+      <select id="aut-process"><option value="">Todos los procesos</option></select>
+      <select id="aut-provider"><option value="">Todos los proveedores</option></select>
+      <label class="check"><input type="checkbox" id="aut-group" checked> Agrupar por proveedor</label>
+      <button id="btn-aut-clear">Limpiar</button>
+    </div>
+    <p id="autonomy-counters" class="hint"></p>
+    <div id="autonomy-wrap"></div>
+    </section>
+  </div>
+  <div class="tab-panel" id="panel-ia" role="tabpanel" aria-labelledby="tab-ia" data-tab="ia">
+    <section class="card wide" id="triage-card">
+    <h2>Triaje con Jev</h2>
+    <button id="btn-triage" class="primary">Triar eventos con Jev</button>
+    <span id="triage-status" class="hint"></span>
+    <div id="triage-results"></div>
+    </section>
+    <section class="card" id="review-card">
+    <h2>Revisi&oacute;n LLM local (batch)</h2>
+    <p class="hint">El LLM local opina uno a uno sobre un conjunto de eventos (tope por petici&oacute;n: <span class="mono">llm_review_max</span>, config). Asesoria display-only: no re-punt&uacute;a, no aprueba ni ejecuta nada; Jev sigue siendo el juez. El resultado se guarda en el hist&oacute;rico de revisiones.</p>
+    <div class="row">
+      <button id="btn-rev-aut" class="primary">Revisar: aut&oacute;nomos</button>
+      <button id="btn-rev-unapproved" class="primary">Revisar: no aprobados</button>
+      <button id="btn-rev-flagged" class="primary">Revisar: marcados (triage)</button>
+      <button id="btn-rev-untriaged" class="primary">Revisar: sin triar</button>
+      <button id="btn-rev-quarantine" class="primary">Revisar: cuarentena</button>
+    </div>
+    <p class="hint">O bien marca eventos con la casilla de la tabla de arriba y:</p>
+    <div class="row">
+      <button id="btn-review-selected" class="primary">Revisar selecci&oacute;n</button>
+      <span id="review-status" class="hint"></span>
+    </div>
+    <div id="review-results"></div>
+    <p class="hint">&Uacute;ltimas revisiones (hist&oacute;rico)</p>
+    <div id="review-history"></div>
+    </section>
+    <section class="card" id="llm-inspector-card">
+    <h2>LLM Inspector (R3)</h2>
+    <p class="hint">Reverse proxy local frente al LLM local: registra cada llamada HTTP en claro — prompt, respuesta, modelo, tokens y latencia. Solo sirve para un LLM de loopback (HTTP plano); los proveedores remotos viajan cifrados y su contenido no se ve aquí.</p>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="llm-proxy-toggle"> Inspector activo</label>
+      <label>Puerto proxy</label>
+      <input id="llm-proxy-port">
+      <label>Target (LLM)</label>
+      <input id="llm-proxy-target" placeholder="127.0.0.1:8099">
+      <button id="btn-save-proxy">Guardar</button>
+    </div>
+    <p class="hint">Para inspeccionar, apunta el cliente al puerto del proxy (p. ej. SDK/cliente → <span class="mono">http://127.0.0.1:8098</span>). Las llamadas se guardan en <span class="mono">data/llm_calls.db</span> con prompts y respuestas completos: no expongas ese fichero.</p>
+    <p class="hint">Cobertura: chat/completions (incluido tool-calling), embeddings, audio e imágenes; un intento que no conecta queda registrado como fallo.</p>
+    <div id="llm-calls-wrap"></div>
+    <div class="row">
+      <button id="btn-reset-llmcalls" class="danger">Borrar llamadas registradas</button>
+    </div>
+    </section>
+  </div>
+  <div class="tab-panel cols-2" id="panel-config" role="tabpanel" aria-labelledby="tab-config" data-tab="config">
+    <section class="card" id="cfg-card">
     <h2>Configuración (persistente)</h2>
     <div class="row">
       <label>Jev (TypeSafe)</label>
@@ -106,150 +253,13 @@
     <div class="row">
       <label class="check"><input type="checkbox" id="llm-content-store"> Guardar contenido de prompts/respuestas LLM (en claro). Apagado: solo metadatos y bytes.</label>
     </div>
-  </section>
-
-  <section class="card" data-tab="eventos" id="panel-eventos" role="tabpanel" aria-labelledby="tab-eventos">
-    <h2>Eventos (conexiones a destinos IA)</h2>
-    <p class="hint">Proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo (TCP/QUIC) + periodicidad. Columnas: SNI = dominio real del handshake TLS/QUIC (tshark); Catálogo = match por resolución activa; provider+kind (API/web/CDN). Filtros y agrupación por proveedor (v2.3).</p>
-    <div class="row" id="events-filters">
-      <label class="check"><input type="checkbox" id="ev-group" checked> Agrupar por proveedor</label>
-      <label>Capa</label>
-      <select id="ev-layer">
-        <option value="">Todas</option>
-        <option value="catalog">catálogo</option>
-        <option value="heuristic">heurística</option>
-        <option value="llm">LLM local</option>
-      </select>
-      <label>Autonomía</label>
-      <select id="ev-verdict">
-        <option value="">Todas</option>
-        <option value="autonomous">autónomo</option>
-        <option value="scheduled">programado</option>
-        <option value="user_driven">usuario</option>
-        <option value="unknown">desconocido</option>
-      </select>
-      <label class="check"><input type="checkbox" id="ev-shadow"> Solo no aprobados</label>
-      <label class="check"><input type="checkbox" id="ev-hide-cdn"> Ocultar CDN</label>
-      <select id="ev-process"><option value="">Todos los procesos</option></select>
-      <select id="ev-dest"><option value="">Todos los destinos</option></select>
-      <button id="btn-ev-clear">Limpiar</button>
-    </div>
-    <div id="events-wrap" class="table-wrap"></div>
-  </section>
-
-  <section class="card" data-tab="eventos" id="shadow-card" role="tabpanel" aria-labelledby="tab-eventos">
-    <h2>Shadow AI</h2>
-    <p class="hint">IA detectada que no est&aacute; aprobada: cat&aacute;logo (por defecto) + proveedores que apruebes aqu&iacute;; match por sufijo de dominio. Cada nuevo no aprobado alerta <span class="mono">shadow_ai</span>.</p>
-    <div id="shadow-wrap"></div>
-  </section>
-
-  <section class="card" data-tab="eventos" id="autonomy-card" role="tabpanel" aria-labelledby="tab-eventos">
-    <h2>Autonom&iacute;a (R2)</h2>
-    <p class="hint">Qu&eacute;n decide la salida a IA: <b>usuario</b>, <b>aut&oacute;nomo</b> o <b>programado</b>. Se&ntilde;ales: sesi&oacute;n bloqueada, inactividad, foreground y linaje (EID 1). Una salida aut&oacute;noma/programada alerta <span class="mono">autonomous_ai_call</span>.</p>
-    <div class="row" id="aut-filters">
-      <label>Veredicto</label>
-      <select id="aut-verdict">
-        <option value="">Todas</option>
-        <option value="autonomous">aut&oacute;nomo</option>
-        <option value="scheduled">programado</option>
-        <option value="user_driven">usuario</option>
-        <option value="unknown">desconocido</option>
-      </select>
-      <select id="aut-process"><option value="">Todos los procesos</option></select>
-      <select id="aut-provider"><option value="">Todos los proveedores</option></select>
-      <label class="check"><input type="checkbox" id="aut-group" checked> Agrupar por proveedor</label>
-      <button id="btn-aut-clear">Limpiar</button>
-    </div>
-    <p id="autonomy-counters" class="hint"></p>
-    <div id="autonomy-wrap"></div>
-  </section>
-
-  <section class="card" data-tab="eventos" id="baseline-card" role="tabpanel" aria-labelledby="tab-eventos">
-    <h2>Baseline y anomal&iacute;a (D1/D2)</h2>
-    <p class="hint">Lo que es &quot;normal&quot; por (proceso, proveedor), aprendido de lo retenido. Anomal&iacute;a determinista sin IA: flags con porqu&eacute; y <span class="mono">pre_score</span> 0-100; display-only.</p>
-    <div id="baseline-wrap"></div>
-  </section>
-
-  <section class="card" data-tab="config" id="rules-card" role="tabpanel" aria-labelledby="tab-config">
+    </section>
+    <section class="card" id="rules-card">
     <h2>Reglas (v2.2)</h2>
     <p class="hint">Reglas por umbral sobre lo que ya se mide: shadow, autonom&iacute;a y beaconing. Una regla que pasa a disparar alerta una vez (<span class="mono">rule_fired</span>); el reset re-alerta.</p>
     <div id="rules-wrap"></div>
-  </section>
-
-  <section class="card" data-tab="config" id="panel-config" role="tabpanel" aria-labelledby="tab-config">
-    <h2>Estadísticas (últimos 7 días)</h2>
-    <p class="hint">El reset borra los eventos y triajes vivos, pero el histórico diario se conserva para la estadística.</p>
-    <div id="stats-wrap"></div>
-    <div class="row">
-      <button id="btn-reset" class="danger">Empezar de cero (reset)</button>
-      <span class="hint">No borra el histórico diario (7+ días).</span>
-    </div>
-  </section>
-
-  <section class="card" data-tab="config" id="panel-config" role="tabpanel" aria-labelledby="tab-config">
-    <h2>Exportar</h2>
-    <p class="hint">Generado en memoria desde los datos vivos (eventos + último triaje). Sin secretos: ninguna API key aparece en ningún export.</p>
-    <div class="row">
-      <button id="btn-exp-json" class="primary">JSON</button>
-      <button id="btn-exp-csv" class="primary">CSV</button>
-      <button id="btn-exp-pdf" class="primary">PDF (informe)</button>
-    </div>
-    <p class="hint">Evidencia (v2.3): cadena de hashes sobre los eventos de la ventana (si se altera una fila se rompe el resto; verificable offline) y bundle STIX 2.1 para SIEM/CTI.</p>
-    <div class="row">
-      <select id="ev-days">
-        <option>1</option><option selected>7</option><option>30</option><option>90</option>
-      </select>
-      <span class="hint">dias</span>
-      <button id="btn-ev-chain" class="primary">Cadena de hashes (JSONL)</button>
-      <button id="btn-ev-stix" class="primary">STIX 2.1 (JSON)</button>
-    </div>
-  </section>
-
-  <section class="card" data-tab="ia" id="panel-ia" role="tabpanel" aria-labelledby="tab-ia">
-    <h2>Triaje con Jev</h2>
-    <button id="btn-triage" class="primary">Triar eventos con Jev</button>
-    <span id="triage-status" class="hint"></span>
-    <div id="triage-results"></div>
-  </section>
-
-  <section class="card" data-tab="ia" id="review-card" role="tabpanel" aria-labelledby="tab-ia">
-    <h2>Revisi&oacute;n LLM local (batch)</h2>
-    <p class="hint">El LLM local opina uno a uno sobre un conjunto de eventos (tope por petici&oacute;n: <span class="mono">llm_review_max</span>, config). Asesoria display-only: no re-punt&uacute;a, no aprueba ni ejecuta nada; Jev sigue siendo el juez. El resultado se guarda en el hist&oacute;rico de revisiones.</p>
-    <div class="row">
-      <button id="btn-rev-aut" class="primary">Revisar: aut&oacute;nomos</button>
-      <button id="btn-rev-unapproved" class="primary">Revisar: no aprobados</button>
-      <button id="btn-rev-flagged" class="primary">Revisar: marcados (triage)</button>
-      <button id="btn-rev-untriaged" class="primary">Revisar: sin triar</button>
-      <button id="btn-rev-quarantine" class="primary">Revisar: cuarentena</button>
-    </div>
-    <p class="hint">O bien marca eventos con la casilla de la tabla de arriba y:</p>
-    <div class="row">
-      <button id="btn-review-selected" class="primary">Revisar selecci&oacute;n</button>
-      <span id="review-status" class="hint"></span>
-    </div>
-    <div id="review-results"></div>
-    <p class="hint">&Uacute;ltimas revisiones (hist&oacute;rico)</p>
-    <div id="review-history"></div>
-  </section>
-
-  <section class="card" data-tab="ia" id="llm-inspector-card" role="tabpanel" aria-labelledby="tab-ia">
-    <h2>LLM Inspector (R3)</h2>
-    <p class="hint">Reverse proxy local frente al LLM local: registra cada llamada HTTP en claro — prompt, respuesta, modelo, tokens y latencia. Solo sirve para un LLM de loopback (HTTP plano); los proveedores remotos viajan cifrados y su contenido no se ve aquí.</p>
-    <div class="row">
-      <label class="check"><input type="checkbox" id="llm-proxy-toggle"> Inspector activo</label>
-      <label>Puerto proxy</label>
-      <input id="llm-proxy-port">
-      <label>Target (LLM)</label>
-      <input id="llm-proxy-target" placeholder="127.0.0.1:8099">
-      <button id="btn-save-proxy">Guardar</button>
-    </div>
-    <p class="hint">Para inspeccionar, apunta el cliente al puerto del proxy (p. ej. SDK/cliente → <span class="mono">http://127.0.0.1:8098</span>). Las llamadas se guardan en <span class="mono">data/llm_calls.db</span> con prompts y respuestas completos: no expongas ese fichero.</p>
-    <p class="hint">Cobertura: chat/completions (incluido tool-calling), embeddings, audio e imágenes; un intento que no conecta queda registrado como fallo.</p>
-    <div id="llm-calls-wrap"></div>
-    <div class="row">
-      <button id="btn-reset-llmcalls" class="danger">Borrar llamadas registradas</button>
-    </div>
-  </section>
+    </section>
+  </div>
   <section class="card guide-hidden" id="guide-card">
     <h2>Guía de uso</h2>
 

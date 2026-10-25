@@ -371,10 +371,10 @@ async function loadFacets() {
 // pestaña activa queda por debajo de 12 req/min. Antes: 38 req/min globales.
 const REFRESH_JOBS = [
   { tab: "eventos", fn: refreshEvents, every: 10000 },    // 6/min
-  { tab: "eventos", fn: refreshShadow, every: 30000 },    // 2/min
   { tab: "eventos", fn: refreshAutonomy, every: 30000 },  // 2/min
-  { tab: "eventos", fn: refreshBaseline, every: 120000 }, // 0.5/min
   { tab: "hallazgos", fn: refreshFindings, every: 15000 }, // 4/min
+  { tab: "hallazgos", fn: refreshShadow, every: 30000 },   // 2/min
+  { tab: "hallazgos", fn: refreshBaseline, every: 120000 }, // 0.5/min
   { tab: "ia", fn: refreshLlmCalls, every: 30000 },       // 2/min
   { tab: "config", fn: refreshRules, every: 60000 },      // 1/min
   { tab: "resumen", fn: refreshStats, every: 60000 },     // 1/min
@@ -404,8 +404,8 @@ function showTab(name) {
     t.classList.toggle("active", on);
     t.setAttribute("aria-selected", String(on));
   });
-  document.querySelectorAll("section.card[data-tab]").forEach((s) =>
-    s.classList.toggle("tab-active", s.dataset.tab === name));
+  document.querySelectorAll(".tab-panel").forEach((s) =>
+    s.classList.toggle("active", s.dataset.tab === name));
   // #10: al cambiar de pestaña, se cargan una vez los datos de esa pestaña.
   REFRESH_JOBS.forEach((j) => { if (j.tab === name) j.fn(); });
 }

@@ -248,6 +248,13 @@ details h4 { margin: 8px 0 2px; font-size: 12px; }
   color: #fff; }
 section.card[data-tab] { display: none; }
 section.card[data-tab].tab-active { display: block; }
+.tab-panel { display: none; }
+.tab-panel.active { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.card { margin-top: 0; }
+@media (min-width: 1000px) {
+  .tab-panel.cols-2.active { grid-template-columns: 1fr 1fr; }
+  .tab-panel.cols-2 .card.wide { grid-column: 1 / -1; }
+}
 .score-badge { display: inline-block; min-width: 34px; text-align: center;
   padding: 2px 6px; border-radius: 6px; font-weight: 600; color: #fff; }
 .sc-low { background: var(--v-ok); }
