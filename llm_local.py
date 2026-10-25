@@ -65,6 +65,14 @@ def _parse_json(content: str) -> dict | None:
 
 
 INVESTIGATE_EVALS = ("confirm", "refuta", "insuficiente")
+COINCIDE_VALUES = ("coincide", "discrepa", "dudoso")
+
+
+def _normalize_coincide(a: str | None) -> str | None:
+    s = str(a or "").strip().lower()
+    if s in COINCIDE_VALUES:
+        return s
+    return None
 
 
 def _normalize_accion(a: str | None) -> str | None:
@@ -83,29 +91,40 @@ def _normalize_accion(a: str | None) -> str | None:
 
 
 def investigate_event(base_url: str, model: str, context: dict) -> dict:
-    """v2.4: asesoria LLM local sobre un evento (display-only).
+    """v2.4/v2.6(8): asesoria LLM local sobre un evento (display-only).
 
     Jev sigue siendo el juez: esto NO re-puntua ni altera veredictos ni
-    aprobaciones; el LLM solo opina sobre el contexto que recibe.
-    Devuelve {status: ok, evaluacion: confirm|refuta|insuficiente,
-    porque, evidencia_faltante} (campos truncados) o
-    {status: unavailable, reason} (fail-safe)."""
+    aprobaciones; el LLM solo opina sobre el contexto que recibe. Ademas de
+    la evaluacion tipada (confirm|refuta|insuficiente) devuelve un JUICIO EN
+    PROSA (`juicio`) escrito en lenguaje llano, que es lo que sirve para
+    valorar si la resolucion tipada de Jev/LAYA es correcta.
+    Devuelve {status: ok, evaluacion, coincide, juicio, porque,
+    evidencia_faltante} (campos truncados) o {status: unavailable, reason}
+    (fail-safe)."""
     if not base_url or not model:
         return {"status": "unavailable", "reason": "llm_no_configurado"}
     if not is_loopback_url(base_url):
         return {"status": "unavailable", "reason": "not_loopback"}
     system = (
-        "Eres un analista de ciberseguridad local que ASESORA sobre un"
-        " evento de red ya clasificado por Jev. Jev sigue siendo el juez:"
-        " tu papel es advisory y no modifica ningun veredicto ni aprobacion."
-        " Compara el contexto con el veredicto Jev (si existe) y responde"
-        " SOLO con JSON estricto {evaluacion, accion, porque,"
-        " evidencia_faltante} donde evaluacion es 'confirm' (el contexto"
-        " respalda el veredicto), 'refuta' (hay senales claras en contra) o"
-        " 'insuficiente' (no hay datos bastantes para opinar), y accion es"
-        " 'sacar' (el hallazgo es esperado/legitimo/inofensivo y puede salir"
-        " de cuarentena) o 'dejar' (conviene mantenerlo aislado en lista"
-        " negra). Argumenta con detalle: max 300 palabras por campo, espanol."
+        "Eres un analista senior de ciberseguridad que trabaja LOCALMENTE y"
+        " ASESORA sobre un evento de red ya clasificado por Jev (y, si"
+        " existe, por LAYA). Ningun veredicto se modifica: tu papel es"
+        " explicar si ese veredicto es razonable. Responde SOLO con JSON"
+        " estricto con estas claves: evaluacion ('confirm' si el contexto"
+        " respalda el veredicto, 'refuta' si hay senales claras en contra,"
+        " 'insuficiente' si no hay datos bastantes); accion ('sacar' si el"
+        " hallazgo es esperado/legitimo/inofensivo y puede salir de"
+        " cuarentena, 'dejar' si conviene mantenerlo aislado); coincide"
+        " ('coincide', 'discrepa' o 'dudoso': si tu lectura coincide con la"
+        " de Jev); juicio (UN parrafo de 120-250 palabras en espanol,"
+        " lenguaje llano y aterrizado: que esta haciendo realmente ese"
+        " proceso, por que habla con ese destino, que dice el patron"
+        " temporal — sesiones, horas, beaconing, autonomia — y si el"
+        " veredicto tipado es o no defendible, con que matiz); porque"
+        " (razones concretas, max 300 palabras); evidencia_faltante (que"
+        " datos harian falta para decidir con certeza, max 200 palabras)."
+        " No inventes: si algo no esta en el contexto, digelo. Nada de"
+        " markdown, nada de listas: prosa."
     )
     try:
         content = _chat(base_url, model, system,
@@ -120,8 +139,11 @@ def investigate_event(base_url: str, model: str, context: dict) -> dict:
         "status": "ok",
         "evaluacion": str(d["evaluacion"])[:20],
         "accion": _normalize_accion(d.get("accion")),
+        "coincide": _normalize_coincide(d.get("coincide")),
+        "juicio": str(d.get("juicio") or "")[:1200],
         "porque": str(d.get("porque") or "")[:2000],
         "evidencia_faltante": str(d.get("evidencia_faltante") or "")[:2000],
+        "model": model,
     }
 
 

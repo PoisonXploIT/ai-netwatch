@@ -81,7 +81,9 @@ CREATE TABLE IF NOT EXISTS llm_reviews (
     evaluacion TEXT,
     accion TEXT,
     porque TEXT,
-    evidencia_faltante TEXT
+    evidencia_faltante TEXT,
+    coincide TEXT,
+    juicio TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_llm_reviews_ts ON llm_reviews(ts);
 """
@@ -355,6 +357,13 @@ class Store:
             if "accion" not in rcols:
                 self.conn.execute(
                     "ALTER TABLE llm_reviews ADD COLUMN accion TEXT")
+            # v2.6(8): juicio en prosa del LLM local y si coincide con Jev.
+            if "coincide" not in rcols:
+                self.conn.execute(
+                    "ALTER TABLE llm_reviews ADD COLUMN coincide TEXT")
+            if "juicio" not in rcols:
+                self.conn.execute(
+                    "ALTER TABLE llm_reviews ADD COLUMN juicio TEXT")
             self.conn.commit()
 
     def _today(self) -> str:
@@ -850,15 +859,18 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
 
     def save_review(self, event_id: int, evaluacion: str,
                     porque: str, evidencia_faltante: str,
-                    accion: str | None = None) -> None:
+                    accion: str | None = None,
+                    coincide: str | None = None,
+                    juicio: str | None = None) -> None:
         """B: persiste una revision LLM local (asesoria display-only;
         nunca altera veredictos ni aprobaciones)."""
         with self._lock:
             self.conn.execute(
                 "INSERT INTO llm_reviews (ts, event_id, evaluacion, accion,"
-                " porque, evidencia_faltante) VALUES (?,?,?,?,?,?)",
+                " porque, evidencia_faltante, coincide, juicio)"
+                " VALUES (?,?,?,?,?,?,?,?)",
                 (_now(), int(event_id), evaluacion, accion,
-                 porque, evidencia_faltante))
+                 porque, evidencia_faltante, coincide, juicio))
             self.conn.commit()
 
     def list_reviews(self, limit: int = 50) -> list[dict]:

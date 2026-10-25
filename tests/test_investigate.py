@@ -109,6 +109,45 @@ class TestInvestigateLlm(InvestigateBase):
         self.assertEqual(r["status"], "unavailable")
         self.assertEqual(r["reason"], "bad_json")
 
+    def test_prose_judgment_and_coincide(self):
+        """v2.6(8): el juicio en prosa (no tipado) es lo que permite valorar
+        si la resolucion tipada de Jev es defendible."""
+        self._id = self._seed_event()
+        r = self._run(json.dumps({
+            "evaluacion": "confirm", "coincide": "coincide",
+            "juicio": "python.exe habla con openai.com porque el SDK "
+                       "esta instalado; el patron es de sesion interactiva.",
+            "porque": "sesiones concentradas en horario de trabajo",
+            "evidencia_faltante": "linea de comando del proceso"}))
+        self.assertEqual(r["coincide"], "coincide")
+        self.assertIn("openai.com", r["juicio"])
+        self.assertEqual(r["model"], "test-model")
+        # coincide solo acepta los tres valores; cualquier otra cosa es None.
+        r2 = self._run(json.dumps({"evaluacion": "refuta", "coincide": "quizas",
+                                   "juicio": "x", "porque": "p",
+                                   "evidencia_faltante": "e"}))
+        self.assertIsNone(r2["coincide"])
+        # Truncado: el parrafo no puede desbordar la tarjeta.
+        r3 = self._run(json.dumps({"evaluacion": "confirm",
+                                   "coincide": "dudoso",
+                                   "juicio": "z" * 2000, "porque": "p",
+                                   "evidencia_faltante": "e"}))
+        self.assertEqual(len(r3["juicio"]), 1200)
+
+    def test_review_persists_prose(self):
+        """El historial guarda el juicio, no solo la etiqueta tipada."""
+        eid = self._seed_event()
+        with mock.patch.object(llm_local, "_chat", return_value=json.dumps({
+                "evaluacion": "confirm", "coincide": "discrepa",
+                "juicio": "parrafo aterrizado", "porque": "p",
+                "evidencia_faltante": "e"})):
+            out = server.review(server.ReviewRequest(event_ids=[eid]))
+        self.assertEqual(out["reviews"][0]["coincide"], "discrepa")
+        self.assertEqual(out["reviews"][0]["juicio"], "parrafo aterrizado")
+        saved = self.store.list_reviews(limit=5)[0]
+        self.assertEqual(saved["coincide"], "discrepa")
+        self.assertEqual(saved["juicio"], "parrafo aterrizado")
+
     def test_context_has_no_jev_when_never_triaged(self):
         """Sin triaje previo se investiga igual, con jev=None en contexto."""
         self._id = self._seed_event()

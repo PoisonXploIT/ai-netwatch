@@ -380,6 +380,9 @@ details h4 { margin: 8px 0 2px; font-size: 12px; }
 .hbar-fill.s-none { fill: var(--v-mut); }
 
 /* Clases de color compartidas por donut, barras y chips. */
+.juicio { margin: 6px 0; font-size: 13px; line-height: 1.5;
+  border-left: 3px solid var(--accent); padding: 8px 10px;
+  background: var(--zebra); border-radius: 8px; }
 .dot.s-catalog { background: var(--v-ok); }
 .dot.s-heuristic { background: var(--v-warn); }
 .dot.s-llm { background: var(--accent); }

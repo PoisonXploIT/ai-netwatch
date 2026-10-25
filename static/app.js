@@ -910,11 +910,15 @@ function wireInvestigate(wrap) {
             : r.evaluacion === "refuta"
               ? `<span class="badge-warn">${esc(r.evaluacion)}</span>`
               : `<span class="hint">${esc(r.evaluacion)}</span>`;
+          const COINCIDE = { coincide: "badge-ok", discrepa: "badge-bad", dudoso: "badge-warn" };
           const tr = b.closest("tr");
           if (tr) {
             const row = document.createElement("tr");
             row.innerHTML = `<td colspan="11"><details open>
-              <summary>Asesoría LLM local — ${badge}</summary>
+              <summary>Juicio del LLM local (${esc(r.model || "llm")}) — ${badge}` +
+                (r.coincide ? ` · <span class="${COINCIDE[r.coincide] || "badge-warn"}">${esc(r.coincide)}</span>` : "") +
+                `</summary>
+              <p class="juicio">${esc(r.juicio || "")}</p>
               <p><b>Porque:</b> ${esc(r.porque || "")}</p>
               <p><b>Evidencia faltante:</b> ${esc(r.evidencia_faltante || "—")}</p>
               <p class="hint">Asesoría display-only: no altera veredictos ni aprobaciones; Jev sigue siendo el juez.</p>
@@ -1488,8 +1492,13 @@ function reviewRowHtml(r) {
   const acc = r.accion
     ? `<span class="${r.accion === "sacar" ? "badge-ok" : "badge-bad"}">${esc(r.accion)}</span>`
     : "";
-  return `<div class="row"><b>#${r.event_id}</b> ${badge} ${acc}` +
-    (r.porque ? `<div class="small hint">${esc(r.porque)}</div>` : "") +
+  const COINCIDE = { coincide: "badge-ok", discrepa: "badge-bad", dudoso: "badge-warn" };
+  const coin = r.coincide
+    ? `<span class="${COINCIDE[r.coincide] || "badge-warn"}">${esc(r.coincide)}</span>`
+    : "";
+  return `<div class="row"><b>#${r.event_id}</b> ${badge} ${acc} ${coin}` +
+    (r.juicio ? `<p class="juicio">${esc(r.juicio)}</p>` : "") +
+    (r.porque ? `<div class="small hint">Porque: ${esc(r.porque)}</div>` : "") +
     (r.evidencia_faltante ? `<div class="small hint">Falta: ${esc(r.evidencia_faltante)}</div>` : "") +
     `</div>`;
 }

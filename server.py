@@ -1858,12 +1858,15 @@ def review(req: ReviewRequest):
         row = {"event_id": int(e["id"]),
                "evaluacion": r.get("evaluacion"),
                "accion": acc,
+               "coincide": r.get("coincide"),
+               "juicio": r.get("juicio"),
                "porque": pq,
                "evidencia_faltante": ef}
         if r.get("status") == "ok":
             # investigate_event valida evaluacion en ok; str() por si acaso.
             st.save_review(int(e["id"]),
-                           str(r.get("evaluacion") or ""), pq, ef, acc)
+                           str(r.get("evaluacion") or ""), pq, ef, acc,
+                           coincide=r.get("coincide"), juicio=r.get("juicio"))
         else:
             # Fail-safe por evento: no persistir transitorios, pero si
             # devolver la fila con evaluacion None (no fabricar).
