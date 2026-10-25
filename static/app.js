@@ -707,49 +707,176 @@ function paintBars(root) {
   root.querySelectorAll(".bar > div[data-pct]").forEach((el) => {
     el.style.width = el.dataset.pct + "%";
   });
-  root.querySelectorAll(".spark i[data-h]").forEach((el) => {
-    el.style.height = el.dataset.h + "%";
-  });
-  root.querySelectorAll(".stack i[data-w]").forEach((el) => {
-    el.style.width = el.dataset.w + "%";
-  });
+
 }
 
-// Graficas del Panel: sparkline de actividad y barra apilada de capas.
-// Sin style inline (CSP style-src 'self'): el tamano va en data-* y lo
-// aplica paintBars sobre el CSSOM.
-function sparkHtml(days) {
-  if (!days || !days.length) return "";
-  const max = Math.max(1, ...days.map((x) => x.events || 0));
-  const bars = days.map((x) => {
-    const h = Math.max(3, Math.round(((x.events || 0) / max) * 100));
-    return `<i data-h="${h}" class="${(x.events || 0) ? "" : "zero"}" title="${esc(x.date)}: ${x.events || 0} eventos, ${x.triages || 0} triajes"></i>`;
-  }).join("");
-  return `<div class="spark" role="img" aria-label="Eventos por dia (sparkline)">${bars}</div>`;
-}
+/* ---------------------------------------------------------------------------
+   Graficas del Panel (v2.6.7). Todo en SVG: la geometria va en atributos
+   (x, y, r, stroke-dasharray) y el color en CSS. La CSP es style-src 'self',
+   asi que no se puede style="..."; los atributos de presentacion SVG no son
+   'style', por eso esto funciona sin relajar la politica.
+   --------------------------------------------------------------------------- */
+const CW = 600;          // ancho del viewBox de las graficas de barras
+const LEFT = 48;         // reserva para el eje Y
+const RIGHT = 580;
+const BASE_Y = 118;      // linea de base
+const TOP_Y = 18;        // techo util
+const SPAN = BASE_Y - TOP_Y;
 
 const LAYER_COLOR = {
   catalog: "s-catalog", heuristic: "s-heuristic", llm: "s-llm", none: "s-none", "?": "s-none",
 };
+const LAYER_LABEL = {
+  catalog: "catalogo", heuristic: "heuristica", llm: "LLM local", none: "sin capa",
+};
+const VERDICT_COLOR = {
+  expected_ai_use: "s-catalog", background_exfil_suspect: "s-bad",
+  telemetry_noise: "s-heuristic", unrelated: "s-none",
+};
 
-function stackHtml(items) {
-  const total = (items || []).reduce((s, i) => s + (i.seen_count || 0), 0);
-  if (!total) return "";
-  const seg = (items || []).map(i => {
-    const w = Math.max(1, Math.round(((i.seen_count || 0) / total) * 100));
-    return `<i class="${LAYER_COLOR[i.layer] || "s-none"}" data-w="${w}" title="${esc(i.layer)}: ${i.seen_count} presencias (${Math.round(w)}%)"></i>`;
-  }).join("");
-  const legend = (items || []).map(i =>
-    `<span class="chip"><span class="dot ${LAYER_COLOR[i.layer] || "s-none"}"></span>${esc(i.layer)} <b class="num">${i.seen_count}</b></span>`).join("");
-  return `<div class="stack" role="img" aria-label="Reparto de presencias por capa de deteccion">${seg}</div><div class="chips">${legend}</div>`;
+function gridAndAxis(max) {
+  const half = BASE_Y - SPAN / 2;
+  return `<line class="grid" x1="${LEFT}" y1="${BASE_Y}" x2="${RIGHT}" y2="${BASE_Y}"/>` +
+    `<line class="grid" x1="${LEFT}" y1="${half}" x2="${RIGHT}" y2="${half}"/>` +
+    `<line class="grid" x1="${LEFT}" y1="${TOP_Y}" x2="${RIGHT}" y2="${TOP_Y}"/>` +
+    `<text class="axis-y" x="${LEFT - 6}" y="${BASE_Y + 3}">0</text>` +
+    `<text class="axis-y" x="${LEFT - 6}" y="${half + 3}">${Math.round(max / 2)}</text>` +
+    `<text class="axis-y" x="${LEFT - 6}" y="${TOP_Y + 3}">${max}</text>`;
 }
 
-function gaugeHtml(approved, unapproved) {
-  const total = approved + unapproved;
-  if (!total) return "";
-  const w = Math.max(1, Math.round((unapproved / total) * 100));
-  return `<div class="stack gauge" role="img" aria-label="Proveedores aprobados frente a no aprobados">` +
-    `<i class="s-catalog" data-w="${100 - w}"></i><i class="s-bad" data-w="${w}"></i></div>`;
+// Serie de barras con eje, rejilla, etiquetas y tooltip nativo.
+function barSeries(values, labels, clsFor, fmtTitle, showVal) {
+  const n = values.length;
+  if (!n) return "";
+  const max = Math.max(1, ...values);
+  const slot = (RIGHT - LEFT) / n;
+  const bw = Math.max(6, Math.min(40, slot - 8));
+  let out = gridAndAxis(max);
+  values.forEach((v, i) => {
+    const cx = LEFT + slot * i + slot / 2;
+    const h = v > 0 ? Math.max(4, Math.round((v / max) * SPAN)) : 3;
+    const y = BASE_Y - h;
+    out += `<rect class="col ${clsFor ? clsFor(i, v) : ""}" x="${(cx - bw / 2).toFixed(1)}" y="${y}" width="${bw.toFixed(1)}" height="${h}" rx="3"><title>${esc(fmtTitle(i, v))}</title></rect>`;
+    if (showVal && v > 0 && bw >= 14) {
+      out += `<text class="col-val" x="${cx.toFixed(1)}" y="${y - 4}">${v}</text>`;
+    }
+    if (labels && labels[i]) {
+      out += `<text class="axis" x="${cx.toFixed(1)}" y="${BASE_Y + 13}">${esc(labels[i])}</text>`;
+    }
+  });
+  return out;
+}
+
+function activityChart(daily) {
+  const days = daily || [];
+  const every = days.length <= 12 ? 1 : 5;
+  const body = barSeries(
+    days.map(d => d.events || 0),
+    days.map((d, i) => (i % every === 0 ? d.date.slice(8) : "")),
+    (i, v) => (v ? "" : "zero"),
+    (i, v) => `${days[i].date}: ${v} eventos, ${days[i].triages || 0} triajes`,
+    true,
+  );
+  if (!body) return `<div class="empty">Sin actividad en la ventana.</div>`;
+  return `<svg class="chart-svg" viewBox="0 0 ${CW} 140" role="img" aria-label="Eventos por dia"><title>Eventos por dia</title>${body}</svg>`;
+}
+
+// Histograma de sesiones por hora UTC: muestra CUANDO sale el trafico a IA.
+function hourChart(hourly) {
+  const vals = (hourly || []).slice(0, 24);
+  if (!vals.length || !vals.some(v => v > 0)) {
+    return `<div class="empty">Sin sesiones registradas en la ventana (el histograma por hora necesita el colector activo).</div>`;
+  }
+  const body = barSeries(
+    vals,
+    vals.map((_, i) => (i % 4 === 0 ? String(i) : "")),
+    (i, v) => (i < 6 ? "night" : (v ? "" : "zero")),
+    (i, v) => `${String(i).padStart(2, "0")}:00 UTC: ${v} sesiones`,
+    false,
+  );
+  return `<svg class="chart-svg" viewBox="0 0 ${CW} 140" role="img" aria-label="Sesiones por hora UTC"><title>Sesiones por hora (UTC)</title>${body}</svg>`;
+}
+
+// Donut: segmentos por stroke-dasharray (atributo, no style).
+function donut(items, centerValue, centerLabel) {
+  const total = (items || []).reduce((s, i) => s + (i.value || 0), 0);
+  if (!total) return `<div class="empty">Sin datos para este grafico.</div>`;
+  const R = 42, C = 2 * Math.PI * R;
+  let off = 0, segs = "";
+  (items || []).forEach(it => {
+    const frac = (it.value || 0) / total;
+    if (frac <= 0) return;
+    const len = frac * C;
+    segs += `<circle class="donut-seg ${it.cls || "s-none"}" cx="60" cy="60" r="${R}" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"><title>${esc(it.label)}: ${it.value} (${Math.round(frac * 100)}%)</title></circle>`;
+    off += len;
+  });
+  const legend = (items || []).filter(i => (i.value || 0) > 0).map(i =>
+    `<span class="chip"><span class="dot ${i.cls || "s-none"}"></span>${esc(i.label)} <b class="num">${i.value}</b> <span class="num">${Math.round((i.value / total) * 100)}%</span></span>`).join("");
+  return `<div class="donut-wrap"><svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="${esc(centerLabel)}: ${centerValue}">` +
+    `<circle class="donut-track" cx="60" cy="60" r="${R}"/>` +
+    `<g transform="rotate(-90 60 60)">${segs}</g>` +
+    `<text class="donut-val" x="60" y="58">${esc(String(centerValue))}</text>` +
+    `<text class="donut-lbl" x="60" y="74">${esc(centerLabel)}</text></svg>` +
+    `<div class="chips">${legend}</div></div>`;
+}
+
+// Barras horizontales por proveedor (rect con width en unidades del viewBox).
+function providerBars(items) {
+  if (!(items || []).length) return `<div class="empty">Sin proveedores en la ventana.</div>`;
+  const max = Math.max(1, ...items.map(i => i.seen_count || 0));
+  const kindLabel = { api: "API", web: "web", cdn: "CDN" };
+  return `<div class="prov-bars">` + items.map(i => {
+    const w = Math.max(2, Math.round(((i.seen_count || 0) / max) * 100));
+    return `<div class="prov-row" title="${esc(i.name)}: ${i.seen_count} presencias, capa ${esc(i.layer || "none")}">` +
+      `<span class="prov-name mono">${esc(i.name)} <span class="prov-kind hint">${kindLabel[i.kind] || esc(i.kind || "")}</span></span>` +
+      `<svg class="hbar" viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true">` +
+      `<rect class="hbar-track" x="0" y="0" width="100" height="10"/>` +
+      `<rect class="hbar-fill ${LAYER_COLOR[i.layer] || "s-none"}" x="0" y="0" width="${w}" height="10"/></svg>` +
+      `<span class="prov-val num">${i.seen_count}</span></div>`;
+  }).join("") + `</div>`;
+}
+
+// Lectura en texto llano: que hay que entender del grafico sin leer numeros.
+function panelTakeaway(d) {
+  const s = d.summary || {};
+  if (!s.events) {
+    return "Sin conexiones IA en la ventana. Si el monitoreo esta pausado (kill switch), reanudalo desde la cabecera; si no, amplía la ventana o revisa el catalogo.";
+  }
+  const parts = [];
+  const top = (d.top_providers || [])[0];
+  if (top && s.seen_total) {
+    parts.push(`${top.name} concentra el ${Math.round((top.seen_count / s.seen_total) * 100)}% de las presencias`);
+  }
+  parts.push(`${s.processes} proceso(s) hacia ${s.providers} proveedor(es)`);
+  const hourly = (d.hourly || []).slice(0, 24);
+  if (hourly.some(v => v > 0)) {
+    let peak = 0;
+    hourly.forEach((v, i) => { if (v > hourly[peak]) peak = i; });
+    const night = hourly.slice(0, 6).reduce((a, b) => a + b, 0);
+    parts.push(`pico de sesiones a las ${String(peak).padStart(2, "0")}:00 UTC`);
+    if (night) parts.push(`${night} sesión(es) de madrugada (00-06 UTC)`);
+  }
+  if (d.shadow_count) parts.push(`${d.shadow_count} proveedor(es) no aprobado(s): Shadow AI`);
+  return parts.join(" · ") + ".";
+}
+
+function kpiHtml(d) {
+  const s = d.summary || {};
+  const cb = d.cloud_bytes || {};
+  const llm = d.llm_calls || {};
+  const tiles = [
+    { label: "Eventos", value: s.events ?? 0, note: `${d.days} días` },
+    { label: "Presencias", value: s.seen_total ?? 0, note: `${d.sessions ?? 0} sesiones` },
+    { label: "Procesos", value: s.processes ?? 0, note: "que salen a IA" },
+    { label: "Proveedores", value: s.providers ?? 0, note: `${d.shadow_count || 0} no aprobados` },
+    { label: "LLM local", value: llm.calls ?? 0, note: `${fmtBytes((llm.request_bytes || 0) + (llm.response_bytes || 0))}` },
+    { label: "Bytes cloud", value: cb.available ? fmtBytes(cb.total_bytes || 0) : "no disp.", note: cb.available ? (cb.spawn_method || "colector") : (cb.reason || "sin colector elevado") },
+  ];
+  return `<div class="kpis">` + tiles.map(t =>
+    `<div class="kpi${t.label === "Bytes cloud" && !cb.available ? " kpi-na" : ""}${(t.label === "Proveedores" && d.shadow_count) ? " kpi-bad" : ""}">` +
+    `<span class="kpi-val">${esc(String(t.value))}</span>` +
+    `<span class="kpi-lbl">${esc(t.label)}</span>` +
+    `<span class="kpi-note">${esc(String(t.note || ""))}</span></div>`).join("") + `</div>`;
 }
 
 function wireEventDetail(wrap) {
@@ -1155,23 +1282,14 @@ function providersTableHtml(items) {
 function renderDashboard(d) {
   const wrap = document.getElementById("dashboard-wrap");
   if (!wrap) return;
-  // v2.6(6): densidad. Antes: una .row por item (12 px de margen cada una).
-  // Ahora: chips inline y una sola tabla de proveedores paginada.
+  // v2.6(7): el Panel pasa de lista de texto a graficas SVG. La lectura va
+  // primero (una frase), luego los KPIs y depois las graficas.
   const topList = (items, label) => items.length
     ? `<p class="hint">${label}</p><div class="chips">` + items.map(i =>
       `<span class="chip"><span class="mono">${esc(i.name)}</span>` +
       (i.sdk ? ` <span class="hint">[${esc(i.sdk)}]</span>` : "") +
       `<span class="num">${i.seen_count}</span></span>`).join("") + `</div>`
     : "";
-  const layers = d.layers.length
-    ? d.layers.map(l => `${l.layer}: ${l.seen_count}`).join(" / ")
-    : "sin datos";
-  const llm = d.llm_calls
-    ? `${d.llm_calls.calls} llamadas · ${(d.llm_calls.prompt_tokens || 0) + (d.llm_calls.completion_tokens || 0)} tokens · ${fmtBytes((d.llm_calls.request_bytes || 0) + (d.llm_calls.response_bytes || 0))}`
-    : "inspector sin datos";
-  const daily = d.daily.map(x => `${x.date.slice(5)}: ${x.events} ev / ${x.triages} tri`).join(" · ");
-  // v2.3: cloud_bytes disponible -> total + desglose por proveedor con
-  // label api/web/cdn y hostname resuelto cuando el provider es 'desconocido'.
   const cb = d.cloud_bytes || {};
   const kindLabel = { api: "API", web: "web", cdn: "CDN" };
   const provAll = cb.by_provider || [];
@@ -1187,37 +1305,59 @@ function renderDashboard(d) {
   const cloudLine = cb.available
     ? `<div class="row"><b>Bytes cloud (TLS remoto)</b>: <span class="mono">${fmtBytes(cb.total_bytes || 0)}</span>${cb.spawn_method ? ` <span class="hint">(${esc(cb.spawn_method)})</span>` : ""}</div><div class="chips">${provRows}${restLine}</div>`
     : `<div class="row"><span class="hint">Bytes cloud: no disponible para TLS remoto (${esc(cb.reason || "")}).</span></div>`;
-  // A4: resumen agregado de la ventana (totales y cardinalidades).
-  const s = d.summary || {};
-  const sumLine = s.events != null
-    ? `<div class="chips"><span class="chip"><span class="hint">Resumen (${d.days} días)</span><b class="num">${s.events} eventos</b><span class="num">${s.seen_total} presencias</span><span class="num">${s.processes} procesos</span><span class="num">${s.providers} proveedores</span></span></div>`
-    : "";
-  const empty = !d.top_providers.length && !d.daily.length
-    ? `<div class="empty">Sin datos en la ventana. Si el monitoreo está pausado (kill switch), reanúdalo con el botón de la cabecera; los eventos aparecen en cuanto hay conexiones IA.</div>`
-    : "";
-  const provMax = Math.max(1, ...d.top_providers.map(p => p.seen_count || 0));
-  const provBars = d.top_providers.slice(0, 8).map(p => {
-    const w = Math.max(3, Math.round(((p.seen_count || 0) / provMax) * 100));
-    return `<div class="brow"><span class="mono">${esc(p.name)}</span>` +
-      `<div class="bar"><div data-pct="${w}"></div></div>` +
-      `<span class="num">${p.seen_count}</span></div>`;
-  }).join("");
-  const cbTotal = (cb.total_bytes || 0) + (d.llm_calls ? (d.llm_calls.request_bytes || 0) + (d.llm_calls.response_bytes || 0) : 0);
+  const layerItems = (d.layers || []).map(l => ({
+    label: LAYER_LABEL[l.layer] || l.layer, value: l.seen_count || 0,
+    cls: LAYER_COLOR[l.layer] || "s-none",
+  }));
+  const approved = Math.max(0, (d.summary && d.summary.providers ? d.summary.providers : 0) - (d.shadow_count || 0));
+  const govItems = [
+    { label: "aprobados", value: approved, cls: "s-catalog" },
+    { label: "shadow (no aprobados)", value: d.shadow_count || 0, cls: "s-bad" },
+  ];
+  const verdictItems = Object.entries(d.verdicts || {}).map(([k, v]) => ({
+    label: VERDICT_META[k] ? VERDICT_META[k].label : k, value: v,
+    cls: VERDICT_COLOR[k] || "s-none",
+  }));
   wrap.innerHTML = `
-    ${empty}
-    ${sparkHtml(d.daily)}
-    ${stackHtml(d.layers)}
-    ${gaugeHtml(Math.max(0, (d.summary && d.summary.providers ? d.summary.providers - d.shadow_count : 0)), d.shadow_count || 0)}
-    <div class="bars">${provBars}</div>
-    <div class="chips">
-      <span class="chip"><span class="hint">Shadow AI</span><b class="num">${d.shadow_count}</b></span>
-      <span class="chip"><span class="hint">LLM Inspector</span><span class="num">${llm}</span></span>
-      <span class="chip"><span class="hint">Bytes totales observados</span><span class="num">${fmtBytes(cbTotal)}</span></span>
+    <p class="takeaway">${esc(panelTakeaway(d))}</p>
+    ${kpiHtml(d)}
+    <div class="charts">
+      <div class="chart chart-wide">
+        <h3>Actividad diaria (eventos)</h3>
+        ${activityChart(d.daily)}
+        <p class="chart-note">Una barra = eventos IA vistos ese día. Pasa el ratón por la barra para ver el detalle.</p>
+      </div>
+      <div class="chart">
+        <h3>Capas de detección</h3>
+        ${donut(layerItems, (d.summary && d.summary.seen_total) || 0, "presencias")}
+        <p class="chart-note">Cómo se identificó cada destino: catálogo (evidencia), heurística (señal a revisar) o LLM local.</p>
+      </div>
+      <div class="chart">
+        <h3>Gobernanza (Shadow AI)</h3>
+        ${donut(govItems, d.shadow_count || 0, "no aprobados")}
+        <p class="chart-note">Proveedores IA observados: aprobados por el catálogo o por ti frente a los que no.</p>
+      </div>
+      <div class="chart chart-wide">
+        <h3>Sesiones por hora (UTC)</h3>
+        ${hourChart(d.hourly)}
+        <p class="chart-note">Cuándo sale el tráfico a IA. Las barras de madrugada (00-06 UTC) se colorean aparte: son las que suelen indicar autonomía.</p>
+      </div>
+      <div class="chart">
+        <h3>Top proveedores</h3>
+        ${providerBars(d.top_providers.slice(0, 8))}
+        <p class="chart-note">El color de la barra es la capa que detectó el dominio.</p>
+      </div>
+      <div class="chart">
+        <h3>Veredictos de Jev</h3>
+        ${verdictItems.length ? donut(verdictItems, verdictItems.reduce((s, i) => s + i.value, 0), "eventos triados") : `<div class="empty">Sin triaje en la ventana: pulsa "Triar eventos con Jev" en la pestana IA.</div>`}
+        <p class="chart-note">Último triaje aplicado a los eventos vivos.</p>
+      </div>
     </div>
-    ${sumLine}
-    <div class="row"><span class="hint">Actividad (${d.days} días): ${daily || "sin datos"}</span></div>
-    ${providersTableHtml(d.top_providers)}
-    ${topList(d.top_processes, "Top procesos")}
+    <details>
+      <summary>Tabla de proveedores (ordenable, ${d.top_providers.length})</summary>
+      ${providersTableHtml(d.top_providers)}
+    </details>
+    ${topList(d.top_processes, "Procesos que salen a IA")}
     <div id="dash-sdk-block"></div>
     ${cloudLine}`;
   // A4: orden por cabecera (sin re-fetch; solo re-render con el dato cacheado).

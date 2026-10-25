@@ -600,6 +600,16 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
         return [(str(r["ts"]), str(r["process"]), str(r["dest_ip"]))
                 for r in rows]
 
+    def sessions_since(self, days: int) -> list[dict]:
+        """Inicios de sesion (transicion ausente->presente) dentro de `days`.
+        El panel lo usa para el histograma por hora (UTC)."""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT ts, process, dest_ip, dest_port FROM sessions_log"
+                " WHERE ts >= ? ORDER BY ts",
+                (_cutoff_ts(days),)).fetchall()
+        return [dict(r) for r in rows]
+
     def events_since(self, days: int) -> list[dict]:
         """Eventos vivos con last_seen dentro de `days` (panel)."""
         with self._lock:

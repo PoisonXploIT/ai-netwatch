@@ -61,6 +61,17 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   aprobados vs. no aprobados y barras horizontales por proveedor. Los tamanos
   van en `data-pct`/`data-h`/`data-w` y los aplica `paintBars` (la CSP sigue
   sin permitir `style` inline).
+- Panel v2.6(7): las graficas de divs se veian mal con datos escasos (una
+  barra de 3 px no es una grafica). Se reemplazan por SVG: serie de barras con
+  eje Y, rejilla, etiquetas de dias/horas y tooltip nativo; donut de capas y
+  donut de gobernanza (aprobados vs. shadow) con total en el centro; histograma
+  de sesiones por hora UTC (las 00-06 se colorean aparte, es la franja de
+  autonomia); barras de proveedor con color por capa; KPIs (eventos, presencias,
+  procesos, proveedores, LLM local, bytes cloud) y una linea de lectura
+  automatica (`panelTakeaway`) que dice que concentra cada cosa. La geometria del
+  SVG va en atributos (`x`, `y`, `r`, `stroke-dasharray`), el color en CSS: la
+  CSP `style-src 'self'` no se relaja. `/api/dashboard` añade `hourly` (24
+  buckets), `sessions` y `verdicts` (veredictos Jev agregados).
 - Key de Jev: bloque visual con estado (dot + fingerprint sha256 de 8 chars).
   `/api/config` devuelve `jev_key_fingerprint`; nunca la key. El fingerprint
   permite identificar CUAL key esta puesta sin exponerla.

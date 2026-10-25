@@ -308,21 +308,83 @@ details h4 { margin: 8px 0 2px; font-size: 12px; }
   padding: 10px 12px; margin: 8px 0; color: var(--muted); font-size: 13px;
 }
 
-/* Graficas del Panel (sin style inline: paintBars aplica tamanos). */
-.spark { display: flex; gap: 4px; align-items: flex-end; height: 56px; margin: 10px 0 6px; }
-.spark i { flex: 1; min-width: 12px; height: 3px; border-radius: 3px; background: var(--bar-fill); }
-.spark i.zero { background: var(--bar-bg); }
-.stack { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--bar-bg); margin: 8px 0; }
-.stack i { height: 100%; }
-.stack .s-catalog { background: var(--v-ok); }
-.stack .s-heuristic { background: var(--v-warn); }
-.stack .s-llm { background: var(--accent); }
-.stack .s-none { background: var(--v-mut); }
-.stack .s-bad { background: var(--v-bad); }
-.stack.gauge { height: 10px; }
-.bars { display: grid; gap: 6px; margin: 10px 0; }
-.bars .brow { display: grid; grid-template-columns: minmax(120px, 1fr) 3fr auto; gap: 10px; align-items: center; }
-.bars .bar { height: 8px; }
+/* ---------------------------------------------------------------------------
+   Panel v2.6(7): KPIs + graficas SVG. La geometria va en atributos del SVG
+   y el color aqui (la CSP style-src 'self' no permite style="...").
+   --------------------------------------------------------------------------- */
+.takeaway {
+  margin: 0 0 10px; font-size: 13.5px; color: var(--text);
+  border-left: 3px solid var(--accent); padding: 8px 12px;
+  background: var(--zebra); border-radius: 8px;
+}
+.kpis { display: grid; gap: 10px; margin: 12px 0;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+.kpi { border: 1px solid var(--border); border-radius: 10px;
+  padding: 9px 12px; background: var(--card); }
+.kpi .kpi-val { display: block; font-size: 20px; font-weight: 700;
+  line-height: 1.15; font-variant-numeric: tabular-nums; }
+.kpi .kpi-lbl { display: block; font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--muted); margin-top: 2px; }
+.kpi .kpi-note { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+.kpi.kpi-bad { border-color: var(--v-bad); background: var(--v-bad-bg); }
+.kpi.kpi-bad .kpi-val { color: var(--v-bad); }
+.kpi.kpi-na { border-style: dashed; }
+.kpi.kpi-na .kpi-val { color: var(--muted); font-size: 15px; }
+
+.charts { display: grid; gap: 12px; margin: 12px 0;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+.chart { border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px; background: var(--card); }
+.chart h3 { margin: 0 0 8px; font-size: 11.5px; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--muted); }
+.chart-wide { grid-column: span 2; }
+@media (max-width: 560px) { .chart-wide { grid-column: 1 / -1; } }
+.chart-svg { width: 100%; height: auto; display: block;
+  background: var(--zebra); border-radius: 8px; }
+.chart-note { margin: 6px 0 0; font-size: 11.5px; color: var(--muted); }
+
+.grid { stroke: var(--border); stroke-width: 1; }
+.axis, .axis-y { fill: var(--muted); font-size: 9px; }
+.axis { text-anchor: middle; }
+.axis-y { text-anchor: end; }
+.col { fill: var(--accent); }
+.col:hover { opacity: .82; }
+.col.zero { fill: var(--bar-bg); }
+.col.night { fill: var(--v-warn); }
+.col-val { fill: var(--text); font-size: 10px; font-weight: 600; text-anchor: middle; }
+
+.donut-wrap { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.donut-svg { width: 120px; height: 120px; flex: 0 0 120px; }
+.donut-track { fill: none; stroke: var(--bar-bg); stroke-width: 14; }
+.donut-seg { fill: none; stroke-width: 14; }
+.donut-seg.s-catalog { stroke: var(--v-ok); }
+.donut-seg.s-heuristic { stroke: var(--v-warn); }
+.donut-seg.s-llm { stroke: var(--accent); }
+.donut-seg.s-none { stroke: var(--v-mut); }
+.donut-seg.s-bad { stroke: var(--v-bad); }
+.donut-val { fill: var(--text); font-size: 21px; font-weight: 700; text-anchor: middle; }
+.donut-lbl { fill: var(--muted); font-size: 9px; text-transform: uppercase;
+  letter-spacing: .5px; text-anchor: middle; }
+
+.prov-bars { display: grid; gap: 7px; }
+.prov-row { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) 34px;
+  gap: 8px; align-items: center; font-size: 12.5px; }
+.prov-row .prov-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prov-row .prov-val { text-align: right; font-variant-numeric: tabular-nums; }
+.hbar { width: 100%; height: 10px; display: block; border-radius: 5px; }
+.hbar-track { fill: var(--bar-bg); }
+.hbar-fill { fill: var(--accent); }
+.hbar-fill.s-catalog { fill: var(--v-ok); }
+.hbar-fill.s-heuristic { fill: var(--v-warn); }
+.hbar-fill.s-llm { fill: var(--accent); }
+.hbar-fill.s-none { fill: var(--v-mut); }
+
+/* Clases de color compartidas por donut, barras y chips. */
+.dot.s-catalog { background: var(--v-ok); }
+.dot.s-heuristic { background: var(--v-warn); }
+.dot.s-llm { background: var(--accent); }
+.dot.s-none { background: var(--v-mut); }
+.dot.s-bad { background: var(--v-bad); }
 .status-strip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--v-ok); }
 .status-strip .dot.warn { background: var(--v-warn); }
 .status-strip .dot.bad { background: var(--v-bad); }

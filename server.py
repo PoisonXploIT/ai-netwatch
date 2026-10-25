@@ -2183,10 +2183,31 @@ def dashboard(days: int = 7) -> dict:
     top_procs = _top(processes)
     for row in top_procs:
         row["sdk"] = proc_sdk.get(str(row["name"]).lower(), "")
+
+    # v2.6(7): histograma de sesiones por hora UTC (24 buckets) y veredictos
+    # Jev agregados. El panel dibuja graficas SVG a partir de esto.
+    hourly = [0] * 24
+    sess = st.sessions_since(days)
+    for r in sess:
+        ts = str(r.get("ts") or "")
+        try:
+            hourly[int(ts[11:13])] += 1
+        except (ValueError, IndexError):
+            continue
+    jev_by_event = _latest_jev_by_event()
+    verdicts: dict[str, int] = {}
+    for e in evs:
+        v = jev_by_event.get(int(e["id"])) or {}
+        name = str(v.get("verdict") or "")
+        if name:
+            verdicts[name] = verdicts.get(name, 0) + 1
     return {
         "days": days,
         "summary": summary,
         "daily": st.stats(days=days),
+        "hourly": hourly,
+        "sessions": len(sess),
+        "verdicts": verdicts,
         "top_providers": _top_providers(),
         "top_processes": top_procs,
         "layers": [{"layer": k, "seen_count": v}

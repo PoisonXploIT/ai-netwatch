@@ -7,6 +7,7 @@
 
 Ejecutar desde la raiz:  python -m unittest discover tests -v
 """
+import json
 import sys
 import tempfile
 import unittest
@@ -206,6 +207,51 @@ class TestDashboardA4(DashboardBase):
         out = server.dashboard(days=7)
         self.assertEqual(out["top_providers"][0]["name"], "openai.com")
         self.assertEqual(out["top_providers"][0]["seen_count"], 2)
+
+
+class TestPanelChartData(DashboardBase):
+    """v2.6(7): el Panel dibuja graficas; esto es lo que las alimenta."""
+
+    def test_hourly_buckets_and_sessions(self):
+        for _ in range(3):
+            self.store.observe_connection(
+                process="a.exe", dest_ip="1.1.1.1", dest_port=443,
+                dest_host=None, catalog_domain="openai.com",
+                ai_layer="catalog")
+        # sessions_log lo escribe el monitor (transicion ausente->presente);
+        # aqui se siembran a mano para probar el histograma.
+        for hour in (1, 2, 14, 14, 23):
+            self.store.conn.execute(
+                "INSERT INTO sessions_log(ts, process, dest_ip, dest_port)"
+                " VALUES(?,?,?,?)",
+                ((datetime.now(timezone.utc).replace(hour=hour)).strftime(
+                    "%Y-%m-%d %H:%M:%SZ"), "a.exe", "1.1.1.1", 443))
+        self.store.conn.commit()
+        out = server.dashboard(days=7)
+        self.assertEqual(len(out["hourly"]), 24)
+        self.assertEqual(sum(out["hourly"]), out["sessions"])
+        self.assertGreater(out["sessions"], 0)
+
+    def test_verdicts_from_latest_triage(self):
+        self.store.observe_connection(
+            process="a.exe", dest_ip="1.1.1.1", dest_port=443,
+            dest_host=None, catalog_domain="openai.com", ai_layer="catalog")
+        eid = self.store.list_events(limit=1)[0]["id"]
+        payload = {"events": [{"id": eid}],
+                   "jev": {"verdicts": {"0": {"verdict": "telemetry_noise",
+                                             "confidence": 0.7}}}}
+        self.store.conn.execute(
+            "INSERT INTO triages(ts, status, model, payload) VALUES(?,?,?,?)",
+            (_ts(1), "ok", "m", json.dumps(payload)))
+        self.store.conn.commit()
+        out = server.dashboard(days=7)
+        self.assertEqual(out["verdicts"], {"telemetry_noise": 1})
+
+    def test_no_triage_gives_empty_verdicts(self):
+        self.store.observe_connection(
+            process="a.exe", dest_ip="1.1.1.1", dest_port=443,
+            dest_host=None, catalog_domain="openai.com", ai_layer="catalog")
+        self.assertEqual(server.dashboard(days=7)["verdicts"], {})
 
 
 if __name__ == "__main__":

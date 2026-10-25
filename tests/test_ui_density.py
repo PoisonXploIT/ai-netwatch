@@ -67,16 +67,19 @@ class PaginationTest(TestCase):
         self.assertIn(".chips {", CSS)
 
     def test_panel_has_visual_charts(self):
-        # El Panel no es solo texto: sparkline de actividad, barra apilada de
-        # capas, gauge de shadow y barras por proveedor.
-        for sel in (".spark", ".stack", ".bars .brow", ".gauge"):
+        # El Panel no es solo texto: KPIs, serie de barras diaria, donut de
+        # capas, donut de gobernanza, histograma por hora y barras de proveedor.
+        for sel in (".kpis", ".charts", ".chart-svg", ".donut-seg",
+                    ".prov-row", ".hbar-fill", ".col", ".grid"):
             self.assertIn(sel, CSS, f"falta el estilo de {sel}")
-        for fn in ("sparkHtml", "stackHtml", "gaugeHtml"):
+        for fn in ("activityChart", "hourChart", "donut", "providerBars",
+                   "panelTakeaway", "kpiHtml"):
             self.assertIn(fn, JS)
-        # Tamano aplicado via CSSOM, no style inline (CSP style-src 'self').
-        self.assertIn(".spark i[data-h]", JS)
-        self.assertIn(".stack i[data-w]", JS)
-        self.assertNotIn('<div class="spark" style=', JS)
+        # La CSP (style-src 'self') no permite style="...": la geometria del
+        # SVG va en atributos y el color en la hoja de estilos.
+        self.assertNotIn('class="chart-svg" style=', JS)
+        self.assertIn('stroke-dasharray="', JS)
+        self.assertIn('class="takeaway"', JS)
 
 
 class StatusStripTest(TestCase):
