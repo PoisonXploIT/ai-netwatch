@@ -147,16 +147,10 @@ details[open] summary { color: var(--text); }
 .ttabs { display: flex; gap: 8px; margin: 12px 0; }
 .cmp-ok { color: var(--v-ok); font-weight: 600; }
 .cmp-bad { color: var(--v-bad); font-weight: 600; }
+.triage-charts { display: flex; gap: 18px; flex-wrap: wrap; margin: 12px 0; }
 .tcompare { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; }
 .tcompare .bar { flex: 1; height: 10px; border-radius: 6px; background: var(--zebra); }
-.tcompare .bar > div { height: 100%; border-radius: 6px; background: var(--v-ok); }
-.tcompare .bar.gauge[data-empty="1"] > div { background: var(--v-mut); }
-.vstack { display: flex; gap: 3px; height: 12px; border-radius: 8px; background: var(--zebra); }
-.vstack .vseg { height: 100%; border-radius: 6px; }
-.vseg.v-expected { background: var(--v-ok); }
-.vseg.v-exfil { background: var(--v-bad); }
-.vseg.v-telemetry { background: var(--v-warn); }
-.vseg.v-unrelated, .vseg.v-none { background: var(--v-mut); }
+.tcompare .bar.gauge > div { height: 100%; border-radius: 6px; background: var(--v-ok); }
 .vs { font-size: 12px; color: var(--v-mut); }
 .vs-ok { color: var(--v-ok); font-weight: 600; }
 .vs-bad { color: var(--v-bad); font-weight: 600; }
@@ -310,6 +304,14 @@ details h4 { margin: 8px 0 2px; font-size: 12px; }
 .keyhead .dot.ok { background: var(--v-ok); }
 .keyhead .dot.bad { background: var(--v-bad); }
 .keybox input[type="password"] { min-width: 260px; }
+.keychip { display: inline-flex; gap: 6px; align-items: center; padding: 4px 10px;
+  border-radius: 999px; font-size: 11.5px; background: var(--v-mut-bg);
+  color: var(--v-mut); border: 1px solid var(--border); }
+.keyhead .dot.ok + b + .keychip { background: var(--v-ok-bg); color: var(--v-ok); border-color: var(--v-ok); }
+.keyhead .dot.bad + b + .keychip { background: var(--v-bad-bg); color: var(--v-bad); border-color: var(--v-bad); }
+.keyrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.keyrow input[type="password"] { flex: 1 1 260px; min-width: 220px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); }
 
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
 .chip {

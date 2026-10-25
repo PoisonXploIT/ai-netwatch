@@ -216,13 +216,13 @@
       <div class="keyhead">
         <span class="dot" id="jev-key-dot"></span>
         <b>Key Jev (TypeSafe)</b>
-        <span id="jev-key-state" class="hint">sin key guardada</span>
+        <span class="keychip" id="jev-key-state">sin key guardada</span>
       </div>
-    <div class="row">
-      <input id="jev-key" type="password" placeholder="pegar la key nueva">
+    <div class="keyrow">
+      <input id="jev-key" type="password" placeholder="API key" autocomplete="off" aria-label="API key de Jev">
       <button id="btn-save-jev" class="primary">Guardar</button>
-      <button id="btn-clear-jev">Quitar key</button>
       <button id="btn-test-jev">Probar</button>
+      <button id="btn-clear-jev" class="danger">Quitar key</button>
     </div>
       <p class="hint">Se cifra con DPAPI de Windows en <span class="mono">data/config.json</span>. El servidor nunca devuelve la key: solo un fingerprint de 8 caracteres. No la pegues en chats, notas del vault, commits ni ficheros de texto.</p>
     </div>

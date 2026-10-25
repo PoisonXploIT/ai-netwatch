@@ -148,6 +148,24 @@ class TestInvestigateLlm(InvestigateBase):
         self.assertEqual(saved["coincide"], "discrepa")
         self.assertEqual(saved["juicio"], "parrafo aterrizado")
 
+    def test_repeated_review_does_not_duplicate(self):
+        """Upsert: revisar dos veces el mismo evento deja UNA fila (la
+        ultima gana), no un historial duplicado."""
+        eid = self._seed_event()
+        for content in ({"evaluacion": "insuficiente", "accion": "sacar",
+                         "coincide": "dudoso", "juicio": "primera",
+                         "porque": "p1", "evidencia_faltante": "e1"},
+                        {"evaluacion": "confirm", "accion": "dejar",
+                         "coincide": "coincide", "juicio": "segunda",
+                         "porque": "p2", "evidencia_faltante": "e2"}):
+            with mock.patch.object(llm_local, "_chat",
+                                   return_value=json.dumps(content)):
+                server.review(server.ReviewRequest(event_ids=[eid]))
+        rows = self.store.list_reviews(limit=10)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["juicio"], "segunda")
+        self.assertEqual(rows[0]["evaluacion"], "confirm")
+
     def test_context_has_no_jev_when_never_triaged(self):
         """Sin triaje previo se investiga igual, con jev=None en contexto."""
         self._id = self._seed_event()

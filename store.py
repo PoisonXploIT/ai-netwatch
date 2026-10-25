@@ -863,8 +863,13 @@ catalog_domain solo se rellena si estaba vacio (no pisa un match previo).
                     coincide: str | None = None,
                     juicio: str | None = None) -> None:
         """B: persiste una revision LLM local (asesoria display-only;
-        nunca altera veredictos ni aprobaciones)."""
+        nunca altera veredictos ni aprobaciones).
+
+        Upsert por evento: repetir la revision del mismo evento no acumula
+        filas duplicadas, sustituye a la anterior (el ts nuevo manda)."""
         with self._lock:
+            self.conn.execute(
+                "DELETE FROM llm_reviews WHERE event_id = ?", (int(event_id),))
             self.conn.execute(
                 "INSERT INTO llm_reviews (ts, event_id, evaluacion, accion,"
                 " porque, evidencia_faltante, coincide, juicio)"

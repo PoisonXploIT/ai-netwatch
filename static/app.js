@@ -330,18 +330,17 @@ function triageHtml(data) {
   if (jevHtml || layaHtml) {
     const VCOUNT = {};
     CMP.forEach((r) => { if (r.jv.verdict) VCOUNT[r.jv.verdict] = (VCOUNT[r.jv.verdict] || 0) + 1; });
-    const vtotal = Object.values(VCOUNT).reduce((s, v) => s + v, 0) || 1;
-    const stack = Object.entries(VCOUNT).sort((a, b) => b[1] - a[1]).map(([v, n]) =>
-      `<div class="vseg ${(VERDICT_META[v] || {}).cls || "v-none"}" data-pct="${Math.round((n / vtotal) * 100)}" title="${esc((VERDICT_META[v] || { label: v }).label)}: ${n}"></div>`).join("");
-    const legend = Object.entries(VCOUNT).sort((a, b) => b[1] - a[1]).map(([v, n]) =>
-      `${esc((VERDICT_META[v] || { label: v }).label)} ${n}`).join(" · ");
-    parts.push(`<div class="tcompare">
-      <div class="bar vstack">${stack}</div>
-      <span class="hint">${legend}</span>
-    </div>
-    <div class="tcompare">
-      <div class="bar gauge"><div data-pct="${CMP_PCT}"></div></div>
-      <span class="hint">Jev vs LAYA: ${CMP_OK}/${CMP_N} coinciden (${CMP_PCT}%)${DISC.length ? ` \u00b7 ${DISC.length} discrepancias` : ""}</span>
+    const VCLASS = { expected_ai_use: "s-catalog", telemetry_noise: "s-heuristic",
+      background_exfil_suspect: "s-bad", unrelated: "s-none" };
+    const verdictItems = Object.entries(VCOUNT).sort((a, b) => b[1] - a[1]).map(([v, n]) => ({
+      label: (VERDICT_META[v] || { label: v }).label, value: n, cls: VCLASS[v] || "s-none" }));
+    const agreeItems = CMP_N
+      ? [{ label: "coinciden", value: CMP_OK, cls: "s-catalog" },
+         { label: "discrepancias", value: CMP_N - CMP_OK, cls: "s-bad" }]
+      : [];
+    parts.push(`<div class="triage-charts">
+      ${verdictItems.length ? donut(verdictItems, verdictItems.reduce((s, i) => s + i.value, 0), "veredictos Jev") : ""}
+      ${agreeItems.length ? donut(agreeItems, CMP_PCT + "%", "acuerdo Jev/LAYA") : ""}
     </div>
     <div class="ttabs">
       <button class="btn ttab active" data-tt="jev">Jev (juez)</button>
@@ -1477,13 +1476,16 @@ async function loadConfig() {
     // El servidor nunca devuelve la key: solo el flag. No se rellena el
     // input con la mascara (bug U-01: guardar sin escribir borraba la key).
     jevKey.value = "";
-    jevKey.placeholder = c.jev_api_key_set ? "pegar la key nueva (la actual no se toca)" : "API key";
+    jevKey.placeholder = c.jev_api_key_set ? "sustituir la key (la actual no se ve)" : "API key de Jev";
     const jevState = document.getElementById("jev-key-state");
     const jevDot = document.getElementById("jev-key-dot");
     if (jevState) {
       jevState.textContent = c.jev_api_key_set
-        ? `guardada (DPAPI) · fingerprint ${esc(c.jev_key_fingerprint || "????????")} · escribir una nueva la sustituye`
-        : "sin key: el triaje con Jev no funciona";
+        ? `activa · fingerprint ${c.jev_key_fingerprint || "????????"}`
+        : "sin key · el triaje con Jev no funciona";
+      jevState.title = c.jev_api_key_set
+        ? "Key cifrada con DPAPI. Escribir una nueva la sustituye al pulsar Guardar."
+        : "No hay key guardada: pega una y pulsa Guardar.";
     }
     if (jevDot) jevDot.className = "dot " + (c.jev_api_key_set ? "ok" : "bad");
     document.getElementById("llm-url").value = c.llm_base_url || "";
