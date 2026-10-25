@@ -169,7 +169,7 @@ class TestReviewPersistence(ReviewBase):
 
 class TestReviewNoLlm(ReviewBase):
     def test_not_configured_no_call(self):
-        ids = self._seed_all()
+        self._seed_all()
         server._cfg["llm_enabled"] = False
         with mock.patch.object(llm_local, "_chat") as m:
             r = server.review(server.ReviewRequest(scope="autonomous"))

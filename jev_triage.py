@@ -409,7 +409,7 @@ def triage_events(events: list[dict], api_key: str,
                 answers.update(a)
             else:
                 errors.append(f"lote {idxs[0]}-{idxs[-1]}: bad_response_shape")
-        except Exception as e:
+        except Exception:
             # Fallback por sub-trozos de _CHUNK (10): tolera limites/
             # errores transitorios del API.
             for s2 in range(0, len(idxs), _CHUNK):

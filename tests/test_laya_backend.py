@@ -94,9 +94,7 @@ class TestLocalContract(unittest.TestCase):
 
     def test_batch_results_map_by_position(self):
         # results[i] -> evento i, aunque lleguen en el mismo orden de entrada.
-        results = [
-            {"results": None},  # no usado; se simula con side_effect lista
-        ]
+        # La simulacion se hace con side_effect; no hace falta una lista previa.
 
         def fake(url, body, key, timeout=30):
             assert len(body["states"]) == 2

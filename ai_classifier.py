@@ -126,7 +126,7 @@ def destination_kind(host: str) -> str:
         pass
     if any(mk in h for mk in _CDN_MARKERS):
         return "cdn"
-    labels = [l for l in h.split(".") if l]
+    labels = [part for part in h.split(".") if part]
     if "api" in labels:
         return "api"
     if len(labels) >= 2 and labels[-1] == "ai":

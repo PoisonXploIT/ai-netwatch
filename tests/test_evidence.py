@@ -140,9 +140,9 @@ class TestEvidenceEndpoints(EvidenceServerBase):
         self._seed()
         resp = server.evidence_chain(days=7)
         self.assertEqual(resp.media_type, "application/x-ndjson")
-        lines = [l for l in resp.body.decode("utf-8").splitlines() if l]
+        lines = [ln for ln in resp.body.decode("utf-8").splitlines() if ln]
         self.assertTrue(lines)
-        rows = [json.loads(l) for l in lines]
+        rows = [json.loads(ln) for ln in lines]
         self.assertTrue(evidence.verify_chain(rows))
 
     def test_stix_download(self):

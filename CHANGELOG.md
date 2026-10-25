@@ -4,7 +4,43 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
 ## Proximo
 
-v2.5(1) N1 — QUIC/HTTP-3: SNI del paquete Initial (en construccion, sin tag):
+- #6 reestructurar la UI (Hallazgos/Eventos/Config), responsive (cero `@media`)
+  y accesibilidad (tabs sin `role`/`aria-selected`, toast sin `aria-live`,
+  severidad solo por color).
+- Ampliar el `select` de ruff (hoy solo E9/F82).
+- Medir el efecto del modo `jev_minimal` (S-07) sobre la concordancia Jev/LAYA.
+- Tag `v2.7` cuando cierre el bloque de seguridad.
+
+## v2.7 (en curso, sin tag) — bloque de seguridad y UI
+
+- U-01: la key de Jev ya no se autodestruye al guardar (la mascara `***`
+  devuelta por GET se conserva).
+- S2/S3: guard de origen para todos los POST + CORS deny-all + cabeceras de
+  seguridad.
+- S9/S4: `GET /api/health`, token de sesion inyectado en la index y audit log
+  (`data/audit.log`) que registra operaciones sin valores de secretos.
+- S4/S2: retencion del colector (artefactos ETL/XML/JSONL huercos se limpian a
+  las 24 h) + CSP estricta sin `unsafe-inline` + `esc()` completo (comilla
+  simple incluida).
+- S-03: prompt y respuesta del LLM Inspector cifrados con DPAPI
+  (`llm_calls.db`).
+- Bloque 4: CI verde con ruff + mypy y `requirements.txt`.
+- U-02: version unica desde `server.VERSION` (UI, /api/health y exports
+  JSON/PDF/STIX coinciden).
+- S-08: puerto del inspector restringido a 8000-9999 con deteccion de
+  colision.
+- S-07: modo "solo dominios" (`jev_minimal`): a Jev no salen proceso, IP,
+  puerto ni `user_active`. Documentado en el vault
+  (`40-IA/PROYECTOS/AI-NETWATCH/S-07-QU-SE-ENVIA-A-JEV.md`).
+- #10: el refresco periodico se acota a la pestana visible (38 req/min globales
+  -> <= 12 req/min en la pestana activa) mediante `REFRESH_JOBS`.
+- #11 (U2): cada fila de eventos tiene boton "detalle" con el registro completo
+  (id, destino, SNI, catalogo, capa, anomalia, flags, MITRE) y, en las filas
+  agrupadas, los miembros (hasta 10) con sus IPs.
+
+## Hecho en v2.5(1) (tag v2.5(1))
+
+v2.5(1) N1 — QUIC/HTTP-3: SNI del paquete Initial:
 - Un solo proceso tshark captura TCP+UDP 443 a la vez (`udp port 443 or
   tcp port 443` + `tls.handshake.type==1`): el CRYPTO del paquete Initial
   de QUIC se descompone como TLS y el SNI sale en los mismos campos;

@@ -200,7 +200,6 @@ def _metrics(events: list[dict], jeff: dict[int, dict[str, dict]]) -> dict:
         per_event.append(row)
 
     def _agree(pairs: list[tuple[str | None, str | None]]) -> tuple[int, float | None]:
-        ok = pairs and all(a is not None and b is not None for a, b in pairs)
         n_ok = sum(1 for a, b in pairs if a == b)
         pct = round(n_ok / len(pairs) * 100, 2) if pairs else None
         return n_ok, pct

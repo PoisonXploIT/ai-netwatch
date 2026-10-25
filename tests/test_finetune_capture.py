@@ -134,7 +134,7 @@ class TestLiveCapture(TriageLiveCaptureBase):
         out = self._post()
         path = self.finetune / "jev_raw.jsonl"
         self.assertTrue(path.exists())
-        lines = [json.loads(l) for l in
+        lines = [json.loads(ln) for ln in
                 path.read_text(encoding="utf-8").splitlines()]
         ids = sorted(int(e["id"]) for e in out["events"])
         self.assertEqual([r["event_id"] for r in lines], ids)
@@ -158,7 +158,7 @@ class TestLiveCapture(TriageLiveCaptureBase):
         out2 = self._post()
         self.assertEqual(out2["dedup"]["reused"], 2)
         path = self.finetune / "jev_raw.jsonl"
-        lines = [json.loads(l) for l in
+        lines = [json.loads(ln) for ln in
                 path.read_text(encoding="utf-8").splitlines()]
         ids = [r["event_id"] for r in lines]
         self.assertEqual(len(ids), len(set(ids)))

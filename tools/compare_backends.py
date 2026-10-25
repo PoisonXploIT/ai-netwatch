@@ -104,21 +104,21 @@ def _ab_metrics(cloud_verdicts: list[dict],
     acuerdo immediate_action, MAE severity_score y matriz de confusion
     (filas=cloud, columnas=local)."""
     cv = [c.get("verdict") for c in cloud_verdicts]
-    lv = [l.get("verdict") for l in local_verdicts]
-    both = [(c, l) for c, l in zip(cv, lv) if c and l]
-    agree_v = (sum(1 for c, l in both if c == l) / len(both) * 100) \
+    lv = [lo.get("verdict") for lo in local_verdicts]
+    both = [(c, lo) for c, lo in zip(cv, lv) if c and lo]
+    agree_v = (sum(1 for c, lo in both if c == lo) / len(both) * 100) \
         if both else None
     acts = [(_norm_action(c.get("immediate_action")),
-             _norm_action(l.get("immediate_action")))
-            for c, l in zip(cloud_verdicts, local_verdicts)]
-    acts_ok = [(c, l) for c, l in acts if c and l]
-    agree_a = (sum(1 for c, l in acts_ok if c == l) / len(acts_ok) * 100) \
+             _norm_action(lo.get("immediate_action")))
+            for c, lo in zip(cloud_verdicts, local_verdicts)]
+    acts_ok = [(c, lo) for c, lo in acts if c and lo]
+    agree_a = (sum(1 for c, lo in acts_ok if c == lo) / len(acts_ok) * 100) \
         if acts_ok else None
     mae_s = _mae([c.get("severity_score") for c in cloud_verdicts],
-                [l.get("severity_score") for l in local_verdicts])
+                [lo.get("severity_score") for lo in local_verdicts])
     labels = sorted({v for v in cv + lv if v})
-    confusion = {c: {l: sum(1 for cc, ll in both if cc == c and ll == l)
-                    for l in labels} for c in labels}
+    confusion = {c: {lo: sum(1 for cc, ll in both if cc == c and ll == lo)
+                     for lo in labels} for c in labels}
     return {
         "verdict_agreement_pct": round(agree_v, 2) if agree_v is not None else None,
         "immediate_action_agreement_pct": round(agree_a, 2) if agree_a is not None else None,
@@ -334,17 +334,17 @@ def main() -> int:
                     _norm_action(lv.get("immediate_action"))))
         scores.append((cv.get("severity_score"), lv.get("severity_score")))
 
-    both = [(c, l) for c, l in zip(cloud_verdicts, local_verdicts)
-            if c and l]
-    agree_v = (sum(1 for c, l in both if c == l) / len(both) * 100) if both else None
-    acts_ok = [(c, l) for c, l in acts if c and l]
-    agree_a = (sum(1 for c, l in acts_ok if c == l) / len(acts_ok) * 100) \
+    both = [(c, lo) for c, lo in zip(cloud_verdicts, local_verdicts)
+            if c and lo]
+    agree_v = (sum(1 for c, lo in both if c == lo) / len(both) * 100) if both else None
+    acts_ok = [(c, lo) for c, lo in acts if c and lo]
+    agree_a = (sum(1 for c, lo in acts_ok if c == lo) / len(acts_ok) * 100) \
         if acts_ok else None
-    mae_s = _mae([c for c, _ in scores], [l for _, l in scores])
+    mae_s = _mae([c for c, _ in scores], [lo for _, lo in scores])
 
     labels = sorted({v for v in cloud_verdicts + local_verdicts if v})
-    confusion = {c: {l: sum(1 for cc, ll in both if cc == c and ll == l)
-                    for l in labels} for c in labels}
+    confusion = {c: {lo: sum(1 for cc, ll in both if cc == c and ll == lo)
+                     for lo in labels} for c in labels}
 
     result = {
         "date": str(date.today()),

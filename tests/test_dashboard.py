@@ -63,7 +63,7 @@ class TestDashboard(DashboardBase):
         self.assertEqual(provs, {"mystery-ai.com": 1, "huggingface.co": 1})
         procs = {p["name"] for p in out["top_processes"]}
         self.assertEqual(procs, {"a.exe", "b.exe"})
-        layers = {l["layer"]: l["seen_count"] for l in out["layers"]}
+        layers = {layer["layer"]: layer["seen_count"] for layer in out["layers"]}
         self.assertEqual(layers, {"heuristic": 1, "catalog": 1})
         self.assertTrue(out["daily"])
 

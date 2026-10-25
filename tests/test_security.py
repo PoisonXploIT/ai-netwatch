@@ -97,7 +97,7 @@ class TestSSRF(SecurityBase):
         self.assertEqual(ctx.exception.status_code, 400)
 
     def test_loopback_accepted_and_persisted(self):
-        out = self._set_llm("http://127.0.0.1:8099")
+        self._set_llm("http://127.0.0.1:8099")
         self.assertEqual(server._cfg["llm_base_url"], "http://127.0.0.1:8099")
         self.assertTrue(server.CONFIG_PATH.exists())
 

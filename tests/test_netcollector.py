@@ -158,8 +158,8 @@ class TestParseXml(unittest.TestCase):
                    "bytes": 5}],
             {"events_seen": 7, "rows": 1, "xml_ok": True,
              "etl_found": True})
-        lines = [json.loads(l) for l in
-                out.read_text(encoding="utf-8").splitlines() if l]
+        lines = [json.loads(ln) for ln in
+                out.read_text(encoding="utf-8").splitlines() if ln]
         self.assertEqual(len(lines), 2)
         self.assertIn("meta", lines[-1])
 

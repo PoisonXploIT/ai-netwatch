@@ -34,7 +34,7 @@ def sysmon_available() -> bool:
         "(Get-Service Sysmon64 -ErrorAction SilentlyContinue | Measure-Object).Count",
         timeout=15,
     ).strip()
-    lines = [l for l in out.splitlines() if l.strip()]
+    lines = [ln for ln in out.splitlines() if ln.strip()]
     return bool(lines) and lines[-1].strip() == "1"
 
 
