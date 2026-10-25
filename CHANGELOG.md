@@ -12,7 +12,7 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 - Tag `v2.7` cuando cierre el bloque de accesibilidad (#6) y la re-registracion
   elevada de la tarea `AI-NETWATCH-NetBytes` este verificada en otra maquina.
 
-## v2.6 (2026-10-25) — seguridad, UI visual y segunda opinion local
+## v2.6(6) (2026-10-25) — cierre de la linea 2.6: seguridad, UI visual y segunda opinion local
 
 - U-01: la key de Jev ya no se autodestruye al guardar (la mascara `***`
   devuelta por GET se conserva).
@@ -95,7 +95,7 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   contiene la key y de que alterar una fila rompe la cadena de hashes.
   Suite: 491 OK.
 
-### Cierre de v2.6 (2026-10-25, tarde)
+### Cierre de v2.6(6) (2026-10-25, tarde)
 
 - Juicio local en prosa (`llm_local.investigate_event`): ademas de la etiqueta
   tipada (`confirm/refuta/insuficiente`) devuelve `coincide`
