@@ -27,7 +27,7 @@ class GuideIsATabTest(TestCase):
 
     def test_guide_button_targets_the_panel(self):
         self.assertIn('aria-controls="panel-guia"', HTML)
-        self.assertIn('showTab("guia")', JS)
+        self.assertIn('"6": "guia"', JS)  # B-08: la guía se abre desde su pestaña y el atajo 6
 
 
 class ConfigGroupingTest(TestCase):

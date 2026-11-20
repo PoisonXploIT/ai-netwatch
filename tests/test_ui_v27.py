@@ -51,3 +51,9 @@ class UiV27Test(TestCase):
                     "monitoreo esta pausado"):
             self.assertNotIn(bad, HTML + JS, bad)
 
+    def test_b08_guide_has_a_single_entry_point(self):
+        self.assertNotIn("btn-guide", HTML)
+        self.assertNotIn("btn-guide", JS)
+        self.assertIn('id="tab-guia"', HTML)
+
+

@@ -1639,7 +1639,7 @@ function bind() {
 
   $("btn-theme").addEventListener("click", themeToggle);
   // A1: la guia es ya una pestana; el boton del header lleva a ella.
-  $("btn-guide").addEventListener("click", () => showTab("guia"));
+
   // Kill switch global: pausa/reanuda el monitoreo sin reiniciar el server.
   $("btn-monitor").addEventListener("click", async () => {
     const btn = $("btn-monitor");
