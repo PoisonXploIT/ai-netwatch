@@ -99,7 +99,7 @@
       </select>
       <button class="linkbtn" id="btn-findings-reset">Filtros por defecto</button>
     </div>
-    <div id="findings-wrap"></div>
+    <div id="findings-wrap" class="table-wrap"></div>
     </section>
     <section class="card" id="shadow-card">
     <h2>Shadow AI</h2>
@@ -109,7 +109,7 @@
     <section class="card" id="baseline-card">
     <h2>Baseline y anomal&iacute;a (D1/D2)</h2>
     <p class="hint">Lo que es &quot;normal&quot; por (proceso, proveedor), aprendido de lo retenido. Anomal&iacute;a determinista sin IA: flags con porqu&eacute; y <span class="mono">pre_score</span> 0-100; display-only.</p>
-    <div id="baseline-wrap"></div>
+    <div id="baseline-wrap" class="table-wrap"></div>
     </section>
   </div>
   <div class="tab-panel" id="panel-eventos" role="tabpanel" aria-labelledby="tab-eventos" data-tab="eventos">
@@ -159,7 +159,7 @@
       <button id="btn-aut-clear">Limpiar</button>
     </div>
     <p id="autonomy-counters" class="hint"></p>
-    <div id="autonomy-wrap"></div>
+    <div id="autonomy-wrap" class="table-wrap"></div>
     </section>
   </div>
   <div class="tab-panel" id="panel-ia" role="tabpanel" aria-labelledby="tab-ia" data-tab="ia">
@@ -167,7 +167,7 @@
     <h2>Triaje con Jev</h2>
     <button id="btn-triage" class="primary">Triar eventos con Jev</button>
     <span id="triage-status" class="hint"></span>
-    <div id="triage-results"></div>
+    <div id="triage-results" class="table-wrap"></div>
     </section>
     <section class="card" id="review-card">
     <h2>Revisi&oacute;n LLM local (batch)</h2>

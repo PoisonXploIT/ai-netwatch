@@ -19,3 +19,9 @@ class UiV27Test(TestCase):
     def test_b02_axis_mid_tick_only_when_integer(self):
         self.assertIn("const showMid = Number.isInteger(mid) && mid > 0;", JS)
         self.assertNotIn("Math.round(max / 2)", JS)
+
+    def test_b03_wide_tables_scroll_inside_their_wrapper(self):
+        self.assertIn(".tab-panel, .tab-panel > .card { min-width: 0; }", CSS)
+        for wid in ("findings-wrap", "baseline-wrap", "autonomy-wrap",
+                    "triage-results", "events-wrap"):
+            self.assertIn(f'id="{wid}" class="table-wrap"', HTML, wid)

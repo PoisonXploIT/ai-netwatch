@@ -472,3 +472,6 @@ tr.finding-row:hover { background: var(--row-hover); }
   .tab { font-size: 12px; padding: 6px 8px; }
   #llm-url, #llm-model, #laya-url, #extra-hosts, #alert-webhook { width: 100%; }
 }
+
+/* B-03: una tabla ancha no ensancha la tarjeta ni la pagina. */
+.tab-panel, .tab-panel > .card { min-width: 0; }
