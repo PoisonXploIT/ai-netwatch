@@ -3,6 +3,10 @@ function esc(v) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+function plural(n, uno, varios) {
+  return `${n} ${Number(n) === 1 ? uno : varios}`;
+}
+
 function themeToggle() {
   const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", cur);
@@ -887,16 +891,16 @@ function panelTakeaway(d) {
   if (top && s.seen_total) {
     parts.push(`${top.name} concentra el ${Math.round((top.seen_count / s.seen_total) * 100)}% de las presencias`);
   }
-  parts.push(`${s.processes} proceso(s) hacia ${s.providers} proveedor(es)`);
+  parts.push(`${plural(s.processes, "proceso", "procesos")} hacia ${plural(s.providers, "proveedor", "proveedores")}`);
   const hourly = (d.hourly || []).slice(0, 24);
   if (hourly.some(v => v > 0)) {
     let peak = 0;
     hourly.forEach((v, i) => { if (v > hourly[peak]) peak = i; });
     const night = hourly.slice(0, 6).reduce((a, b) => a + b, 0);
     parts.push(`pico de sesiones a las ${String(peak).padStart(2, "0")}:00 UTC`);
-    if (night) parts.push(`${night} sesión(es) de madrugada (00-06 UTC)`);
+    if (night) parts.push(`${plural(night, "sesión", "sesiones")} de madrugada (00-06 UTC)`);
   }
-  if (d.shadow_count) parts.push(`${d.shadow_count} proveedor(es) no aprobado(s): Shadow AI`);
+  if (d.shadow_count) parts.push(`${plural(d.shadow_count, "proveedor no aprobado", "proveedores no aprobados")}: Shadow AI`);
   return parts.join(" · ") + ".";
 }
 
@@ -906,7 +910,7 @@ function kpiHtml(d) {
   const llm = d.llm_calls || {};
   const tiles = [
     { label: "Eventos", value: s.events ?? 0, note: `${d.days} días` },
-    { label: "Presencias", value: s.seen_total ?? 0, note: `${d.sessions ?? 0} sesiones` },
+    { label: "Presencias", value: s.seen_total ?? 0, note: plural(d.sessions ?? 0, "sesión", "sesiones") },
     { label: "Procesos", value: s.processes ?? 0, note: "que salen a IA" },
     { label: "Proveedores", value: s.providers ?? 0, note: `${d.shadow_count || 0} no aprobados` },
     { label: "LLM local", value: llm.calls ?? 0, note: `${fmtBytes((llm.request_bytes || 0) + (llm.response_bytes || 0))}` },
@@ -1076,7 +1080,7 @@ async function refreshShadow() {
     wrap.innerHTML = s.shadow.map(g => `
       <div class="row">
         <span class="mono">${esc(g.provider)}</span>
-        <span class="hint">capa ${g.layers.join("/")} · ${g.processes.length} proceso(s) · ${g.seen_count} veces · último ${esc(g.last_seen)}</span>
+        <span class="hint">capa ${g.layers.join("/")} · ${plural(g.processes.length, "proceso", "procesos")} · ${g.seen_count} veces · último ${esc(g.last_seen)}</span>
         <button data-approve="${esc(g.provider)}" class="primary small">Aprobar proveedor</button>
       </div>`).join("");
     wrap.querySelectorAll("button[data-approve]").forEach(b => {
@@ -1370,7 +1374,7 @@ function renderDashboard(d) {
     (kindLabel[p.kind] ? ` <span class="hint">[${kindLabel[p.kind]}]</span>` : "") +
     ` <span class="num">${fmtBytes(p.bytes)}</span></span>`).join("");
   const restLine = provRest > 0
-    ? `<span class="hint">+${provRest} proveedor(es) más</span>` : "";
+    ? `<span class="hint">+${plural(provRest, "proveedor", "proveedores")} más</span>` : "";
   const cloudLine = cb.available
     ? `<div class="row"><b>Bytes cloud (TLS remoto)</b>: <span class="mono">${fmtBytes(cb.total_bytes || 0)}</span>${cb.spawn_method ? ` <span class="hint">(${esc(cb.spawn_method)})</span>` : ""}</div><div class="chips">${provRows}${restLine}</div>`
     : `<div class="row"><span class="hint">Bytes cloud: no disponible para TLS remoto (${esc(cb.reason || "")}).</span></div>`;
@@ -1611,7 +1615,7 @@ async function loadReviewHistory() {
       const acc = r.accion ? `<span class="${r.accion === "sacar" ? "badge-ok" : "badge-bad"}">${esc(r.accion)}</span>` : "";
       const coin = r.coincide ? `<span class="${COINCIDE[r.coincide] || "badge-warn"}">${esc(r.coincide)}</span>` : "";
       const dest = r.ev_sni || r.ev_catalog || r.ev_dest_ip || "?";
-      const seen = r.ev_sessions != null ? ` · ${r.ev_sessions} sesión(es), ${r.ev_seen || 0} vistas` : "";
+      const seen = r.ev_sessions != null ? ` · ${plural(r.ev_sessions, "sesión", "sesiones")}, ${r.ev_seen || 0} vistas` : "";
       return `<div class="revrow"><details open>
         <summary>#${r.event_id} ${esc(r.ev_process || "")} -> ${esc(dest)} ${badge} ${acc} ${coin} <span class="hint">${esc((r.ts || "").slice(0, 16))}</span></summary>
         ${r.juicio ? `<p class="juicio">${esc(r.juicio)}</p>` : ""}

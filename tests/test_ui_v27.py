@@ -33,3 +33,8 @@ class UiV27Test(TestCase):
     def test_b05_findings_use_spanish_autonomy_label(self):
         self.assertNotIn('badge-warn">${esc(f.autonomy_verdict)}', JS)
         self.assertIn("autonomyBadge(f.autonomy_verdict, f.autonomy_score)", JS)
+
+    def test_b06_no_parenthesised_plurals(self):
+        self.assertIn("function plural(n, uno, varios)", JS)
+        for bad in ("proceso(s)", "proveedor(es)", "sesión(es)", "aprobado(s)"):
+            self.assertNotIn(bad, JS, bad)
