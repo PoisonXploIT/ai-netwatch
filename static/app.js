@@ -18,6 +18,11 @@ function ago(ts) {
   return `hace ${Math.round(h / 24)} días`;
 }
 
+function whenCell(ts) {
+  return `<span title="${esc(ts || "")} (UTC)">${esc(ago(ts))}</span>`;
+}
+
+
 
 function themeToggle() {
   const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
@@ -217,7 +222,7 @@ function groupedEventsTableHtml(events) {
     <td>${autonomyBadge(e.autonomy_verdict, e.autonomy_score)}</td>
     <td class="num">${e.sessions ?? 0}${beaconBadge(e)}</td>
     <td class="num" title="IPs distintas para este proceso y proveedor (CDN rotatorio).">${e.ip_count ?? 0}</td>
-    <td class="mono small">${esc(e.last_seen || "")}</td>
+    <td class="small">${whenCell(e.last_seen)}</td>
     <td><button class="linklike" data-detail="ev-d-g${i}" aria-expanded="false">detalle</button></td>
   </tr>
   <tr class="ev-detail" id="ev-d-g${i}" hidden><td colspan="8">${groupDetailHtml(e)}</td></tr>`).join("");
@@ -237,7 +242,7 @@ function eventsTableHtml(events, grouped) {
     <td>${aiLayerHtml(e.ai_layer)}</td>
     <td>${autonomyBadge(e.autonomy_verdict, e.autonomy_score)}</td>
     <td class="num">${e.sessions ?? 1}${beaconBadge(e)}</td>
-    <td class="mono small">${esc(e.last_seen)}</td>
+    <td class="small">${whenCell(e.last_seen)}</td>
     <td><button class="linklike" data-detail="ev-d-${i}" aria-expanded="false">detalle</button></td>
   </tr>
   <tr class="ev-detail" id="ev-d-${i}" hidden><td colspan="8">${eventDetailHtml(e)}</td></tr>`).join("");
@@ -645,7 +650,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
       <td>${jev} ${badges}</td>
       <td class="num">${f.sessions ?? 0}</td>
       <td class="num">${f.seen_count ?? 0}</td>
-      <td class="mono small">${esc(f.last_seen || "")}</td>
+      <td class="small">${whenCell(f.last_seen)}</td>
       <td>
         <button class="small blacklist-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Lista negra (cuarentena): aislar hasta revisión LLM">Aislar</button>
         <button class="small suppress-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Ocultar fila: los eventos se mantienen en la base de datos">Ocultar</button>
@@ -674,7 +679,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
         <td>${jev} ${reviewBadge(f.review)}</td>
         <td class="num">${f.sessions ?? 0}</td>
         <td class="num">${f.seen_count ?? 0}</td>
-        <td class="mono small">${esc(f.last_seen || "")}</td>
+        <td class="small">${whenCell(f.last_seen)}</td>
         <td>
           <button class="small unblacklist-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Sacar de cuarentena">sacar</button>
           <button class="small review-finding" data-eids="${(f.event_ids || []).join(",")}" title="Revisar estos eventos con el LLM local">revisar</button>

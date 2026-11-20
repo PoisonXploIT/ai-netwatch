@@ -177,3 +177,7 @@ class UiV27Test(TestCase):
     def test_u01_events_have_a_search_box(self):
         self.assertIn('id="ev-search"', HTML)
         self.assertIn('$("ev-search").addEventListener("input"', JS)
+
+    def test_u02_last_seen_is_relative_with_utc_title(self):
+        self.assertIn("function whenCell(ts)", JS)
+        self.assertEqual(JS.count("whenCell("), 5)  # 1 definicion + 4 usos
