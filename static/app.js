@@ -1580,7 +1580,7 @@ async function refreshDashboard() {
 function renderMonitorState(enabled) {
   const btn = document.getElementById("btn-monitor");
   if (!btn) return;
-  btn.textContent = enabled ? "Monitoreo: ACTIVO" : "Monitoreo: PAUSADO";
+  btn.textContent = enabled ? "Monitoreo activo · pausar" : "Monitoreo en pausa · reanudar";
   btn.classList.toggle("paused", !enabled);
   btn.setAttribute("aria-pressed", String(!enabled));
 }
@@ -1756,6 +1756,13 @@ function bind() {
   $("btn-monitor").addEventListener("click", async () => {
     const btn = $("btn-monitor");
     const next = btn.classList.contains("paused");
+    if (!next) {
+      const okBtn = document.getElementById("confirm-ok");
+      if (okBtn) okBtn.textContent = "Pausar";
+      const yes = await askConfirm("Con el monitoreo en pausa no se registran conexiones, SNI, bytes ni llamadas LLM. ¿Pausar?");
+      if (okBtn) okBtn.textContent = "Borrar";
+      if (!yes) return;
+    }
     btn.disabled = true;
     try {
       await api("/api/config", { method: "POST", body: JSON.stringify({ monitoring_enabled: next }) });

@@ -106,7 +106,7 @@ class UiV27Test(TestCase):
     def test_s15_destructive_actions_use_own_dialog(self):
         self.assertIn('<dialog id="confirm-dialog"', HTML)
         self.assertIn("function askConfirm(text)", JS)
-        self.assertEqual(JS.count("await askConfirm("), 2)
+        self.assertEqual(JS.count("await askConfirm("), 3)  # U-07 suma la confirmacion al pausar el monitoreo
         self.assertNotIn("if (!confirm(", JS)
 
     def test_d01_scale_tokens_exist(self):
@@ -200,3 +200,7 @@ class UiV27Test(TestCase):
         self.assertIn('btn.setAttribute("aria-busy", "true");', JS)
         self.assertIn('btn.removeAttribute("aria-busy");', JS)
         self.assertIn("const dd = data.dedup;", JS)
+
+    def test_u07_pausing_monitoring_asks_first(self):
+        self.assertIn("Monitoreo en pausa · reanudar", JS)
+        self.assertIn("no se registran conexiones, SNI, bytes ni llamadas LLM", JS)
