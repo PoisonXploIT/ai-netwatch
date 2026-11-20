@@ -48,7 +48,7 @@
     <section class="card wide" id="panel-dashboard">
     <h2>Panel</h2>
     <p class="hint">Actividad de los &uacute;ltimos 7 d&iacute;as agregando lo que ya existe: presencia (polls), no sesiones. Bytes cloud: opt-in; sin datos, "no disponible" con motivo &mdash; nunca un cero que engañe.</p>
-    <div id="dashboard-wrap"></div>
+    <div id="dashboard-wrap"><p class="hint state-loading">Cargando…</p></div>
     <div class="row">
       <label>Ventana</label>
       <select id="dash-days" aria-label="Ventana del panel en días"><option>1</option><option selected>7</option><option>30</option></select>
@@ -58,7 +58,7 @@
     <section class="card" id="stats-card">
     <h2>Estadísticas (últimos 7 días)</h2>
     <p class="hint">El reset borra los eventos y triajes vivos, pero el histórico diario se conserva para la estadística.</p>
-    <div id="stats-wrap"></div>
+    <div id="stats-wrap"><p class="hint state-loading">Cargando…</p></div>
     <div class="row">
       <button id="btn-reset" class="danger">Empezar de cero (reset)</button>
       <span class="hint">No borra el histórico diario (7+ días).</span>
@@ -98,17 +98,17 @@
       </select>
       <button class="linkbtn" id="btn-findings-reset">Filtros por defecto</button>
     </div>
-    <div id="findings-wrap" class="table-wrap"></div>
+    <div id="findings-wrap" class="table-wrap"><p class="hint state-loading">Cargando…</p></div>
     </section>
     <section class="card" id="shadow-card">
     <h2>Shadow AI</h2>
     <p class="hint">IA detectada que no est&aacute; aprobada: cat&aacute;logo (por defecto) + proveedores que apruebes aqu&iacute;; match por sufijo de dominio. Cada nuevo no aprobado alerta <span class="mono">shadow_ai</span>.</p>
-    <div id="shadow-wrap"></div>
+    <div id="shadow-wrap"><p class="hint state-loading">Cargando…</p></div>
     </section>
     <section class="card" id="baseline-card">
     <h2>Baseline y anomal&iacute;a (D1/D2)</h2>
     <p class="hint">Lo que es &quot;normal&quot; por (proceso, proveedor), aprendido de lo retenido. Anomal&iacute;a determinista sin IA: flags con porqu&eacute; y <span class="mono">pre_score</span> 0-100; display-only.</p>
-    <div id="baseline-wrap" class="table-wrap"></div>
+    <div id="baseline-wrap" class="table-wrap"><p class="hint state-loading">Cargando…</p></div>
     </section>
   </div>
   <div class="tab-panel" id="panel-eventos" role="tabpanel" aria-labelledby="tab-eventos" data-tab="eventos">
@@ -138,7 +138,7 @@
       <select id="ev-dest" aria-label="Filtrar por destino"><option value="">Todos los destinos</option></select>
       <button id="btn-ev-clear">Limpiar</button>
     </div>
-    <div id="events-wrap" class="table-wrap"></div>
+    <div id="events-wrap" class="table-wrap"><p class="hint state-loading">Cargando…</p></div>
     </section>
     <section class="card wide" id="autonomy-card">
     <h2>Autonom&iacute;a (R2)</h2>
@@ -158,7 +158,7 @@
       <button id="btn-aut-clear">Limpiar</button>
     </div>
     <p id="autonomy-counters" class="hint"></p>
-    <div id="autonomy-wrap" class="table-wrap"></div>
+    <div id="autonomy-wrap" class="table-wrap"><p class="hint state-loading">Cargando…</p></div>
     </section>
   </div>
   <div class="tab-panel" id="panel-ia" role="tabpanel" aria-labelledby="tab-ia" data-tab="ia">
@@ -166,7 +166,7 @@
     <h2>Triaje con Jev</h2>
     <button id="btn-triage" class="primary">Triar eventos con Jev</button>
     <span id="triage-status" class="hint"></span>
-    <div id="triage-results" class="table-wrap"></div>
+    <div id="triage-results" class="table-wrap"><p class="hint">Sin triaje todavía: pulsa «Triar eventos con Jev».</p></div>
     </section>
     <section class="card" id="review-card">
     <h2>Revisi&oacute;n LLM local (batch)</h2>
@@ -185,7 +185,7 @@
     </div>
     <div id="review-results"></div>
     <p class="hint">&Uacute;ltimas revisiones (hist&oacute;rico)</p>
-    <div id="review-history"></div>
+    <div id="review-history"><p class="hint state-loading">Cargando…</p></div>
     </section>
     <section class="card" id="llm-inspector-card">
     <h2>LLM Inspector (R3)</h2>
@@ -200,7 +200,7 @@
     </div>
     <p class="hint">Para inspeccionar, apunta el cliente al puerto del proxy (p. ej. SDK/cliente → <span class="mono">http://127.0.0.1:8098</span>). Las llamadas se guardan en <span class="mono">data/llm_calls.db</span> con prompts y respuestas completos: no expongas ese fichero.</p>
     <p class="hint">Cobertura: chat/completions (incluido tool-calling), embeddings, audio e imágenes; un intento que no conecta queda registrado como fallo.</p>
-    <div id="llm-calls-wrap"></div>
+    <div id="llm-calls-wrap"><p class="hint state-loading">Cargando…</p></div>
     <div class="row">
       <button id="btn-reset-llmcalls" class="danger">Borrar llamadas registradas</button>
     </div>
@@ -293,7 +293,7 @@
     <section class="card" id="rules-card">
     <h2>Reglas (v2.2)</h2>
     <p class="hint">Reglas por umbral sobre lo que ya se mide: shadow, autonom&iacute;a y beaconing. Una regla que pasa a disparar alerta una vez (<span class="mono">rule_fired</span>); el reset re-alerta.</p>
-    <div id="rules-wrap"></div>
+    <div id="rules-wrap"><p class="hint state-loading">Cargando…</p></div>
     </section>
   </div>
   <div class="tab-panel" id="panel-guia" role="tabpanel" aria-labelledby="tab-guia" data-tab="guia">

@@ -159,3 +159,8 @@ class UiV27Test(TestCase):
     def test_d07_table_rules(self):
         self.assertIn("font-variant-numeric: tabular-nums", CSS)
         self.assertIn("td.mono { overflow-wrap: anywhere; }", CSS)
+
+    def test_d08_wrappers_start_with_a_loading_state(self):
+        import re
+        empty = re.findall(r'<div id="[a-z-]+-wrap"[^>]*></div>', HTML)
+        self.assertEqual(empty, [], empty)

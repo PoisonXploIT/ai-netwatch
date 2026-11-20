@@ -505,3 +505,6 @@ header { position: sticky; top: 0; z-index: 30; background: var(--bg); border-bo
 td.mono { overflow-wrap: anywhere; }
 .table-wrap { max-width: 100%; }
 caption { text-align: left; color: var(--muted); font-size: var(--fs-sm); padding: 0 0 var(--sp-2); }
+
+/* D-08 */
+.state-loading { padding: var(--sp-4) 0; }
