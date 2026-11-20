@@ -41,3 +41,16 @@ attack surface and no authentication because there is no remote exposure.
 - Inspecting or decrypting TLS traffic to remote providers (would require a
   MITM with a local CA; intentionally excluded).
 - Multi-user or network-exposed deployments.
+
+## Modelo de seguridad de la consola (v2.7)
+
+- El servidor escucha solo en 127.0.0.1. Toda petición con un `Host` que no sea loopback recibe 403.
+- Las acciones (POST/PUT/DELETE/PATCH) exigen un token de sesión generado al arrancar, que solo
+  vive en memoria y se entrega dentro del HTML de la consola. Se compara en tiempo constante.
+- Las lecturas sensibles (`/api/llm/calls`, `/api/export/*`, `/api/evidence/*`) exigen el mismo token.
+- Si la petición trae `Origin`, debe ser `http://<loopback>:<mismo puerto>`.
+- CORS deny-all. CSP sin `unsafe-inline`; sin objetos, sin marcos, formularios solo a la propia consola.
+- Secretos: la key de Jev se guarda cifrada con DPAPI; la API solo devuelve un fingerprint.
+  Los prompts y respuestas del inspector se guardan cifrados con DPAPI.
+- Límite conocido: un proceso que corre como el mismo usuario de Windows puede leer `data/` y pedir
+  la consola para obtener el token. El token protege frente a páginas web y a otros usuarios.
