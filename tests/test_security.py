@@ -307,6 +307,11 @@ class TestOriginGuard(SecurityBase):
         text = server.CONFIG_PATH.read_text(encoding="utf-8")
         self.assertNotIn(server._SESSION_TOKEN, text)
 
+    def test_s10_token_compare_is_constant_time_and_total(self):
+        self.assertTrue(server._token_ok(server._SESSION_TOKEN))
+        self.assertFalse(server._token_ok(""))
+        self.assertFalse(server._token_ok("ñ-no-ascii"))  # no lanza TypeError
+
 
 class TestLlmContentEncryption(SecurityBase):
     """S-03: el contenido del LLM Inspector no queda en claro en SQLite."""

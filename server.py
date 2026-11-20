@@ -125,6 +125,12 @@ def _host_of(value: str) -> str:
     return value.split("://")[-1].split("/")[0].split(":")[0]
 
 
+def _token_ok(value: str) -> bool:
+    """Comparacion en tiempo constante: no filtra el token por temporizacion."""
+    return secrets.compare_digest((value or "").encode("utf-8", "replace"),
+                                  _SESSION_TOKEN.encode("utf-8"))
+
+
 @app.middleware("http")
 async def _origin_guard(request, call_next):
     host = _host_of(request.headers.get("host", ""))
@@ -141,7 +147,7 @@ async def _origin_guard(request, call_next):
                           origin=origin, client=request.client.host if request.client else "")
             return JSONResponse({"error": "origen no permitido (CSRF/rebinding)"},
                                 status_code=403)
-        if request.headers.get("x-netwatch-token", "") != _SESSION_TOKEN:
+        if not _token_ok(request.headers.get("x-netwatch-token", "")):
             audit_log.log("blocked", request.method, request.url.path, 403,
                           origin=origin, client=request.client.host if request.client else "",
                           detail={"motivo": "token de sesion ausente o invalido"})
