@@ -1631,7 +1631,7 @@ async function loadReviewHistory() {
     const rows = d.reviews || [];
     if (!rows.length) { wrap.innerHTML = `<div class="hint">Sin revisiones todavía.</div>`; return; }
     const COINCIDE = { coincide: "badge-ok", discrepa: "badge-bad", dudoso: "badge-warn" };
-    wrap.innerHTML = rows.map((r) => {
+    wrap.innerHTML = rows.map((r, i) => {
       const badge = r.evaluacion
         ? `<span class="${REVIEW_EVAL_BADGE[r.evaluacion] || "badge-warn"}">${esc(r.evaluacion)}</span>`
         : `<span class="hint">no disponible</span>`;
@@ -1639,7 +1639,7 @@ async function loadReviewHistory() {
       const coin = r.coincide ? `<span class="${COINCIDE[r.coincide] || "badge-warn"}">${esc(r.coincide)}</span>` : "";
       const dest = r.ev_sni || r.ev_catalog || r.ev_dest_ip || "?";
       const seen = r.ev_sessions != null ? ` · ${plural(r.ev_sessions, "sesión", "sesiones")}, ${r.ev_seen || 0} vistas` : "";
-      return `<div class="revrow"><details open>
+      return `<div class="revrow"><details${i < 3 ? " open" : ""}>
         <summary>#${r.event_id} ${esc(r.ev_process || "")} -> ${esc(dest)} ${badge} ${acc} ${coin} <span class="hint">${esc((r.ts || "").slice(0, 16))}</span></summary>
         ${r.juicio ? `<p class="juicio">${esc(r.juicio)}</p>` : ""}
         ${r.porque ? `<p class="small hint">Porque: ${esc(r.porque)}</p>` : ""}

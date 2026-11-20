@@ -72,3 +72,7 @@ class UiV27Test(TestCase):
 
 
 
+
+    def test_b12_only_first_reviews_start_open(self):
+        self.assertIn('<details${i < 3 ? " open" : ""}>', JS)
+        self.assertNotIn('<div class="revrow"><details open>', JS)
