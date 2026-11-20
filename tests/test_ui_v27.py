@@ -210,3 +210,7 @@ class UiV27Test(TestCase):
 
     def test_u09_llm_inspector_starts_with_ten_calls(self):
         self.assertIn("let llmCallsShown = 10;", JS)
+
+    def test_u10_mobile_viewport_and_narrow_wrapping(self):
+        self.assertIn('<meta name="viewport" content="width=device-width, initial-scale=1">', HTML)
+        self.assertIn("  .mono { overflow-wrap: anywhere; }\n  .chip { white-space: normal; }", CSS)

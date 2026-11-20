@@ -490,6 +490,9 @@ tr.finding-row:hover { background: var(--row-hover); }
   #findings-wrap tbody > tr.finding-row > td:nth-child(6) { display: none; }
   header { padding: var(--sp-2) var(--sp-3); }
   main { padding: var(--sp-2) var(--sp-3) var(--sp-5); }
+  /* U-10: en estrecho, las rutas largas parten línea y las pastillas pueden partir su texto. */
+  .mono { overflow-wrap: anywhere; }
+  .chip { white-space: normal; }
 }
 
 /* B-03: una tabla ancha no ensancha la tarjeta ni la pagina. */
