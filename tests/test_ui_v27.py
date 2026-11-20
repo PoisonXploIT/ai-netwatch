@@ -113,3 +113,10 @@ class UiV27Test(TestCase):
         for token in ("--fs-xs: 11px", "--fs-md: 13px", "--fs-xl: 20px",
                       "--r-sm: 4px", "--r-lg: 12px", "--sp-4: 16px", "--font-mono:"):
             self.assertIn(token, CSS, token)
+
+    def test_d02_font_sizes_come_from_the_scale(self):
+        import re
+        sizes = re.findall(r"font-size:\s*([^;]+);", CSS)
+        literal = [s for s in sizes if not s.strip().startswith("var(--fs-")
+                   and s.strip() not in ("inherit",)]
+        self.assertEqual(literal, [], literal)
