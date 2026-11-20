@@ -25,3 +25,7 @@ class UiV27Test(TestCase):
         for wid in ("findings-wrap", "baseline-wrap", "autonomy-wrap",
                     "triage-results", "events-wrap"):
             self.assertIn(f'id="{wid}" class="table-wrap"', HTML, wid)
+
+    def test_b04_main_and_header_are_centered(self):
+        self.assertIn("max-width: 1280px; margin: 0 auto; }", CSS)
+        self.assertIn("header { max-width: 1280px; margin: 0 auto; }", CSS)

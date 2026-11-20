@@ -87,7 +87,8 @@ header .sub { color: var(--muted); font-size: 13px; }
 .badge-warn { color: var(--v-warn); background: var(--v-warn-bg); }
 .badge-bad { color: var(--v-bad); background: var(--v-bad-bg); }
 
-main { padding: 8px 24px 32px; max-width: 1280px; }
+main { padding: 8px 24px 32px; max-width: 1280px; margin: 0 auto; }
+header { max-width: 1280px; margin: 0 auto; }
 
 .card {
   background: var(--card);
