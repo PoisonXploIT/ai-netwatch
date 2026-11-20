@@ -508,3 +508,9 @@ caption { text-align: left; color: var(--muted); font-size: var(--fs-sm); paddin
 
 /* D-08 */
 .state-loading { padding: var(--sp-4) 0; }
+
+/* D-09 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+tr[tabindex]:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
