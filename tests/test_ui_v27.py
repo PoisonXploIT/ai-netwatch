@@ -56,4 +56,10 @@ class UiV27Test(TestCase):
         self.assertNotIn("btn-guide", JS)
         self.assertIn('id="tab-guia"', HTML)
 
+    def test_b09_strip_explains_pause_and_last_event(self):
+        self.assertIn("function ago(ts)", JS)
+        self.assertIn('h.monitoring_enabled === false ? "en pausa" : h.status', JS)
+        self.assertIn("ago(h.last_event)", JS)
+
+
 

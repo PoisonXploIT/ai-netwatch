@@ -7,6 +7,18 @@ function plural(n, uno, varios) {
   return `${n} ${Number(n) === 1 ? uno : varios}`;
 }
 
+function ago(ts) {
+  if (!ts) return "nunca";
+  const t = Date.parse(String(ts).replace(" ", "T"));
+  if (Number.isNaN(t)) return String(ts);
+  const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+  if (m < 60) return `hace ${m} min`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `hace ${h} h`;
+  return `hace ${Math.round(h / 24)} días`;
+}
+
+
 function themeToggle() {
   const cur = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", cur);
@@ -510,8 +522,9 @@ async function refreshHealth() {
     const paused = h.monitoring_enabled === false
       ? `<b>monitor pausado</b> (kill switch: no es un fallo)` : "monitor activo";
     strip.innerHTML = `<span class="dot ${dot}"></span>` +
-      `<span>v${esc(h.version || "?")} · estado <b>${esc(h.status)}</b></span>` +
+      `<span>v${esc(h.version || "?")} · estado <b>${esc(h.monitoring_enabled === false ? "en pausa" : h.status)}</b></span>` +
       `<span>${paused}</span>` +
+      `<span title="${esc(h.last_event || "")}">último evento: <b>${esc(ago(h.last_event))}</b></span>` +
       `<span>eventos <b>${h.events ?? 0}</b></span>` +
       `<span>llamadas LLM <b>${h.llm_calls ?? 0}</b></span>` +
       `<span>fuentes: ${src.length ? esc(src.join(", ")) : "ninguna"}</span>` +
