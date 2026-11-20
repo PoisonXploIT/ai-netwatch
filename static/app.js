@@ -647,7 +647,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
         ? `<span class="badge-warn">${autonomyBadge(f.autonomy_verdict, f.autonomy_score)}</span>` : "",
     ].filter(Boolean).join(" ");
     const jev = f.jev_verdict ? verdictBadge(f.jev_verdict) : `<span class="hint">sin Jev</span>`;
-    return `<tr class="finding-row" data-fi="${i}">
+    return `<tr class="finding-row" data-fi="${i}" tabindex="0" role="button" aria-expanded="false">
       <td><span class="score-badge ${scoreClass(f.score)}" title="Score ${f.score} de 100">${f.score}</span> <span class="small">${scoreLabel(f.score)}</span></td>
       <td>${esc(f.process)}</td>
       <td class="mono">${esc(f.provider || "-")}${kindBadge(f.kind)}</td>
@@ -676,7 +676,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
   if (blacklisted && blacklisted.length) {
     const qrows = blacklisted.map((f, i) => {
       const jev = f.jev_verdict ? verdictBadge(f.jev_verdict) : `<span class="hint">sin Jev</span>`;
-      return `<tr class="finding-row" data-qi="${i}">
+      return `<tr class="finding-row" data-qi="${i}" tabindex="0" role="button" aria-expanded="false">
         <td><span class="score-badge ${scoreClass(f.score)}" title="Score ${f.score} de 100">${f.score}</span> <span class="small">${scoreLabel(f.score)}</span></td>
         <td>${esc(f.process)}</td>
         <td class="mono">${esc(f.provider || "-")}${kindBadge(f.kind)}</td>
@@ -748,13 +748,22 @@ function renderFindings() {
 
 function wireFindings(wrap) {
     wrap.querySelectorAll("tr.finding-row").forEach((r) => {
-      r.addEventListener("click", (ev) => {
-        if (ev.target.closest("button")) return;
+      const toggle = () => {
         const sel = r.dataset.fi != null
           ? `tr.finding-detail[data-fd="${r.dataset.fi}"]`
           : `tr.finding-detail[data-qd="${r.dataset.qi}"]`;
         const det = wrap.querySelector(sel);
-        if (det) det.hidden = !det.hidden;
+        if (!det) return;
+        det.hidden = !det.hidden;
+        r.setAttribute("aria-expanded", String(!det.hidden));
+      };
+      r.addEventListener("click", (ev) => {
+        if (ev.target.closest("button")) return;
+        toggle();
+      });
+      r.addEventListener("keydown", (ev) => {
+        if (ev.target !== r) return;  // no interceptar los botones de la fila
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); }
       });
     });
     wrap.querySelectorAll("button.suppress-finding").forEach((b) => {

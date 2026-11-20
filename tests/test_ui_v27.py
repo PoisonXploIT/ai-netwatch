@@ -186,3 +186,7 @@ class UiV27Test(TestCase):
         self.assertNotIn("${eventDetailHtml(e)}</td>", JS)
         self.assertNotIn("${groupDetailHtml(e)}</td>", JS)
         self.assertIn("let EVENT_ROWS = [];", JS)
+
+    def test_u04_finding_rows_are_keyboard_operable(self):
+        self.assertIn('class="finding-row" data-fi="${i}" tabindex="0" role="button"', JS)
+        self.assertIn('ev.key === "Enter" || ev.key === " "', JS)
