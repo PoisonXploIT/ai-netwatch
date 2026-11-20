@@ -61,5 +61,9 @@ class UiV27Test(TestCase):
         self.assertIn('h.monitoring_enabled === false ? "en pausa" : h.status', JS)
         self.assertIn("ago(h.last_event)", JS)
 
+    def test_b10_strip_shows_inspector_state(self):
+        self.assertIn('(h.sources || {}).llm_proxy ? "activo" : "parado"', JS)
+
+
 
 
