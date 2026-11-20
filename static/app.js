@@ -434,6 +434,8 @@ function eventsQuery() {
   if (proc) p.set("process", proc);
   const dest = $("ev-dest") && $("ev-dest").value.trim();
   if (dest) p.set("dest", dest);
+  const q = $("ev-search") && $("ev-search").value.trim();
+  if (q && !dest) p.set("dest", q);
   return p.toString();
 }
 
@@ -1909,7 +1911,13 @@ function bind() {
     const el = $(id);
     if (el) el.addEventListener("change", evRefresh);
   });
+  let evSearchTimer = null;
+  $("ev-search").addEventListener("input", () => {
+    clearTimeout(evSearchTimer);
+    evSearchTimer = setTimeout(refreshEvents, 300);
+  });
   $("btn-ev-clear").addEventListener("click", () => {
+    $("ev-search").value = "";
     $("ev-group").checked = true;
     $("ev-layer").value = "";
     $("ev-verdict").value = "";

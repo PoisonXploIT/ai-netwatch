@@ -116,6 +116,7 @@
     <h2>Eventos (conexiones a destinos IA)</h2>
     <p class="hint">Proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo (TCP/QUIC) + periodicidad. Columnas: SNI = dominio real del handshake TLS/QUIC (tshark); Catálogo = match por resolución activa; provider+kind (API/web/CDN). Filtros y agrupación por proveedor (v2.3).</p>
     <div class="row" id="events-filters">
+      <input type="text" id="ev-search" aria-label="Buscar destino por dominio o IP" placeholder="Buscar destino (dominio o IP)…">
       <label class="check"><input type="checkbox" id="ev-group" checked> Agrupar por proveedor</label>
       <label>Capa</label>
       <select id="ev-layer" aria-label="Filtrar por capa de detección">

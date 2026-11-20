@@ -173,3 +173,7 @@ class UiV27Test(TestCase):
         sys.path.insert(0, str(ROOT / "tools"))
         import contrast_check
         self.assertEqual(contrast_check.failures(), [])
+
+    def test_u01_events_have_a_search_box(self):
+        self.assertIn('id="ev-search"', HTML)
+        self.assertIn('$("ev-search").addEventListener("input"', JS)
