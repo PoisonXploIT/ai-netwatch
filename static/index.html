@@ -15,7 +15,7 @@
   <div class="header-right">
 
     <button id="btn-monitor" class="monitor-toggle" title="Apagar/encender el monitoreo (kill switch global)" aria-pressed="false">Monitoreo: ACTIVO</button>
-    <button id="btn-theme" class="icon" title="Cambiar tema claro/oscuro">
+    <button id="btn-theme" class="icon" aria-label="Cambiar tema claro u oscuro" title="Cambiar tema claro/oscuro">
       <svg class="ic ic-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
       <svg class="ic ic-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
     </button>
@@ -52,7 +52,7 @@
     <div id="dashboard-wrap"></div>
     <div class="row">
       <label>Ventana</label>
-      <select id="dash-days"><option>1</option><option selected>7</option><option>30</option></select>
+      <select id="dash-days" aria-label="Ventana del panel en días"><option>1</option><option selected>7</option><option>30</option></select>
       <span class="hint">d&iacute;as (panel)</span>
     </div>
     </section>
@@ -75,7 +75,7 @@
     </div>
     <p class="hint">Evidencia (v2.3): cadena de hashes sobre los eventos de la ventana (si se altera una fila se rompe el resto; verificable offline) y bundle STIX 2.1 para SIEM/CTI.</p>
     <div class="row">
-      <select id="ev-days">
+      <select id="ev-days" aria-label="Ventana de la evidencia en días">
         <option>1</option><option selected>7</option><option>30</option><option>90</option>
       </select>
       <span class="hint">dias</span>
@@ -92,7 +92,7 @@
       <label class="check"><input type="checkbox" id="f-noise" checked> Ocultar ruido (score &lt; 10 y 1 sesion)</label>
       <label class="check"><input type="checkbox" id="f-unapproved"> Solo no aprobados</label>
       <label>Orden</label>
-      <select id="f-order">
+      <select id="f-order" aria-label="Orden de los hallazgos">
         <option value="score">Score</option>
         <option value="last">Última vez</option>
         <option value="sessions">Sesiones</option>
@@ -119,14 +119,14 @@
     <div class="row" id="events-filters">
       <label class="check"><input type="checkbox" id="ev-group" checked> Agrupar por proveedor</label>
       <label>Capa</label>
-      <select id="ev-layer">
+      <select id="ev-layer" aria-label="Filtrar por capa de detección">
         <option value="">Todas</option>
         <option value="catalog">catálogo</option>
         <option value="heuristic">heurística</option>
         <option value="llm">LLM local</option>
       </select>
       <label>Autonomía</label>
-      <select id="ev-verdict">
+      <select id="ev-verdict" aria-label="Filtrar por autonomía">
         <option value="">Todas</option>
         <option value="autonomous">autónomo</option>
         <option value="scheduled">programado</option>
@@ -135,8 +135,8 @@
       </select>
       <label class="check"><input type="checkbox" id="ev-shadow"> Solo no aprobados</label>
       <label class="check"><input type="checkbox" id="ev-hide-cdn"> Ocultar CDN</label>
-      <select id="ev-process"><option value="">Todos los procesos</option></select>
-      <select id="ev-dest"><option value="">Todos los destinos</option></select>
+      <select id="ev-process" aria-label="Filtrar por proceso"><option value="">Todos los procesos</option></select>
+      <select id="ev-dest" aria-label="Filtrar por destino"><option value="">Todos los destinos</option></select>
       <button id="btn-ev-clear">Limpiar</button>
     </div>
     <div id="events-wrap" class="table-wrap"></div>
@@ -146,15 +146,15 @@
     <p class="hint">Qu&eacute;n decide la salida a IA: <b>usuario</b>, <b>aut&oacute;nomo</b> o <b>programado</b>. Se&ntilde;ales: sesi&oacute;n bloqueada, inactividad, foreground y linaje (EID 1). Una salida aut&oacute;noma/programada alerta <span class="mono">autonomous_ai_call</span>.</p>
     <div class="row" id="aut-filters">
       <label>Veredicto</label>
-      <select id="aut-verdict">
+      <select id="aut-verdict" aria-label="Filtrar autonomía por veredicto">
         <option value="">Todas</option>
         <option value="autonomous">aut&oacute;nomo</option>
         <option value="scheduled">programado</option>
         <option value="user_driven">usuario</option>
         <option value="unknown">desconocido</option>
       </select>
-      <select id="aut-process"><option value="">Todos los procesos</option></select>
-      <select id="aut-provider"><option value="">Todos los proveedores</option></select>
+      <select id="aut-process" aria-label="Filtrar autonomía por proceso"><option value="">Todos los procesos</option></select>
+      <select id="aut-provider" aria-label="Filtrar autonomía por proveedor"><option value="">Todos los proveedores</option></select>
       <label class="check"><input type="checkbox" id="aut-group" checked> Agrupar por proveedor</label>
       <button id="btn-aut-clear">Limpiar</button>
     </div>
@@ -194,9 +194,9 @@
     <div class="row">
       <label class="check"><input type="checkbox" id="llm-proxy-toggle"> Inspector activo</label>
       <label>Puerto proxy</label>
-      <input id="llm-proxy-port">
+      <input id="llm-proxy-port" aria-label="Puerto del inspector LLM">
       <label>Target (LLM)</label>
-      <input id="llm-proxy-target" placeholder="127.0.0.1:8099">
+      <input id="llm-proxy-target" aria-label="Destino del inspector LLM" placeholder="127.0.0.1:8099">
       <button id="btn-save-proxy">Guardar</button>
     </div>
     <p class="hint">Para inspeccionar, apunta el cliente al puerto del proxy (p. ej. SDK/cliente → <span class="mono">http://127.0.0.1:8098</span>). Las llamadas se guardan en <span class="mono">data/llm_calls.db</span> con prompts y respuestas completos: no expongas ese fichero.</p>
@@ -231,8 +231,8 @@
     </div>
     <div class="row">
       <label>LAYÁ (local, 2ª opinión)</label>
-      <input id="laya-url" placeholder="http://127.0.0.1:8787/v1/systemone">
-      <input id="laya-model" placeholder="multilingual">
+      <input id="laya-url" aria-label="URL de LAYA" placeholder="http://127.0.0.1:8787/v1/systemone">
+      <input id="laya-model" aria-label="Modelo de LAYA" placeholder="multilingual">
       <button id="btn-save-laya">Guardar</button>
       <button id="btn-test-laya">Probar</button>
     </div>
@@ -244,8 +244,8 @@
       <h3>LLM local (explicador, no juez)</h3>
     <div class="row">
       <label>URL loopback</label>
-      <input id="llm-url" placeholder="http://127.0.0.1:8099">
-      <input id="llm-model" placeholder="modelo">
+      <input id="llm-url" aria-label="URL del LLM local" placeholder="http://127.0.0.1:8099">
+      <input id="llm-model" aria-label="Modelo del LLM local" placeholder="modelo">
       <button id="btn-save-llm">Guardar</button>
       <button id="btn-test-llm">Probar</button>
     </div>
@@ -267,7 +267,7 @@
     </div>
     <div class="row">
       <label>Hosts extra (IP o dominio, coma)</label>
-      <input id="extra-hosts" placeholder="ej. 10.0.0.5, mi-servidor.local">
+      <input id="extra-hosts" aria-label="Hosts extra a vigilar" placeholder="ej. 10.0.0.5, mi-servidor.local">
       <button id="btn-save-extra">Guardar</button>
     </div>
     </div>
@@ -278,14 +278,14 @@
     </div>
     <div class="row">
       <label>Webhook de alertas (loopback, opcional)</label>
-      <input id="alert-webhook" placeholder="http://127.0.0.1:9000/alert">
+      <input id="alert-webhook" aria-label="Webhook de alertas" placeholder="http://127.0.0.1:9000/alert">
       <button id="btn-save-alerts">Guardar</button>
     </div>
     <div class="row">
       <label>Retenci&oacute;n eventos (d&iacute;as)</label>
-      <input id="retention-days" type="number" min="1" max="3650">
+      <input id="retention-days" aria-label="Retención de eventos en días" type="number" min="1" max="3650">
       <label>LLM calls (d&iacute;as)</label>
-      <input id="retention-llm-days" type="number" min="1" max="3650">
+      <input id="retention-llm-days" aria-label="Retención de llamadas LLM en días" type="number" min="1" max="3650">
       <button id="btn-save-retention">Guardar</button>
       <span class="hint">Eventos/triajes y llamadas LLM m&aacute;s antiguos que esto se borran (VACUUM incluido). LLM calls llevan vida m&aacute;s corta: guardan contenido en claro. El hist&oacute;rico diario de estad&iacute;sticas se conserva.</span>
     </div>

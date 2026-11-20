@@ -81,3 +81,15 @@ class UiV27Test(TestCase):
         self.assertNotIn("⊘", JS)
         self.assertIn(">Aislar</button>", JS)
         self.assertIn(">Ocultar</button>", JS)
+
+    def test_b14_controls_have_accessible_names(self):
+        import re
+        for cid in ("btn-theme", "dash-days", "ev-days", "f-order", "ev-layer",
+                    "ev-verdict", "ev-process", "ev-dest", "aut-verdict",
+                    "aut-process", "aut-provider", "llm-proxy-port",
+                    "llm-proxy-target", "laya-url", "laya-model", "llm-url",
+                    "llm-model", "extra-hosts", "alert-webhook",
+                    "retention-days", "retention-llm-days"):
+            tag = re.search(r'<[^>]*id="%s"[^>]*>' % cid, HTML + JS)
+            self.assertIsNotNone(tag, cid)
+            self.assertIn("aria-label=", tag.group(0), cid)
