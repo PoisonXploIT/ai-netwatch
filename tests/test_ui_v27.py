@@ -190,3 +190,7 @@ class UiV27Test(TestCase):
     def test_u04_finding_rows_are_keyboard_operable(self):
         self.assertIn('class="finding-row" data-fi="${i}" tabindex="0" role="button"', JS)
         self.assertIn('ev.key === "Enter" || ev.key === " "', JS)
+
+    def test_u05_summary_opens_with_attention_list(self):
+        self.assertIn('id="attention-card"', HTML)
+        self.assertIn("fn: refreshAttention", JS)

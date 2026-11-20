@@ -504,6 +504,29 @@ async function loadFacets() {
 // #10: refresco acotado a la pestaña visible. Cada tarea solo corre cuando su
 // pestaña es la activa (y la pagina esta abierta), de modo que la carga de la
 // pestaña activa queda por debajo de 12 req/min. Antes: 38 req/min globales.
+async function refreshAttention() {
+  const wrap = document.getElementById("attention-wrap");
+  if (!wrap) return;
+  try {
+    const d = await api("/api/findings");
+    const top = (d.findings || []).filter((f) => f.score >= 30 || f.unapproved || f.beaconing)
+      .sort((a, b) => b.score - a.score).slice(0, 5);
+    if (!top.length) {
+      wrap.innerHTML = `<p class="hint">Nada que revisar: ningún hallazgo con score 30 o más, sin aprobar o con beaconing.</p>`;
+      return;
+    }
+    wrap.innerHTML = `<ul class="attention">` + top.map((f) =>
+      `<li><span class="score-badge ${scoreClass(f.score)}">${f.score}</span> ` +
+      `<b>${esc(f.process)}</b> → <span class="mono">${esc(f.provider || "-")}</span>` +
+      `${f.unapproved ? ` <span class="badge-bad">no aprobado</span>` : ""}` +
+      `${f.beaconing ? ` <span class="badge-bad">beacon</span>` : ""}</li>`).join("") +
+      `</ul><button class="linkbtn" id="btn-go-findings">Ver todos los hallazgos</button>`;
+    document.getElementById("btn-go-findings").addEventListener("click", () => showTab("hallazgos"));
+  } catch (e) {
+    wrap.innerHTML = `<p class="hint error">No se pudieron cargar los hallazgos (${esc(e.message || e)}).</p>`;
+  }
+}
+
 const REFRESH_JOBS = [
   { tab: "eventos", fn: refreshEvents, every: 10000 },    // 6/min
   { tab: "eventos", fn: refreshAutonomy, every: 30000 },  // 2/min
@@ -515,6 +538,7 @@ const REFRESH_JOBS = [
   { tab: "resumen", fn: refreshStats, every: 60000 },     // 1/min
   { tab: "resumen", fn: refreshDashboard, every: 60000 }, // 1/min
   { tab: "resumen", fn: refreshHealth, every: 60000 },    // 1/min
+  { tab: "resumen", fn: refreshAttention, every: 60000 },    // 1/min
   // Global: las alertas salen como toast, no dependen de la pestaña.
   { tab: null, fn: refreshAlerts, every: 60000 },         // 1/min
 ];
