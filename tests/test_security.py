@@ -350,6 +350,17 @@ class TestOriginGuard(SecurityBase):
         for path in ("/api/health", "/api/events", "/api/config"):
             self.assertEqual(self._get(path, token=False), 200, path)
 
+    def test_s14_every_state_changing_route_needs_token(self):
+        paths = sorted({r.path for r in server.app.routes
+                        if getattr(r, "methods", None)
+                        and r.methods & server._STATE_CHANGING})
+        self.assertGreaterEqual(len(paths), 10, paths)
+        for path in paths:
+            req = Request({"type": "http", "method": "POST", "path": path,
+                           "headers": [(b"host", b"127.0.0.1:8790")],
+                           "query_string": b"", "scheme": "http"})
+            self.assertEqual(self._run(req), 403, path)
+
 
 class TestLlmContentEncryption(SecurityBase):
     """S-03: el contenido del LLM Inspector no queda en claro en SQLite."""
