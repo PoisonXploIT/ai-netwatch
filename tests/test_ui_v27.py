@@ -64,6 +64,11 @@ class UiV27Test(TestCase):
     def test_b10_strip_shows_inspector_state(self):
         self.assertIn('(h.sources || {}).llm_proxy ? "activo" : "parado"', JS)
 
+    def test_b11_pid_processes_are_grouped(self):
+        self.assertIn("<optgroup label=\"Sin nombre (${pids.length} PID)\">", JS)
+        self.assertEqual(JS.count('"Todos los procesos", procOptions)'), 2)
+
+
 
 
 

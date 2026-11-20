@@ -432,17 +432,26 @@ function renderEvents() {
 async function loadFacets() {
   try {
     const d = await api("/api/facets");
-    const fill = (id, items, allLabel) => {
+    const opt = (v) => `<option value="${esc(v)}">${esc(v)}</option>`;
+    const isPid = (v) => /^pid:\d+$/.test(v);
+    const procOptions = (items) => {
+      const named = (items || []).filter((v) => !isPid(v));
+      const pids = (items || []).filter(isPid);
+      return named.map(opt).join("") + (pids.length
+        ? `<optgroup label="Sin nombre (${pids.length} PID)">${pids.map(opt).join("")}</optgroup>`
+        : "");
+    };
+    const fill = (id, items, allLabel, render) => {
       const sel = document.getElementById(id);
       if (!sel) return;
       const cur = sel.value;
       sel.innerHTML = `<option value="">${allLabel}</option>` +
-        (items || []).map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+        (render ? render(items) : (items || []).map(opt).join(""));
       if (cur) sel.value = cur;
     };
-    fill("ev-process", d.processes, "Todos los procesos");
+    fill("ev-process", d.processes, "Todos los procesos", procOptions);
     fill("ev-dest", d.destinations, "Todos los destinos");
-    fill("aut-process", d.processes, "Todos los procesos");
+    fill("aut-process", d.processes, "Todos los procesos", procOptions);
     fill("aut-provider", d.providers, "Todos los proveedores");
   } catch (e) { /* sin facets */ }
 }
