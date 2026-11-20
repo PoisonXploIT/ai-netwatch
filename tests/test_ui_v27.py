@@ -108,3 +108,8 @@ class UiV27Test(TestCase):
         self.assertIn("function askConfirm(text)", JS)
         self.assertEqual(JS.count("await askConfirm("), 2)
         self.assertNotIn("if (!confirm(", JS)
+
+    def test_d01_scale_tokens_exist(self):
+        for token in ("--fs-xs: 11px", "--fs-md: 13px", "--fs-xl: 20px",
+                      "--r-sm: 4px", "--r-lg: 12px", "--sp-4: 16px", "--font-mono:"):
+            self.assertIn(token, CSS, token)

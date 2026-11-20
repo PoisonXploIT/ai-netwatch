@@ -20,6 +20,12 @@
   --v-bad: #b91c1c;  --v-bad-bg: #fee2e2;
   --v-warn: #b45309; --v-warn-bg: #fef3c7;
   --v-mut: #475569;  --v-mut-bg: #f1f5f9;
+  /* D-01: escala unica (v2.7). */
+  --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-lg: 15px; --fs-xl: 20px;
+  --r-sm: 4px; --r-md: 8px; --r-lg: 12px; --r-pill: 999px;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px;
+  --font-ui: system-ui, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 
 html[data-theme="dark"] {
