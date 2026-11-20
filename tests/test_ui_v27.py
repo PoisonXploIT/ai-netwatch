@@ -93,3 +93,8 @@ class UiV27Test(TestCase):
             tag = re.search(r'<[^>]*id="%s"[^>]*>' % cid, HTML + JS)
             self.assertIsNotNone(tag, cid)
             self.assertIn("aria-label=", tag.group(0), cid)
+
+    def test_b15_tabs_support_arrow_keys(self):
+        self.assertIn("t.tabIndex = on ? 0 : -1;", JS)
+        for key in ('"ArrowRight"', '"ArrowLeft"', '"Home"', '"End"'):
+            self.assertIn(key, JS, key)

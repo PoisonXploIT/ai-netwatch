@@ -494,6 +494,7 @@ function showTab(name) {
     const on = t.dataset.tab === name;
     t.classList.toggle("active", on);
     t.setAttribute("aria-selected", String(on));
+    t.tabIndex = on ? 0 : -1;
   });
   document.querySelectorAll(".tab-panel").forEach((s) =>
     s.classList.toggle("active", s.dataset.tab === name));
@@ -1934,8 +1935,21 @@ function bind() {
     runReview({ event_ids: ids });
   });
 
-  document.querySelectorAll(".tab").forEach((t) =>
-    t.addEventListener("click", () => showTab(t.dataset.tab)));
+  const tabList = [...document.querySelectorAll(".tab")];
+  tabList.forEach((t, i) => {
+    t.addEventListener("click", () => showTab(t.dataset.tab));
+    t.addEventListener("keydown", (e) => {
+      let j = -1;
+      if (e.key === "ArrowRight") j = (i + 1) % tabList.length;
+      else if (e.key === "ArrowLeft") j = (i - 1 + tabList.length) % tabList.length;
+      else if (e.key === "Home") j = 0;
+      else if (e.key === "End") j = tabList.length - 1;
+      if (j < 0) return;
+      e.preventDefault();
+      showTab(tabList[j].dataset.tab);
+      tabList[j].focus();
+    });
+  });
 
   // Atajos 1..6 para moverse entre pestanas (ignorados dentro de un campo).
   document.addEventListener("keydown", (e) => {
