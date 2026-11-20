@@ -204,3 +204,6 @@ class UiV27Test(TestCase):
     def test_u07_pausing_monitoring_asks_first(self):
         self.assertIn("Monitoreo en pausa · reanudar", JS)
         self.assertIn("no se registran conexiones, SNI, bytes ni llamadas LLM", JS)
+
+    def test_u08_narrow_layout_hides_secondary_columns(self):
+        self.assertIn("/* U-08:", CSS)

@@ -485,6 +485,11 @@ tr.finding-row:hover { background: var(--row-hover); }
   .tabs { gap: 4px; }
   .tab { font-size: var(--fs-sm); padding: 6px 8px; }
   #llm-url, #llm-model, #laya-url, #extra-hosts, #alert-webhook { width: 100%; }
+  /* U-08: columnas secundarias fuera en estrecho (siguen en el detalle). */
+  #findings-wrap thead th:nth-child(6),
+  #findings-wrap tbody > tr.finding-row > td:nth-child(6) { display: none; }
+  header { padding: var(--sp-2) var(--sp-3); }
+  main { padding: var(--sp-2) var(--sp-3) var(--sp-5); }
 }
 
 /* B-03: una tabla ancha no ensancha la tarjeta ni la pagina. */
