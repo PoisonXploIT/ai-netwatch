@@ -143,3 +143,6 @@ class UiV27Test(TestCase):
         body = re.sub(r":root\s*\{.*?\}", "", CSS, count=1, flags=re.S)
         body = re.sub(r'html\[data-theme="dark"\]\s*\{.*?\}', "", body, count=1, flags=re.S)
         self.assertEqual(re.findall(r"#[0-9a-fA-F]{3,8}\b", body), [])
+
+    def test_d14_chips_do_not_wrap_inside(self):
+        self.assertIn("font-size: var(--fs-sm);\n  white-space: nowrap;\n}", CSS)

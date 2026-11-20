@@ -330,6 +330,7 @@ details h4 { margin: 8px 0 2px; font-size: var(--fs-sm); }
   display: inline-flex; gap: 6px; align-items: center;
   border: 1px solid var(--border); border-radius: var(--r-md);
   padding: 4px 8px; background: var(--card); font-size: var(--fs-sm);
+  white-space: nowrap;
 }
 .chip .num { color: var(--muted); font-variant-numeric: tabular-nums; }
 .chip a { color: inherit; text-decoration: none; }
