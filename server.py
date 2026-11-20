@@ -92,6 +92,9 @@ app = FastAPI(title="AI NetWatch")
 _SESSION_TOKEN = secrets.token_urlsafe(24)
 _START_TS = datetime.now(timezone.utc)
 _STATE_CHANGING = {"POST", "PUT", "DELETE", "PATCH"}
+# S-13: lecturas que devuelven contenido sensible (prompts descifrados,
+# exports, evidencia). Exigen token igual que las acciones.
+_TOKEN_GET_PREFIXES = ("/api/llm/calls", "/api/export/", "/api/evidence/")
 audit_log = audit.AuditLog(DATA_DIR / "audit.log")
 
 # --- S2/S3: guard de origen (loopback estricto) ---
@@ -169,6 +172,13 @@ async def _origin_guard(request, call_next):
                           origin=origin, client=request.client.host if request.client else "",
                           detail={"motivo": "token de sesion ausente o invalido"})
             return JSONResponse({"error": "token de sesion requerido para acciones"},
+                                status_code=403)
+    if request.method == "GET" and request.url.path.startswith(_TOKEN_GET_PREFIXES):
+        if not _token_ok(request.headers.get("x-netwatch-token", "")):
+            audit_log.log("blocked", request.method, request.url.path, 403,
+                          origin=origin, client=request.client.host if request.client else "",
+                          detail={"motivo": "lectura sensible sin token de sesion"})
+            return JSONResponse({"error": "token de sesion requerido para esta lectura"},
                                 status_code=403)
     response = await call_next(request)
     for header, value in _SECURITY_HEADERS.items():

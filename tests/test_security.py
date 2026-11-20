@@ -331,6 +331,25 @@ class TestOriginGuard(SecurityBase):
         self.assertIn("form-action 'self'", csp)
         self.assertNotIn("unsafe-inline", csp)
 
+    def _get(self, path: str, token: bool) -> int:
+        headers = [(b"host", b"127.0.0.1:8790")]
+        if token:
+            headers.append((b"x-netwatch-token", server._SESSION_TOKEN.encode()))
+        return self._run(Request({"type": "http", "method": "GET", "path": path,
+                                  "headers": headers, "query_string": b"",
+                                  "scheme": "http"}))
+
+    def test_s13_sensitive_reads_need_token(self):
+        for path in ("/api/llm/calls", "/api/llm/calls/1", "/api/export/json",
+                     "/api/export/csv", "/api/export/pdf",
+                     "/api/evidence/chain", "/api/evidence/stix"):
+            self.assertEqual(self._get(path, token=False), 403, path)
+            self.assertEqual(self._get(path, token=True), 200, path)
+
+    def test_s13_health_and_events_stay_open(self):
+        for path in ("/api/health", "/api/events", "/api/config"):
+            self.assertEqual(self._get(path, token=False), 200, path)
+
 
 class TestLlmContentEncryption(SecurityBase):
     """S-03: el contenido del LLM Inspector no queda en claro en SQLite."""
