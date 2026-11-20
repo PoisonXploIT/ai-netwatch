@@ -312,6 +312,14 @@ class TestOriginGuard(SecurityBase):
         self.assertFalse(server._token_ok(""))
         self.assertFalse(server._token_ok("ñ-no-ascii"))  # no lanza TypeError
 
+    def test_s11_origin_must_match_port(self):
+        self.assertEqual(self._run(self._req("POST", "127.0.0.1:8790",
+                                            "http://localhost:3000")), 403)
+        self.assertEqual(self._run(self._req("POST", "127.0.0.1:8790",
+                                            "https://127.0.0.1:8790")), 403)
+        self.assertEqual(self._run(self._req("POST", "127.0.0.1:8790",
+                                            "http://127.0.0.1:8790")), 200)
+
 
 class TestLlmContentEncryption(SecurityBase):
     """S-03: el contenido del LLM Inspector no queda en claro en SQLite."""

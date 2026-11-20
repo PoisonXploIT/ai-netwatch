@@ -24,6 +24,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,6 +126,18 @@ def _host_of(value: str) -> str:
     return value.split("://")[-1].split("/")[0].split(":")[0]
 
 
+def _origin_allowed(origin: str, host_header: str) -> bool:
+    """El Origin debe ser http, loopback y del MISMO puerto que el Host."""
+    try:
+        o = urlsplit(origin)
+        h = urlsplit("//" + (host_header or ""))
+        return (o.scheme == "http"
+                and (o.hostname or "") in _LOOPBACK_HOSTS
+                and o.port == h.port)
+    except ValueError:
+        return False
+
+
 def _token_ok(value: str) -> bool:
     """Comparacion en tiempo constante: no filtra el token por temporizacion."""
     return secrets.compare_digest((value or "").encode("utf-8", "replace"),
@@ -142,7 +155,7 @@ async def _origin_guard(request, call_next):
         return JSONResponse({"error": "host no permitido: solo 127.0.0.1/localhost"},
                             status_code=403)
     if request.method in _STATE_CHANGING:
-        if origin and (origin == "null" or _host_of(origin) not in _LOOPBACK_HOSTS):
+        if origin and not _origin_allowed(origin, request.headers.get("host", "")):
             audit_log.log("blocked", request.method, request.url.path, 403,
                           origin=origin, client=request.client.host if request.client else "")
             return JSONResponse({"error": "origen no permitido (CSRF/rebinding)"},
