@@ -476,3 +476,7 @@ tr.finding-row:hover { background: var(--row-hover); }
 
 /* B-03: una tabla ancha no ensancha la tarjeta ni la pagina. */
 .tab-panel, .tab-panel > .card { min-width: 0; }
+
+/* S-15: dialogo de confirmacion propio. */
+dialog#confirm-dialog { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; max-width: 440px; }
+dialog#confirm-dialog::backdrop { background: rgba(0, 0, 0, .55); }

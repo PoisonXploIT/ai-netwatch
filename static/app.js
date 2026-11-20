@@ -82,6 +82,20 @@ function toast(msg, type = "") {
   el._t = setTimeout(() => (el.className = ""), 3600);
 }
 
+function askConfirm(text) {
+  const dlg = document.getElementById("confirm-dialog");
+  if (!dlg || !dlg.showModal) return Promise.resolve(window.confirm(text));
+  document.getElementById("confirm-text").textContent = text;
+  return new Promise((resolve) => {
+    const done = (v) => { dlg.close(); resolve(v); };
+    document.getElementById("confirm-ok").onclick = () => done(true);
+    document.getElementById("confirm-cancel").onclick = () => done(false);
+    dlg.oncancel = () => resolve(false);
+    dlg.showModal();
+    document.getElementById("confirm-cancel").focus();
+  });
+}
+
 // S-13: las descargas llevan el token de sesion (window.location no puede).
 async function download(path) {
   try {
@@ -1849,7 +1863,7 @@ function bind() {
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-reset-llmcalls").addEventListener("click", async () => {
-    if (!confirm("Borrar todas las llamadas LLM registradas?")) return;
+    if (!(await askConfirm("Se borran todas las llamadas LLM registradas (prompts y respuestas). No se puede deshacer."))) return;
     try {
       const r = await api("/api/llm/calls/reset", { method: "POST", body: JSON.stringify({ confirm: true }) });
       toast(`Borradas ${r.calls_removed} llamadas.`, "ok");
@@ -1857,7 +1871,7 @@ function bind() {
     } catch (e) { toast(e.message, "err"); }
   });
   $("btn-reset").addEventListener("click", async () => {
-    if (!confirm("Borrar todos los eventos y triajes vivos? El histórico diario (7+ días) se conserva.")) return;
+    if (!(await askConfirm("Se borran todos los eventos y triajes vivos. El histórico diario de estadísticas se conserva. No se puede deshacer."))) return;
     try {
       const r = await api("/api/reset", { method: "POST", body: JSON.stringify({ confirm: true }) });
       toast(`Reset: ${r.events_removed} eventos y ${r.triages_removed} triajes borrados. Histórico conservado.`, "ok");

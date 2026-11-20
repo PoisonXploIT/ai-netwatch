@@ -446,6 +446,14 @@
   <span>Solo loopback (127.0.0.1:8790)</span>
   <span>LLM local: solo loopback, sin API key</span>
 </footer>
+<dialog id="confirm-dialog" aria-labelledby="confirm-title">
+  <h2 id="confirm-title">Confirmar</h2>
+  <p id="confirm-text"></p>
+  <div class="row">
+    <button id="confirm-cancel">Cancelar</button>
+    <button id="confirm-ok" class="danger">Borrar</button>
+  </div>
+</dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 <script src="/static/app.js?v={{ASSETV}}"></script>
 </body>
