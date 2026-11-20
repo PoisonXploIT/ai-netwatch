@@ -171,7 +171,7 @@
     </section>
     <section class="card" id="review-card">
     <h2>Revisi&oacute;n LLM local (batch)</h2>
-    <p class="hint">El LLM local opina uno a uno sobre un conjunto de eventos (tope por petici&oacute;n: <span class="mono">llm_review_max</span>, config). Asesoria display-only: no re-punt&uacute;a, no aprueba ni ejecuta nada; Jev sigue siendo el juez. El resultado se guarda en el hist&oacute;rico de revisiones.</p>
+    <p class="hint">El LLM local opina uno a uno sobre un conjunto de eventos (tope por petici&oacute;n: <span class="mono">llm_review_max</span>, config). Asesoría display-only: no re-punt&uacute;a, no aprueba ni ejecuta nada; Jev sigue siendo el juez. El resultado se guarda en el hist&oacute;rico de revisiones.</p>
     <div class="row">
       <button id="btn-rev-aut" class="primary">Revisar: aut&oacute;nomos</button>
       <button id="btn-rev-unapproved" class="primary">Revisar: no aprobados</button>
@@ -312,7 +312,7 @@
         <li><b>IA (capa)</b>: cómo se clasificó el dominio — catálogo (evidencia), heurística (señal a revisar, TLD .ai/token IA), LLM local (bajo demanda) o sin clasificar. Cobertura universal: un proveedor no listado se ve si resolvio DNS (EID 22).</li>
         <li><b>Periodicidad</b> (veces observado) y primera/última vez.</li>
       </ul>
-      <p class="hint"><b>Bytes remotos: opt-in (v2.2).</b> El trafico TLS viaja cifrado, asi que no se ve el contenido; el <b>volumen</b> (cuanto sale) SI se mide con un colector elevado (ETW Kernel-Network), desactivado por defecto. El egress en bytes del <b>LLM local</b> se mide siempre via el proxy inspector. QUIC/HTTP-3 (UDP 443) se cubre por SNI (v2.5).</p>
+      <p class="hint"><b>Bytes remotos: opt-in (v2.2).</b> El tráfico TLS viaja cifrado, así que no se ve el contenido; el <b>volumen</b> (cuánto sale) sí se mide con un colector elevado (ETW Kernel-Network), desactivado por defecto. El egress en bytes del <b>LLM local</b> se mide siempre vía el proxy inspector. QUIC/HTTP-3 (UDP 443) se cubre por SNI (v2.5).</p>
     </details>
 
     <details>

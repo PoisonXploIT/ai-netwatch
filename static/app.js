@@ -127,11 +127,11 @@ function eventDetailHtml(e) {
   return detailDl([
     ["id", e.id], ["registro", e.ts], ["proceso", e.process], ["imagen", e.image],
     ["destino", `${e.dest_ip}:${e.dest_port}`], ["dest_host", e.dest_host],
-    ["protocolo", e.protocol], ["SNI", e.sni_domain], ["catalogo", e.catalog_domain],
+    ["protocolo", e.protocol], ["SNI", e.sni_domain], ["catálogo", e.catalog_domain],
     ["capa IA", e.ai_layer], ["veredicto", e.autonomy_verdict], ["score", e.autonomy_score],
     ["sesiones", e.sessions], ["polls", e.seen_count],
-    ["primera vez", e.first_seen], ["ultima vez", e.last_seen],
-    ["anomalia", e.pre_score], ["flags", flags], ["MITRE", mitre],
+    ["primera vez", e.first_seen], ["última vez", e.last_seen],
+    ["anomalía", e.pre_score], ["flags", flags], ["MITRE", mitre],
   ]);
 }
 
@@ -153,11 +153,11 @@ function groupDetailHtml(g) {
     ["proceso", g.process], ["imagen", g.image], ["proveedor", g.provider],
     ["capa IA", g.ai_layer], ["veredicto", g.autonomy_verdict], ["score", g.autonomy_score],
     ["sesiones", g.sessions], ["polls", g.seen_count], ["#IPs", g.ip_count],
-    ["primera vez", g.first_seen], ["ultima vez", g.last_seen],
-    ["anomalia", g.pre_score], ["MITRE", mitre],
+    ["primera vez", g.first_seen], ["última vez", g.last_seen],
+    ["anomalía", g.pre_score], ["MITRE", mitre],
   ]);
   const table = members
-    ? `<table class="subtable"><thead><tr><th>IP:puerto</th><th>SNI</th><th>Catálogo</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Primera vez</th><th>Ultima vez</th></tr></thead><tbody>${members}</tbody></table>${more}`
+    ? `<table class="subtable"><thead><tr><th>IP:puerto</th><th>SNI</th><th>Catálogo</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Primera vez</th><th>Última vez</th></tr></thead><tbody>${members}</tbody></table>${more}`
     : "";
   return head + table;
 }
@@ -196,7 +196,7 @@ function eventsTableHtml(events, grouped) {
   </tr>
   <tr class="ev-detail" id="ev-d-${i}" hidden><td colspan="8">${eventDetailHtml(e)}</td></tr>`).join("");
   return `<table>
-    <thead><tr><th>Proceso</th><th>Destino</th><th>Dominio (SNI)</th><th title="Capa de deteccion: catalogo, heuristica o LLM local.">IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente (F1). Polls y primera vez estan en el detalle.">Sesiones</th><th>Última vez</th><th></th></tr></thead>
+    <thead><tr><th>Proceso</th><th>Destino</th><th>Dominio (SNI)</th><th title="Capa de detección: catálogo, heurística o LLM local.">IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente (F1). Polls y primera vez estan en el detalle.">Sesiones</th><th>Última vez</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -621,7 +621,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
       <tr class="finding-detail" data-qd="${i}" hidden><td colspan="8">${findingDetail(f)}</td></tr>`;
     }).join("");
     quarantineSection = `<details><summary>Cuarentena (${blacklisted.length})</summary>
-      <p class="hint">En lista negra: aislados a la espera de revision LLM. Los eventos siguen en la base de datos.</p>
+      <p class="hint">En lista negra: aislados a la espera de revisión LLM. Los eventos siguen en la base de datos.</p>
       <table><thead>${head}</thead><tbody>${qrows}</tbody></table>
       <div class="row"><button class="primary review-quarantine">Revisar toda la cuarentena (LLM local)</button></div></details>`;
   }
@@ -769,7 +769,7 @@ const LAYER_COLOR = {
   catalog: "s-catalog", heuristic: "s-heuristic", llm: "s-llm", none: "s-none", "?": "s-none",
 };
 const LAYER_LABEL = {
-  catalog: "catalogo", heuristic: "heuristica", llm: "LLM local", none: "sin capa",
+  catalog: "catálogo", heuristic: "heurística", llm: "LLM local", none: "sin capa",
 };
 const VERDICT_COLOR = {
   expected_ai_use: "s-catalog", background_exfil_suspect: "s-bad",
@@ -884,7 +884,7 @@ function providerBars(items) {
 function panelTakeaway(d) {
   const s = d.summary || {};
   if (!s.events) {
-    return "Sin conexiones IA en la ventana. Si el monitoreo esta pausado (kill switch), reanúdalo desde la cabecera; si no, amplía la ventana o revisa el catálogo.";
+    return "Sin conexiones IA en la ventana. Si el monitoreo está pausado (kill switch), reanúdalo desde la cabecera; si no, amplía la ventana o revisa el catálogo.";
   }
   const parts = [];
   const top = (d.top_providers || [])[0];
@@ -1122,11 +1122,11 @@ async function refreshAutonomy() {
     // v2.6(3): etiquetar el estado de la senal (no un '?' mudo ni un
     // numero sin contexto).
     const idleNotes = {
-      counter_frozen: "sin senal: contador congelado (sesion sin entrada)",
-      api_error: "sin senal: API no disponible",
-      idle_gt_uptime: "sin senal: valor imposible (idle > uptime)",
-      no_win: "sin senal: solo Windows",
-      no_input_since_boot: "sin entrada desde el arranque (sesion sin HID)",
+      counter_frozen: "sin señal: contador congelado (sesión sin entrada)",
+      api_error: "sin señal: API no disponible",
+      idle_gt_uptime: "sin señal: valor imposible (idle > uptime)",
+      no_win: "sin señal: solo Windows",
+      no_input_since_boot: "sin entrada desde el arranque (sesión sin HID)",
     };
     const note = sig.idle_note && idleNotes[sig.idle_note]
       ? ` (${idleNotes[sig.idle_note]})` : "";

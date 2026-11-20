@@ -43,3 +43,11 @@ class UiV27Test(TestCase):
         for bad in ("Ultima vez</option>", "<th>Catalogo</th>", "Una linea por",
                     "que engane", "sin revision</span>", "reanudalo"):
             self.assertNotIn(bad, HTML + JS, bad)
+
+    def test_b07b_remaining_visible_text_has_accents(self):
+        for bad in ("Asesoria display-only", "El trafico TLS", '["ultima vez"',
+                    '["anomalia"', "<th>Ultima vez</th>", "Capa de deteccion",
+                    'catalog: "catalogo"', '"sin senal:', "(sesion sin",
+                    "monitoreo esta pausado"):
+            self.assertNotIn(bad, HTML + JS, bad)
+
