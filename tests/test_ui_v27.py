@@ -146,3 +146,8 @@ class UiV27Test(TestCase):
 
     def test_d14_chips_do_not_wrap_inside(self):
         self.assertIn("font-size: var(--fs-sm);\n  white-space: nowrap;\n}", CSS)
+
+    def test_d05_header_is_a_single_sticky_bar(self):
+        head = HTML.split("</header>")[0]
+        self.assertNotIn('class="sub"', head)
+        self.assertIn("header { position: sticky; top: 0;", CSS)
