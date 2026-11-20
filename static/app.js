@@ -774,11 +774,13 @@ const VERDICT_COLOR = {
 
 function gridAndAxis(max) {
   const half = BASE_Y - SPAN / 2;
+  const mid = max / 2;
+  const showMid = Number.isInteger(mid) && mid > 0;
   return `<line class="grid" x1="${LEFT}" y1="${BASE_Y}" x2="${RIGHT}" y2="${BASE_Y}"/>` +
-    `<line class="grid" x1="${LEFT}" y1="${half}" x2="${RIGHT}" y2="${half}"/>` +
+    (showMid ? `<line class="grid" x1="${LEFT}" y1="${half}" x2="${RIGHT}" y2="${half}"/>` : "") +
     `<line class="grid" x1="${LEFT}" y1="${TOP_Y}" x2="${RIGHT}" y2="${TOP_Y}"/>` +
     `<text class="axis-y" x="${LEFT - 6}" y="${BASE_Y + 3}">0</text>` +
-    `<text class="axis-y" x="${LEFT - 6}" y="${half + 3}">${Math.round(max / 2)}</text>` +
+    (showMid ? `<text class="axis-y" x="${LEFT - 6}" y="${half + 3}">${mid}</text>` : "") +
     `<text class="axis-y" x="${LEFT - 6}" y="${TOP_Y + 3}">${max}</text>`;
 }
 

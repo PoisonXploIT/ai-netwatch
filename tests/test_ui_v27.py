@@ -15,3 +15,7 @@ class UiV27Test(TestCase):
     def test_b01_strip_reads_key_state_from_sources(self):
         self.assertIn("(h.sources || {}).jev_key_set", JS)
         self.assertNotIn("${h.jev_key_set ?", JS)
+
+    def test_b02_axis_mid_tick_only_when_integer(self):
+        self.assertIn("const showMid = Number.isInteger(mid) && mid > 0;", JS)
+        self.assertNotIn("Math.round(max / 2)", JS)
