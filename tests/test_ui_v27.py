@@ -120,3 +120,9 @@ class UiV27Test(TestCase):
         literal = [s for s in sizes if not s.strip().startswith("var(--fs-")
                    and s.strip() not in ("inherit",)]
         self.assertEqual(literal, [], literal)
+
+    def test_d03_radii_come_from_the_scale(self):
+        import re
+        radii = re.findall(r"border-radius:\s*([^;]+);", CSS)
+        literal = [r for r in radii if "var(--r-" not in r and r.strip() not in ("0", "50%")]
+        self.assertEqual(literal, [], literal)
