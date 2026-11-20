@@ -22,6 +22,7 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -83,7 +84,16 @@ def _asset_stamp() -> str:
         mt = 0
     return f"v{VERSION}-{int(mt)}"
 
-app = FastAPI(title="AI NetWatch")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    _start()
+    try:
+        yield
+    finally:
+        _stop()
+
+
+app = FastAPI(title="AI NetWatch", lifespan=_lifespan)
 
 # --- S4: token de sesion + audit log ---
 # Token generado al arrancar (en memoria, no en disco): la consola lo recibe
@@ -998,7 +1008,6 @@ def _record_llm_call(call: dict) -> None:
     llm_calls.record(call)
 
 
-@app.on_event("startup")
 def _start() -> None:
     global store, monitor, sni_capture, llm_calls, alerts
     store = Store(DATA_DIR / "events.db")
@@ -1037,7 +1046,6 @@ def _start() -> None:
                      name="ai-netwatch-netbytes").start()
 
 
-@app.on_event("shutdown")
 def _stop() -> None:
     _auto_stop.set()
     _net_stop.set()
