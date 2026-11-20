@@ -608,8 +608,8 @@ function findingsHtml(findings, suppressed, blacklisted) {
       <td class="num">${f.seen_count ?? 0}</td>
       <td class="mono small">${esc(f.last_seen || "")}</td>
       <td>
-        <button class="small blacklist-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Lista negra (cuarentena): aislar hasta revisión LLM">⊘</button>
-        <button class="small suppress-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Ocultar fila: los eventos se mantienen en la base de datos">×</button>
+        <button class="small blacklist-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Lista negra (cuarentena): aislar hasta revisión LLM">Aislar</button>
+        <button class="small suppress-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Ocultar fila: los eventos se mantienen en la base de datos">Ocultar</button>
       </td>
     </tr>
     <tr class="finding-detail" data-fd="${i}" hidden><td colspan="8">${findingDetail(f)}</td></tr>`;
