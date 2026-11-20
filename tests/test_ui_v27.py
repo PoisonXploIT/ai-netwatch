@@ -207,3 +207,6 @@ class UiV27Test(TestCase):
 
     def test_u08_narrow_layout_hides_secondary_columns(self):
         self.assertIn("/* U-08:", CSS)
+
+    def test_u09_llm_inspector_starts_with_ten_calls(self):
+        self.assertIn("let llmCallsShown = 10;", JS)

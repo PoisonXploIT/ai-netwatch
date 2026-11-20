@@ -1142,7 +1142,7 @@ function llmCallsHtml(calls) {
 }
 
 let LLM_CALLS = [];
-let llmCallsShown = 25;
+let llmCallsShown = 10;
 
 function renderLlmCalls() {
   const wrap = document.getElementById("llm-calls-wrap");
