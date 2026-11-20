@@ -569,7 +569,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
       f.unapproved ? `<span class="badge-bad">no aprobado</span>` : "",
       f.beaconing ? `<span class="badge-bad">beacon</span>` : "",
       (f.autonomy_verdict === "autonomous" || f.autonomy_verdict === "scheduled")
-        ? `<span class="badge-warn">${esc(f.autonomy_verdict)}</span>` : "",
+        ? `<span class="badge-warn">${autonomyBadge(f.autonomy_verdict, f.autonomy_score)}</span>` : "",
     ].filter(Boolean).join(" ");
     const jev = f.jev_verdict ? verdictBadge(f.jev_verdict) : `<span class="hint">sin Jev</span>`;
     return `<tr class="finding-row" data-fi="${i}">

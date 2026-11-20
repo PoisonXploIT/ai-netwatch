@@ -29,3 +29,7 @@ class UiV27Test(TestCase):
     def test_b04_main_and_header_are_centered(self):
         self.assertIn("max-width: 1280px; margin: 0 auto; }", CSS)
         self.assertIn("header { max-width: 1280px; margin: 0 auto; }", CSS)
+
+    def test_b05_findings_use_spanish_autonomy_label(self):
+        self.assertNotIn('badge-warn">${esc(f.autonomy_verdict)}', JS)
+        self.assertIn("autonomyBadge(f.autonomy_verdict, f.autonomy_score)", JS)
