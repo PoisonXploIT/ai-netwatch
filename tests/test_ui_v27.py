@@ -168,3 +168,8 @@ class UiV27Test(TestCase):
     def test_d09_reduced_motion_and_focus(self):
         self.assertIn("prefers-reduced-motion: reduce", CSS)
         self.assertIn("summary:focus-visible", CSS)
+
+    def test_d10_theme_pairs_meet_aa_contrast(self):
+        sys.path.insert(0, str(ROOT / "tools"))
+        import contrast_check
+        self.assertEqual(contrast_check.failures(), [])

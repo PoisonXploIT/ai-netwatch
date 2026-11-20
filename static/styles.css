@@ -5,7 +5,7 @@
   --bg: #f1f5f9;
   --card: #ffffff;
   --text: #0f172a;
-  --muted: #64748b;
+  --muted: #5b6a7e;
   --border: #e2e8f0;
   --accent: #0891b2;
   --accent-soft: #cffafe;
@@ -29,6 +29,7 @@
   /* D-04: texto sobre fondos de color y avisos (toast). */
   --on-accent: #04121a; --on-status: #ffffff;
   --toast-bg: #0f172a; --toast-fg: #e2e8f0; --toast-ok: #064e3b; --toast-err: #7f1d1d;
+  --accent-text: #0e7490;
 }
 
 html[data-theme="dark"] {
@@ -51,6 +52,7 @@ html[data-theme="dark"] {
   --v-warn: #fbbf24; --v-warn-bg: #451a03;
   --v-mut: #94a3b8;  --v-mut-bg: #1e293b;
   --on-status: #0b1220;
+  --accent-text: #22d3ee;
 }
 
 * { box-sizing: border-box; }
@@ -78,7 +80,7 @@ header .sub { color: var(--muted); font-size: var(--fs-md); }
 .badge-ver {
   font-size: var(--fs-sm);
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
   border-radius: var(--r-pill);
   padding: 2px 10px;
@@ -334,7 +336,7 @@ details h4 { margin: 8px 0 2px; font-size: var(--fs-sm); }
 }
 .chip .num { color: var(--muted); font-variant-numeric: tabular-nums; }
 .chip a { color: inherit; text-decoration: none; }
-.chip a:hover { color: var(--accent); }
+.chip a:hover { color: var(--accent-text); }
 
 .pager { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
 .empty {
