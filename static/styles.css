@@ -500,3 +500,8 @@ dialog#confirm-dialog::backdrop { background: rgba(0, 0, 0, .55); }
 /* D-05: barra de aplicacion fija. */
 header { position: sticky; top: 0; z-index: 30; background: var(--bg); border-bottom: 1px solid var(--border); padding: var(--sp-3) var(--sp-5); }
 .tabs { top: 58px; }
+
+/* D-07: tablas. */
+td.mono { overflow-wrap: anywhere; }
+.table-wrap { max-width: 100%; }
+caption { text-align: left; color: var(--muted); font-size: var(--fs-sm); padding: 0 0 var(--sp-2); }

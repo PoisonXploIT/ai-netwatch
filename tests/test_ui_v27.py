@@ -155,3 +155,7 @@ class UiV27Test(TestCase):
     def test_d06_score_has_text_level(self):
         self.assertIn('function scoreLabel(s)', JS)
         self.assertIn("${scoreLabel(f.score)}", JS)
+
+    def test_d07_table_rules(self):
+        self.assertIn("font-variant-numeric: tabular-nums", CSS)
+        self.assertIn("td.mono { overflow-wrap: anywhere; }", CSS)
