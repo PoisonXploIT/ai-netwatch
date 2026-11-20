@@ -320,6 +320,17 @@ class TestOriginGuard(SecurityBase):
         self.assertEqual(self._run(self._req("POST", "127.0.0.1:8790",
                                             "http://127.0.0.1:8790")), 200)
 
+    def test_s12_extra_security_headers(self):
+        resp = asyncio.run(server._origin_guard(
+            self._req("GET", "127.0.0.1:8790"), self._pass_through))
+        for header in ("permissions-policy", "cross-origin-opener-policy",
+                       "cross-origin-resource-policy"):
+            self.assertIn(header, resp.headers)
+        csp = resp.headers["content-security-policy"]
+        self.assertIn("object-src 'none'", csp)
+        self.assertIn("form-action 'self'", csp)
+        self.assertNotIn("unsafe-inline", csp)
+
 
 class TestLlmContentEncryption(SecurityBase):
     """S-03: el contenido del LLM Inspector no queda en claro en SQLite."""

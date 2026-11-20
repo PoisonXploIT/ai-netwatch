@@ -107,13 +107,17 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), usb=(), payment=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
     # CSP estricta: todo recurso desde la propia consola. El script de tema
     # paso a ser externo (static/theme.js) y los anchos de los campos de config
     # viven en styles.css: ya no hace falta 'unsafe-inline' ni en scripts ni
     # en estilos.
     "Content-Security-Policy": (
         "default-src 'self'; script-src 'self'; style-src 'self'; "
-        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+        "object-src 'none'; form-action 'self'"
     ),
 }
 
