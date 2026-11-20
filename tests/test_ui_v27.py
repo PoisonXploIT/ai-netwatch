@@ -98,3 +98,7 @@ class UiV27Test(TestCase):
         self.assertIn("t.tabIndex = on ? 0 : -1;", JS)
         for key in ('"ArrowRight"', '"ArrowLeft"', '"Home"', '"End"'):
             self.assertIn(key, JS, key)
+
+    def test_s13a_exports_send_the_session_token(self):
+        self.assertNotIn("window.location.href", JS)
+        self.assertEqual(JS.count("download("), 6)  # 1 definicion + 5 usos

@@ -414,7 +414,7 @@
         <li><b>PDF</b>: informe con cabecera, eventos, último triaje Jev y estadísticas de 7 días.</li>
         <li><b>Evidence (v2.3)</b>: <span class="mono">/api/evidence/chain</span> (JSONL con cadena de hashes: si se altera una fila se rompe el resto, verificable offline) y <span class="mono">/api/evidence/stix</span> (bundle STIX 2.1 para SIEM/CTI). Con selector de ventana en días.</li>
       </ul>
-      <p class="hint">Todo se genera en memoria; ningún endpoint toma nombres de archivo del usuario (sin path traversal).</p>
+      <p class="hint">Todo se genera en memoria; ningún endpoint toma nombres de archivo del usuario (sin path traversal). Las descargas se lanzan desde estos botones: llevan el token de sesión de la consola.</p>
     </details>
 
     <details>

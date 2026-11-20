@@ -82,6 +82,26 @@ function toast(msg, type = "") {
   el._t = setTimeout(() => (el.className = ""), 3600);
 }
 
+// S-13: las descargas llevan el token de sesion (window.location no puede).
+async function download(path) {
+  try {
+    const res = await fetch(path, { headers: { "X-NetWatch-Token": SESSION_TOKEN } });
+    if (!res.ok) { toast(`La descarga falló (${res.status})`, "err"); return; }
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = /filename="?([^";]+)"?/.exec(cd);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = m ? m[1] : "ai-netwatch-export";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    toast(`La descarga falló: ${e.message || e}`, "err");
+  }
+}
+
 function aiLayerHtml(layer) {
   const map = {
     catalog: ["catálogo", "Capa 1: en el catálogo (evidencia directa)."],
@@ -1681,13 +1701,13 @@ function bind() {
   });
   // Exports: rutas GET fijas; ninguna entrada del usuario viaja en la URL.
   $("btn-exp-json").addEventListener("click", () => {
-    window.location.href = "/api/export/json";
+    download("/api/export/json");
   });
   $("btn-exp-csv").addEventListener("click", () => {
-    window.location.href = "/api/export/csv";
+    download("/api/export/csv");
   });
   $("btn-exp-pdf").addEventListener("click", () => {
-    window.location.href = "/api/export/pdf";
+    download("/api/export/pdf");
   });
   // Evidencia (v2.3): days sale del select de opciones fijas (1/7/30/90).
   const evDays = () => {
@@ -1695,10 +1715,10 @@ function bind() {
     return [1, 7, 30, 90].includes(v) ? v : 7;
   };
   $("btn-ev-chain").addEventListener("click", () => {
-    window.location.href = `/api/evidence/chain?days=${evDays()}`;
+    download(`/api/evidence/chain?days=${evDays()}`);
   });
   $("btn-ev-stix").addEventListener("click", () => {
-    window.location.href = `/api/evidence/stix?days=${evDays()}`;
+    download(`/api/evidence/stix?days=${evDays()}`);
   });
   $("btn-save-jev").addEventListener("click", async () => {
     try {
