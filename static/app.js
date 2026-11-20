@@ -537,6 +537,8 @@ function showTab(name) {
 }
 
 function scoreClass(s) { return s >= 60 ? "sc-high" : s >= 30 ? "sc-mid" : "sc-low"; }
+function scoreLabel(s) { return s >= 60 ? "alto" : s >= 30 ? "medio" : "bajo"; }
+
 
 // Contador en la pestana: permite ver donde hay datos sin abrir la pestana.
 function setTabCount(name, n) {
@@ -635,7 +637,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
     ].filter(Boolean).join(" ");
     const jev = f.jev_verdict ? verdictBadge(f.jev_verdict) : `<span class="hint">sin Jev</span>`;
     return `<tr class="finding-row" data-fi="${i}">
-      <td><span class="score-badge ${scoreClass(f.score)}">${f.score}</span></td>
+      <td><span class="score-badge ${scoreClass(f.score)}" title="Score ${f.score} de 100">${f.score}</span> <span class="small">${scoreLabel(f.score)}</span></td>
       <td>${esc(f.process)}</td>
       <td class="mono">${esc(f.provider || "-")}${kindBadge(f.kind)}</td>
       <td>${jev} ${badges}</td>
@@ -664,7 +666,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
     const qrows = blacklisted.map((f, i) => {
       const jev = f.jev_verdict ? verdictBadge(f.jev_verdict) : `<span class="hint">sin Jev</span>`;
       return `<tr class="finding-row" data-qi="${i}">
-        <td><span class="score-badge ${scoreClass(f.score)}">${f.score}</span></td>
+        <td><span class="score-badge ${scoreClass(f.score)}" title="Score ${f.score} de 100">${f.score}</span> <span class="small">${scoreLabel(f.score)}</span></td>
         <td>${esc(f.process)}</td>
         <td class="mono">${esc(f.provider || "-")}${kindBadge(f.kind)}</td>
         <td>${jev} ${reviewBadge(f.review)}</td>

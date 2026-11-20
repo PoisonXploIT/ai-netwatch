@@ -151,3 +151,7 @@ class UiV27Test(TestCase):
         head = HTML.split("</header>")[0]
         self.assertNotIn('class="sub"', head)
         self.assertIn("header { position: sticky; top: 0;", CSS)
+
+    def test_d06_score_has_text_level(self):
+        self.assertIn('function scoreLabel(s)', JS)
+        self.assertIn("${scoreLabel(f.score)}", JS)
