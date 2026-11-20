@@ -137,3 +137,9 @@ class UiV27Test(TestCase):
     def test_d13_base_font_size_and_family_tokens(self):
         self.assertIn("font-family: var(--font-ui);\n  font-size: var(--fs-md);", CSS)
         self.assertIn(".mono, .mono * { font-family: var(--font-mono); }", CSS)
+
+    def test_d04_no_hex_colors_outside_theme_blocks(self):
+        import re
+        body = re.sub(r":root\s*\{.*?\}", "", CSS, count=1, flags=re.S)
+        body = re.sub(r'html\[data-theme="dark"\]\s*\{.*?\}', "", body, count=1, flags=re.S)
+        self.assertEqual(re.findall(r"#[0-9a-fA-F]{3,8}\b", body), [])
