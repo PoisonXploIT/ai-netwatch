@@ -391,8 +391,7 @@ details h4 { margin: 8px 0 2px; font-size: var(--fs-sm); }
 .donut-seg.s-none { stroke: var(--v-mut); }
 .donut-seg.s-bad { stroke: var(--v-bad); }
 .donut-val { fill: var(--text); font-size: var(--fs-xl); font-weight: 700; text-anchor: middle; }
-.donut-lbl { fill: var(--muted); font-size: var(--fs-xs); text-transform: uppercase;
-  letter-spacing: .5px; text-anchor: middle; }
+
 
 .prov-bars { display: grid; gap: 7px; }
 .prov-row { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) 34px;
@@ -486,3 +485,8 @@ tr.finding-row:hover { background: var(--row-hover); }
 /* S-15: dialogo de confirmacion propio. */
 dialog#confirm-dialog { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 20px; max-width: 440px; }
 dialog#confirm-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+
+/* D-11: la etiqueta del donut va fuera del anillo; la leyenda usa el color de su segmento. */
+.donut-side { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; flex: 1 1 140px; }
+.donut-cap { color: var(--muted); font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.chip .dot.s-bad { background: var(--v-bad); }

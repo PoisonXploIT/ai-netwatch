@@ -126,3 +126,10 @@ class UiV27Test(TestCase):
         radii = re.findall(r"border-radius:\s*([^;]+);", CSS)
         literal = [r for r in radii if "var(--r-" not in r and r.strip() not in ("0", "50%")]
         self.assertEqual(literal, [], literal)
+
+    def test_d11_donut_label_outside_ring_and_legend_colors(self):
+        self.assertNotIn('class="donut-lbl"', JS)
+        self.assertNotIn(".donut-lbl", CSS)
+        self.assertIn('<div class="donut-cap">', JS)
+        self.assertIn('dominant-baseline="central"', JS)
+        self.assertIn(".chip .dot.s-bad { background: var(--v-bad); }", CSS)

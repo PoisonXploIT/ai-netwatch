@@ -917,9 +917,9 @@ function donut(items, centerValue, centerLabel) {
   return `<div class="donut-wrap"><svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="${esc(centerLabel)}: ${centerValue}">` +
     `<circle class="donut-track" cx="60" cy="60" r="${R}"/>` +
     `<g transform="rotate(-90 60 60)">${segs}</g>` +
-    `<text class="donut-val" x="60" y="58">${esc(String(centerValue))}</text>` +
-    `<text class="donut-lbl" x="60" y="74">${esc(centerLabel)}</text></svg>` +
-    `<div class="chips">${legend}</div></div>`;
+    `<text class="donut-val" x="60" y="60" dominant-baseline="central">${esc(String(centerValue))}</text></svg>` +
+    `<div class="donut-side"><div class="donut-cap">${esc(centerLabel)}</div>` +
+    `<div class="chips">${legend}</div></div></div>`;
 }
 
 // Barras horizontales por proveedor (rect con width en unidades del viewBox).
