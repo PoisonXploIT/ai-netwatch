@@ -38,3 +38,8 @@ class UiV27Test(TestCase):
         self.assertIn("function plural(n, uno, varios)", JS)
         for bad in ("proceso(s)", "proveedor(es)", "sesión(es)", "aprobado(s)"):
             self.assertNotIn(bad, JS, bad)
+
+    def test_b07_visible_text_has_accents(self):
+        for bad in ("Ultima vez</option>", "<th>Catalogo</th>", "Una linea por",
+                    "que engane", "sin revision</span>", "reanudalo"):
+            self.assertNotIn(bad, HTML + JS, bad)

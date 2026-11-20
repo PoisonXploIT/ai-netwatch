@@ -147,7 +147,7 @@ function groupDetailHtml(g) {
     <td class="mono small">${esc(m.last_seen || "")}</td>
   </tr>`).join("");
   const more = (g.member_total || 0) > (g.members || []).length
-    ? `<p class="hint">... y ${(g.member_total || 0) - (g.members || []).length} registros mas (limitado a 10 por grupo).</p>`
+    ? `<p class="hint">... y ${(g.member_total || 0) - (g.members || []).length} registros más (limitado a 10 por grupo).</p>`
     : "";
   const head = detailDl([
     ["proceso", g.process], ["imagen", g.image], ["proveedor", g.provider],
@@ -157,7 +157,7 @@ function groupDetailHtml(g) {
     ["anomalia", g.pre_score], ["MITRE", mitre],
   ]);
   const table = members
-    ? `<table class="subtable"><thead><tr><th>IP:puerto</th><th>SNI</th><th>Catalogo</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Primera vez</th><th>Ultima vez</th></tr></thead><tbody>${members}</tbody></table>${more}`
+    ? `<table class="subtable"><thead><tr><th>IP:puerto</th><th>SNI</th><th>Catálogo</th><th class="num">Sesiones</th><th class="num">Polls</th><th>Primera vez</th><th>Ultima vez</th></tr></thead><tbody>${members}</tbody></table>${more}`
     : "";
   return head + table;
 }
@@ -407,7 +407,7 @@ function renderEvents() {
   if (!wrap) return;
   const list = EVENTS.events.slice(0, eventsShown);
   const more = EVENTS.events.length > list.length
-    ? `<div class="row"><button class="linkbtn" id="btn-events-more">Mostrar ${EVENTS.events.length - list.length} mas (${EVENTS.events.length} en total)</button></div>`
+    ? `<div class="row"><button class="linkbtn" id="btn-events-more">Mostrar ${EVENTS.events.length - list.length} más (${EVENTS.events.length} en total)</button></div>`
     : "";
   wrap.innerHTML = eventsTableHtml(list, EVENTS.grouped) + more;
   setTabCount("eventos", EVENTS.events.length);
@@ -552,9 +552,9 @@ function providerFromDest(dest) {
 }
 
 function reviewBadge(rev) {
-  if (!rev) return `<span class="hint">sin revision</span>`;
+  if (!rev) return `<span class="hint">sin revisión</span>`;
   const ev = typeof rev === "string" ? rev : rev.evaluacion;
-  if (!ev) return `<span class="hint">sin revision</span>`;
+  if (!ev) return `<span class="hint">sin revisión</span>`;
   const cls = ev === "confirm" ? "badge-ok" : ev === "refuta" ? "badge-bad" : "badge-warn";
   let out = `<span class="${cls}">${esc(ev)}</span>`;
   const acc = typeof rev === "object" ? rev.accion : null;
@@ -585,7 +585,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
       <td class="num">${f.seen_count ?? 0}</td>
       <td class="mono small">${esc(f.last_seen || "")}</td>
       <td>
-        <button class="small blacklist-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Lista negra (cuarentena): aislar hasta revision LLM">⊘</button>
+        <button class="small blacklist-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Lista negra (cuarentena): aislar hasta revisión LLM">⊘</button>
         <button class="small suppress-finding" data-process="${esc(f.process)}" data-provider="${esc(f.provider || "")}" title="Ocultar fila: los eventos se mantienen en la base de datos">×</button>
       </td>
     </tr>
@@ -666,7 +666,7 @@ function renderFindings() {
   const shown = list.slice(0, findingsShown);
   const total = (FINDINGS.findings || []).length;
   const more = list.length > shown.length
-    ? `<div class="row"><button class="linkbtn" id="btn-findings-more">Mostrar ${list.length - shown.length} mas (${list.length} de ${total})</button></div>`
+    ? `<div class="row"><button class="linkbtn" id="btn-findings-more">Mostrar ${list.length - shown.length} más (${list.length} de ${total})</button></div>`
     : `<p class="hint">${list.length} hallazgos mostrados de ${total} (filtrados).</p>`;
   wrap.innerHTML = findingsHtml(shown, FINDINGS.suppressed, FINDINGS.blacklisted) + more;
   setTabCount("hallazgos", list.length);
@@ -884,7 +884,7 @@ function providerBars(items) {
 function panelTakeaway(d) {
   const s = d.summary || {};
   if (!s.events) {
-    return "Sin conexiones IA en la ventana. Si el monitoreo esta pausado (kill switch), reanudalo desde la cabecera; si no, amplía la ventana o revisa el catalogo.";
+    return "Sin conexiones IA en la ventana. Si el monitoreo esta pausado (kill switch), reanúdalo desde la cabecera; si no, amplía la ventana o revisa el catálogo.";
   }
   const parts = [];
   const top = (d.top_providers || [])[0];
@@ -1284,7 +1284,7 @@ function baselineHtml(b) {
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>` + (rest > 0
-    ? `<div class="row"><button class="linkbtn" id="btn-baseline-more">Mostrar ${rest} grupos mas (${groupsAll.length} en total)</button></div>`
+    ? `<div class="row"><button class="linkbtn" id="btn-baseline-more">Mostrar ${rest} grupos más (${groupsAll.length} en total)</button></div>`
     : "");
 }
 
@@ -1579,7 +1579,7 @@ function renderReviewResults(data) {
   const wrap = document.getElementById("review-results");
   if (!wrap) return;
   if (data.status === "unavailable") {
-    wrap.innerHTML = `<div class="hint">LLM no disponible (${esc(data.reason || "")}): sin revision.</div>`;
+    wrap.innerHTML = `<div class="hint">LLM no disponible (${esc(data.reason || "")}): sin revisión.</div>`;
     return;
   }
   const rows = (data.reviews || []).map(reviewRowHtml).join("");
