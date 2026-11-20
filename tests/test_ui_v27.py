@@ -214,3 +214,7 @@ class UiV27Test(TestCase):
     def test_u10_mobile_viewport_and_narrow_wrapping(self):
         self.assertIn('<meta name="viewport" content="width=device-width, initial-scale=1">', HTML)
         self.assertIn("  .mono { overflow-wrap: anywhere; }\n  .chip { white-space: normal; }", CSS)
+
+    def test_q05_guide_describes_the_session_token(self):
+        self.assertNotIn("no hay superficie externa ni auth", HTML)
+        self.assertIn("<b>Lecturas sensibles con token</b>", HTML)

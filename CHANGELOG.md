@@ -4,13 +4,83 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
 ## Proximo
 
-- #6 reestructurar la UI (Hallazgos/Eventos/Config), responsive (cero `@media`)
-  y accesibilidad (tabs sin `role`/`aria-selected`, toast sin `aria-live`,
-  severidad solo por color).
-- Ampliar el `select` de ruff (hoy solo E9/F82).
+- Pendiente del humano: S-16 (limpieza de `data/`), S-17 (servidor con el Python del `.venv` y
+  `--no-server-header`), S-18 (monitor en pausa, inspector LLM parado, re-registro elevado de
+  `AI-NETWATCH-NetBytes`).
 - Medir el efecto del modo `jev_minimal` (S-07) sobre la concordancia Jev/LAYA.
-- Tag `v2.7` cuando cierre el bloque de accesibilidad (#6) y la re-registracion
-  elevada de la tarea `AI-NETWATCH-NetBytes` este verificada en otra maquina.
+- v2.8: partir `app.js` en módulos (fuera de alcance de v2.7).
+
+## v2.7 (2026-11-21) — UI profesional, seguridad de lecturas y accesibilidad
+
+Plan ejecutado tarjeta a tarjeta por un LLM local (actas en el vault, `ACTA-2026-11-20-v27-*`).
+
+### Bugs
+
+- B-01: el strip lee jev_key_set desde health.sources
+- B-02: eje Y sin marcas duplicadas
+- B-03: las tablas anchas se desplazan dentro de su contenedor
+- B-04: cabecera y contenido centrados
+- B-05: etiqueta de autonomía en español en Hallazgos
+- B-06: plurales correctos en el panel
+- B-07: ortografía de los textos visibles
+- B-07b: ortografía de los textos visibles restantes
+- B-08: un solo acceso a la guía
+- B-09: el strip distingue pausa de fallo y dice desde cuándo
+- B-10: el strip muestra el estado real del inspector LLM
+- B-11: los procesos sin nombre se agrupan en el filtro
+- B-12: el historial de revisiones nace plegado salvo las 3 últimas
+- B-13: acciones de hallazgo con texto
+- B-14: nombre accesible en todos los controles
+- B-15: navegación por teclado en las pestañas
+
+### Seguridad
+
+- S-10: token de sesión comparado en tiempo constante
+- S-11: el Origin se valida por esquema, host y puerto
+- S-12: Permissions-Policy, COOP, CORP y CSP con object-src y form-action
+- S-13a: los exports se descargan con fetch y token
+- S-13b: token de sesión obligatorio en lecturas sensibles
+- S-14: test genérico de token en todas las rutas que cambian estado
+- S-15: confirmación propia para reset y borrado de llamadas
+- S-19: SECURITY.md describe el modelo de la consola
+
+### Diseño
+
+- D-01: tokens de escala tipográfica, radios y espacios
+- D-02: tipografía en 5 tamaños
+- D-03: radios en 4 valores
+- D-04: colores solo desde variables de tema
+- D-05: cabecera compacta y fija
+- D-06: nivel del score con texto
+- D-07: reglas de tabla
+- D-08: estado de carga en todos los contenedores
+- D-09: movimiento reducido y foco visible
+- D-10: contraste AA comprobado por test
+- D-11: etiqueta del donut fuera del anillo y leyenda con el color de su segmento
+- D-12: auditoría de texto recortado (solo informe; sin hallazgos, sin commit)
+- D-13: tamaño base del texto y familias desde los tokens
+- D-14: las pastillas de leyenda no parten su texto
+
+### UX
+
+- U-01: buscador libre en Eventos
+- U-02: última vez en formato relativo
+- U-03: detalle de evento generado al abrirlo
+- U-04: filas de hallazgo operables por teclado
+- U-05: Resumen abre con lo que requiere atención
+- U-06: el botón de triaje informa del progreso y del dedup
+- U-07: el kill switch explica y confirma
+- U-08: columnas esenciales en pantallas estrechas
+- U-09: el LLM Inspector arranca con 10 llamadas
+- U-10: viewport de móvil y textos largos que parten línea en estrecho
+
+### Calidad
+
+- Q-01: arranque y parada por lifespan
+- Q-02: script de humo contra el servidor vivo
+- Q-03: CI instala desde requirements.txt
+- Q-04: ruff con reglas W
+- Q-05: CHANGELOG v2.7 y guía actualizada
 
 ## v2.6(6) (2026-10-25) — cierre de la linea 2.6: seguridad, UI visual y segunda opinion local
 

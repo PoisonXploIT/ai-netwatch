@@ -436,11 +436,12 @@
     <details>
       <summary>Seguridad y privacidad</summary>
       <ul>
-        <li><b>Solo loopback</b>: el servidor escucha únicamente en <span class="mono">127.0.0.1:8790</span>; no hay superficie externa ni auth.</li>
+        <li><b>Solo loopback</b>: el servidor escucha únicamente en <span class="mono">127.0.0.1:8790</span>; no hay superficie externa. Las acciones exigen el token de sesión de la consola.</li>
         <li><b>SSRF</b>: la única salida HTTP a destino elegido por el usuario es <span class="mono">llm_base_url</span>, que debe ser http(s) absoluto resolviendo a loopback. Público, metadata cloud (<span class="mono">169.254.169.254</span>), <span class="mono">file://</span>, <span class="mono">gopher://</span> y rutas relativas → 400.</li>
         <li><b>Sin payload</b>: la captura SNI es pasiva (solo el dominio del handshake); no se guarda contenido de ninguna conexión.</li>
         <li><b>Reset protegido</b>: exige <span class="mono">{"confirm": true}</span>.</li>
         <li><b>Exports sin secretos</b>: JSON/CSV/PDF nunca incluyen la API key ni la config.</li>
+        <li><b>Lecturas sensibles con token</b>: las llamadas del inspector, los exports y la evidencia exigen el token de sesión de la consola, igual que las acciones. Un proceso local sin ese token recibe 403.</li>
       </ul>
     </details>
   </section>
