@@ -511,7 +511,7 @@ async function refreshHealth() {
       `<span>eventos <b>${h.events ?? 0}</b></span>` +
       `<span>llamadas LLM <b>${h.llm_calls ?? 0}</b></span>` +
       `<span>fuentes: ${src.length ? esc(src.join(", ")) : "ninguna"}</span>` +
-      `<span>Jev: ${h.jev_key_set ? "key OK" : "sin key"}</span>`;
+      `<span>Jev: ${(h.sources || {}).jev_key_set ? "key OK" : "sin key"}</span>`;
   } catch (e) {
     strip.innerHTML = `<span class="dot bad"></span><span>sin respuesta del servidor (${esc(String(e.message || e))})</span>`;
   }
