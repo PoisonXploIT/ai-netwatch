@@ -3,4 +3,4 @@
 # estilos que esconden bugs de lectura (E7: lambda asignada, comparaciones
 # encadenadas, nombres ambiguos l/I/O). W y E501 quedan fuera hasta que el
 # codigo se reformatee.
-select = ["E9", "F", "E7"]
+select = ["E9", "F", "E7", "W"]
