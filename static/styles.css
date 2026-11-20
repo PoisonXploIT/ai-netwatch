@@ -53,7 +53,8 @@ html[data-theme="dark"] {
 
 body {
   margin: 0;
-  font-family: system-ui, "Segoe UI", sans-serif;
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
   background: var(--bg);
   color: var(--text);
   line-height: 1.45;
@@ -115,7 +116,7 @@ header { max-width: 1280px; margin: 0 auto; }
 .hint { color: var(--muted); font-size: var(--fs-sm); }
 .hint.error { color: var(--v-bad); }
 .small { font-size: var(--fs-sm); color: var(--muted); }
-.mono, .mono * { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+.mono, .mono * { font-family: var(--font-mono); }
 
 .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
 .row label { min-width: 170px; font-size: var(--fs-md); }

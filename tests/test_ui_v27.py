@@ -133,3 +133,7 @@ class UiV27Test(TestCase):
         self.assertIn('<div class="donut-cap">', JS)
         self.assertIn('dominant-baseline="central"', JS)
         self.assertIn(".chip .dot.s-bad { background: var(--v-bad); }", CSS)
+
+    def test_d13_base_font_size_and_family_tokens(self):
+        self.assertIn("font-family: var(--font-ui);\n  font-size: var(--fs-md);", CSS)
+        self.assertIn(".mono, .mono * { font-family: var(--font-mono); }", CSS)
