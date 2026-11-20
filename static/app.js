@@ -1936,6 +1936,9 @@ function bind() {
   $("btn-triage").addEventListener("click", async () => {
     const btn = $("btn-triage");
     btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = "Triando…";
+    btn.setAttribute("aria-busy", "true");
     $("triage-status").textContent = "En curso... puede tardar un par de minutos.";
     try {
       const data = await api("/api/triage", { method: "POST", body: JSON.stringify({}) });
@@ -1943,12 +1946,15 @@ function bind() {
       wrap.innerHTML = triageHtml(data);
       wireInvestigate(wrap); // A2: boton Investigar en la tabla de triaje.
       $("triage-status").textContent = "Completado.";
-      toast("Triaje guardado.", "ok");
+      const dd = data.dedup;
+      toast(dd ? `Triaje guardado: ${plural(dd.fresh, "evento nuevo", "eventos nuevos")}, ${plural(dd.reused, "reutilizado", "reutilizados")}.` : "Triaje guardado.", "ok");
     } catch (e) {
       $("triage-status").textContent = "";
       toast(e.message, "err");
     } finally {
       btn.disabled = false;
+      btn.textContent = label;
+      btn.removeAttribute("aria-busy");
     }
   });
 

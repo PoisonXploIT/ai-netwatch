@@ -194,3 +194,9 @@ class UiV27Test(TestCase):
     def test_u05_summary_opens_with_attention_list(self):
         self.assertIn('id="attention-card"', HTML)
         self.assertIn("fn: refreshAttention", JS)
+
+    def test_u06_triage_button_reports_progress(self):
+        self.assertIn('btn.textContent = "Triando…";', JS)
+        self.assertIn('btn.setAttribute("aria-busy", "true");', JS)
+        self.assertIn('btn.removeAttribute("aria-busy");', JS)
+        self.assertIn("const dd = data.dedup;", JS)
