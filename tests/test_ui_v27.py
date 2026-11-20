@@ -181,3 +181,8 @@ class UiV27Test(TestCase):
     def test_u02_last_seen_is_relative_with_utc_title(self):
         self.assertIn("function whenCell(ts)", JS)
         self.assertEqual(JS.count("whenCell("), 5)  # 1 definicion + 4 usos
+
+    def test_u03_event_detail_is_lazy(self):
+        self.assertNotIn("${eventDetailHtml(e)}</td>", JS)
+        self.assertNotIn("${groupDetailHtml(e)}</td>", JS)
+        self.assertIn("let EVENT_ROWS = [];", JS)

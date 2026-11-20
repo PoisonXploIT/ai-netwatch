@@ -213,6 +213,9 @@ function groupDetailHtml(g) {
   return head + table;
 }
 
+// U-03: filas pintadas en la tabla de eventos; el detalle se genera al abrirlo.
+let EVENT_ROWS = [];
+
 function groupedEventsTableHtml(events) {
   if (!events.length) return `<div class="hint">Sin eventos con los filtros actuales.</div>`;
   const rows = events.map((e, i) => `<tr>
@@ -225,7 +228,7 @@ function groupedEventsTableHtml(events) {
     <td class="small">${whenCell(e.last_seen)}</td>
     <td><button class="linklike" data-detail="ev-d-g${i}" aria-expanded="false">detalle</button></td>
   </tr>
-  <tr class="ev-detail" id="ev-d-g${i}" hidden><td colspan="8">${groupDetailHtml(e)}</td></tr>`).join("");
+  <tr class="ev-detail" id="ev-d-g${i}" data-idx="${i}" data-kind="g" hidden><td colspan="8"></td></tr>`).join("");
   return `<table>
     <thead><tr><th>Proceso</th><th>Proveedor</th><th>IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente.">Sesiones</th><th class="num">#IPs</th><th>Última vez</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
@@ -233,6 +236,7 @@ function groupedEventsTableHtml(events) {
 }
 
 function eventsTableHtml(events, grouped) {
+  EVENT_ROWS = events;
   if (grouped) return groupedEventsTableHtml(events);
   if (!events.length) return `<div class="hint">Sin eventos todavía (monitor activo).</div>`;
   const rows = events.map((e, i) => `<tr>
@@ -245,7 +249,7 @@ function eventsTableHtml(events, grouped) {
     <td class="small">${whenCell(e.last_seen)}</td>
     <td><button class="linklike" data-detail="ev-d-${i}" aria-expanded="false">detalle</button></td>
   </tr>
-  <tr class="ev-detail" id="ev-d-${i}" hidden><td colspan="8">${eventDetailHtml(e)}</td></tr>`).join("");
+  <tr class="ev-detail" id="ev-d-${i}" data-idx="${i}" data-kind="e" hidden><td colspan="8"></td></tr>`).join("");
   return `<table>
     <thead><tr><th>Proceso</th><th>Destino</th><th>Dominio (SNI)</th><th title="Capa de detección: catálogo, heurística o LLM local.">IA (capa)</th><th>Autonomía</th><th class="num" title="Sesiones = transiciones ausente→presente (F1). Polls y primera vez estan en el detalle.">Sesiones</th><th>Última vez</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
@@ -996,6 +1000,14 @@ function wireEventDetail(wrap) {
     b.onclick = () => {
       const row = document.getElementById(b.dataset.detail);
       if (!row) return;
+      const cell = row.firstElementChild;
+      if (cell && !cell.innerHTML && row.dataset.idx != null) {
+        const ev = EVENT_ROWS[Number(row.dataset.idx)];
+        if (ev) {
+          cell.innerHTML = row.dataset.kind === "g" ? groupDetailHtml(ev) : eventDetailHtml(ev);
+          paintBars(cell);
+        }
+      }
       const open = row.hidden;
       row.hidden = !open;
       b.setAttribute("aria-expanded", String(open));
