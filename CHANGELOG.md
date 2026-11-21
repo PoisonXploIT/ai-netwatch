@@ -8,7 +8,15 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   `--no-server-header`), S-18 (monitor en pausa, inspector LLM parado, re-registro elevado de
   `AI-NETWATCH-NetBytes`).
 - Medir el efecto del modo `jev_minimal` (S-07) sobre la concordancia Jev/LAYA.
-- v2.8: partir `app.js` en módulos (fuera de alcance de v2.7).
+
+## v2.8 — JavaScript repartido en scripts pequeños
+
+- A-01: los tests de UI leen todo el JavaScript en orden de carga
+- A-02: el sello de assets cubre static/js
+- A-03: app.js repartido en 12 scripts clásicos
+- V-01: las tablas de triaje arrancan con 10 filas
+- C-01: el humo comprueba que se sirven todos los scripts
+- C-02: CHANGELOG de la v2.8
 
 ## v2.7 (2026-11-21) — UI profesional, seguridad de lecturas y accesibilidad
 
