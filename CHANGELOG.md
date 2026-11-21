@@ -17,6 +17,9 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 - E-04: una sola acción principal por tarjeta
 - E-05: la sub-pestaña activa se distingue
 - E-06: sub-pestañas en Hallazgos, Eventos e IA
+- E-07: las acciones de la fila de hallazgo en una sola línea
+- E-08: las cabeceras pueden partir línea en ventanas estrechas
+- E-09: las barras de filtros con un solo estilo
 
 ## v2.8 (2026-11-21) — JavaScript repartido en scripts pequeños
 
