@@ -549,3 +549,6 @@ tbody button.small:not(.primary):hover, tbody button.small:not(.primary):focus-v
 
 /* E-07: las acciones de la fila de hallazgo van en una sola línea. */
 tr.finding-row > td:last-child { white-space: nowrap; }
+
+/* E-08: por debajo de 1100 px las cabeceras pueden partir línea (evita scroll interno). */
+@media (max-width: 1100px) { thead th { white-space: normal; } }

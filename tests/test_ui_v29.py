@@ -48,3 +48,6 @@ class UiV29Test(TestCase):
 
     def test_e07_finding_actions_on_one_line(self):
         self.assertIn("tr.finding-row > td:last-child { white-space: nowrap; }", CSS)
+
+    def test_e08_headers_wrap_on_narrow_screens(self):
+        self.assertIn("@media (max-width: 1100px) { thead th { white-space: normal; } }", CSS)
