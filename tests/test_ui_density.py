@@ -123,7 +123,7 @@ class AssetCacheTest(TestCase):
             os.utime(path, (st.st_mtime, st.st_mtime))
         self.assertNotEqual(first, second,
                            "el sello de assets no cambia al tocar el fichero")
-        self.assertIn("v2.6-", second)
+        self.assertIn(f"v{server.VERSION}-", second)
 
 
 class TriageTabsTest(TestCase):

@@ -1,6 +1,7 @@
 [lint]
 # Baseline ampliada: errores reales (E9), imports/variables sueltos (F) y
 # estilos que esconden bugs de lectura (E7: lambda asignada, comparaciones
-# encadenadas, nombres ambiguos l/I/O). W y E501 quedan fuera hasta que el
-# codigo se reformatee.
+# encadenadas, nombres ambiguos l/I/O) y W (espacios y lineas en blanco,
+# correcciones automaticas seguras). E501 (longitud de linea) queda fuera:
+# exigiría reformatear server.py entero.
 select = ["E9", "F", "E7", "W"]
