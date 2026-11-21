@@ -541,3 +541,8 @@ html[data-theme="dark"] { color-scheme: dark; }
 /* E-04: una sola acción principal por tarjeta; las acciones de fila son discretas. */
 tbody button.small:not(.primary) { background: transparent; border-color: transparent; color: var(--muted); padding: 2px var(--sp-2); }
 tbody button.small:not(.primary):hover, tbody button.small:not(.primary):focus-visible { border-color: var(--border); color: var(--text); }
+
+/* E-05: la sub-pestaña activa se distingue. */
+.subtabs { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.ttab.active, .subtab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+.card[hidden] { display: none; }

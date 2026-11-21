@@ -31,3 +31,7 @@ class UiV29Test(TestCase):
         self.assertEqual(HTML.count('class="primary"'), 2)
         self.assertNotIn('class="primary review-quarantine"', JS)
         self.assertIn("tbody button.small:not(.primary) {", CSS)
+
+    def test_e05_active_subtab_is_visible(self):
+        self.assertIn(".ttab.active, .subtab.active {", CSS)
+        self.assertIn(".card[hidden] { display: none; }", CSS)
