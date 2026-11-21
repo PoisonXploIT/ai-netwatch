@@ -528,3 +528,7 @@ tr[tabindex]:focus-visible, summary:focus-visible { outline: 2px solid var(--acc
 /* U-05 */
 .attention { list-style: none; margin: 0 0 var(--sp-2); padding: 0; }
 .attention li { padding: var(--sp-1) 0; }
+
+/* E-01: la ruta del proceso no ensancha la tabla (la ruta completa sigue en el title). */
+td > div.small.mono { max-width: 36ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+thead th { white-space: nowrap; }
