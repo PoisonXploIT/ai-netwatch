@@ -4,17 +4,19 @@ Criterio vigente: <= 12 req/min en la pestaña activa. La prueba lee app.js y
 reconstruye la tabla de tareas (tab, intervalo) sin ejecutar el navegador.
 """
 import re
+import sys
 from pathlib import Path
 from unittest import TestCase
 
 ROOT = Path(__file__).resolve().parent.parent
-APP_JS = ROOT / "static" / "app.js"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _static import read_js  # A-01: el JS puede estar repartido en varios scripts
 MAX_REQ_PER_MIN = 12
 
 
 class RefreshBudgetTest(TestCase):
     def setUp(self):
-        self.js = APP_JS.read_text(encoding="utf-8")
+        self.js = read_js()
 
     def _jobs(self):
         block = re.search(r"const REFRESH_JOBS = \[(.*?)\n\];", self.js, re.S)

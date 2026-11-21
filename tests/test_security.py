@@ -542,7 +542,9 @@ class TestHealth(SecurityBase):
 
     def test_esc_covers_single_quote(self):
         # S-02: esc() debe escapar la comilla simple, usada en atributos.
-        js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from _static import read_js
+        js = read_js()
         self.assertIn("replace(/'/g, \"&#39;\")", js)
 
     def test_collector_artifacts_pruned(self):

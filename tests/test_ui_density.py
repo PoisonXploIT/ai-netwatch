@@ -7,12 +7,15 @@ sin abrir ninguna pestana.
 """
 import os
 import re
+import sys
 from pathlib import Path
 from unittest import TestCase
 
 ROOT = Path(__file__).resolve().parent.parent
 HTML = (ROOT / "static" / "index.html").read_text(encoding="utf-8")
-JS = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _static import read_js  # A-01: el JS puede estar repartido en varios scripts
+JS = read_js()
 CSS = (ROOT / "static" / "styles.css").read_text(encoding="utf-8")
 
 
