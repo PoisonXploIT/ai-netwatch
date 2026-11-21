@@ -9,6 +9,15 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   `AI-NETWATCH-NetBytes`).
 - Medir el efecto del modo `jev_minimal` (S-07) sobre la concordancia Jev/LAYA.
 
+## v2.9 (2026-11-21) — Segunda pasada estética
+
+- E-01: la ruta del proceso no ensancha la tabla
+- E-02: controles y barras de scroll con los colores del tema
+- E-03: filas juntadas por organización
+- E-04: una sola acción principal por tarjeta
+- E-05: la sub-pestaña activa se distingue
+- E-06: sub-pestañas en Hallazgos, Eventos e IA
+
 ## v2.8 (2026-11-21) — JavaScript repartido en scripts pequeños
 
 - A-01: los tests de UI leen todo el JavaScript en orden de carga
