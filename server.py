@@ -2052,6 +2052,86 @@ def list_llm_calls(limit: int = 100):
     return {"calls": _calls_payload(calls)}
 
 
+@app.get("/api/llm/calls/export")
+def export_llm_calls(format: str = "txt", limit: int = 500):
+    """S-18: exportar las llamadas del inspector como log legible.
+
+    Formatos: txt (log bloque por llamada), csv y jsonl. Se exportan los
+    metadatos y el contenido ya descifrado por DPAPI en este proceso; no se
+    escribe nada nuevo en disco ni se toca config.json.
+    """
+    fmt = (format or "txt").lower()
+    if fmt not in ("txt", "csv", "jsonl"):
+        raise HTTPException(400, "formato: txt, csv o jsonl")
+    limit = max(1, min(int(limit), 1000))
+    calls = _calls_payload(llm_calls.list_calls(limit=limit) if llm_calls else [])
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    name = f"ai-netwatch-llm-{stamp.replace(' ', '-').replace(':', '')}"
+    if fmt == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["id", "ts", "method", "path", "model", "status", "streaming",
+                    "latency_ms", "prompt_chars", "prompt_tokens",
+                    "response_chars", "completion_tokens", "request_bytes",
+                    "response_bytes", "client_addr", "client_pid",
+                    "related_event_ids", "prompt", "response"])
+        for c in calls:
+            w.writerow([c.get("id"), c.get("ts"), c.get("method") or "",
+                        c.get("path") or "", c.get("model") or "",
+                        c.get("status"), int(c.get("streaming") or 0),
+                        c.get("latency_ms"), c.get("prompt_chars") or 0,
+                        c.get("prompt_tokens") or 0, c.get("response_chars") or 0,
+                        c.get("completion_tokens") or 0, c.get("request_bytes") or 0,
+                        c.get("response_bytes") or 0, c.get("client_addr") or "",
+                        c.get("client_pid") or "",
+                        " ".join(str(x) for x in (c.get("related_event_ids") or [])),
+                        c.get("prompt") or "", c.get("response") or ""])
+        body = buf.getvalue()
+        media = "text/csv; charset=utf-8"
+    elif fmt == "jsonl":
+        body = "".join(json.dumps(c, ensure_ascii=False) + "\n" for c in calls)
+        media = "application/jsonl; charset=utf-8"
+    else:
+        enc = any(c.get("content_encrypted") for c in calls)
+        lines = [
+            "# AI NetWatch " + VERSION + " \u2014 log de llamadas LLM (LLM Inspector)",
+            "# Generado: " + stamp + " | llamadas: " + str(len(calls)) +
+            " (m\u00e1s reciente primero) | contenido: " +
+            ("cifrado (DPAPI), descifrado al exportar" if enc else "solo metadatos"),
+            "# Lectura: cada bloque es una llamada; PROMPT y RESPUESTA van tal cual.",
+            "",
+        ]
+        for i, c in enumerate(calls, 1):
+            status = ("sin respuesta" if not c.get("status")
+                      else "HTTP " + str(c.get("status")))
+            rel = (" eventos relacionados: " +
+                   ", ".join(str(x) for x in c.get("related_event_ids") or []))
+            lines.append(
+                f"[{i}] {c.get('ts')}  {c.get('method') or ''} {c.get('path') or ''}"
+                f"  modelo={c.get('model') or '—'}  {status}"
+                f"  latencia={c.get('latency_ms')} ms"
+                f"  {'stream' if c.get('streaming') else 'no stream'}"
+            )
+            lines.append(
+                f"    cliente: {c.get('client_addr') or '—'}  pid={c.get('client_pid') or '—'}"
+                f"  prompt={c.get('prompt_chars') or 0} chars"
+                f" ({c.get('prompt_tokens') or 0} tok)"
+                f"  respuesta={c.get('response_chars') or 0} chars"
+                f" ({c.get('completion_tokens') or 0} tok)"
+                f"  egress={c.get('request_bytes') or 0} B / {c.get('response_bytes') or 0} B"
+                + rel
+            )
+            prompt = (c.get("prompt") or "").strip()
+            response = (c.get("response") or "").strip()
+            lines.append("    PROMPT: " + (prompt if prompt else "(no guardado o vacío)"))
+            lines.append("    RESPUESTA: " + (response if response else "(no guardada o vacío)"))
+            lines.append("    " + "-" * 60)
+        body = "\n".join(lines) + "\n"
+        media = "text/plain; charset=utf-8"
+    return Response(body, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{name}.{fmt}"'})
+
+
 @app.get("/api/llm/calls/{call_id}")
 def get_llm_call(call_id: int):
     c = llm_calls.get_call(call_id) if llm_calls else None

@@ -103,7 +103,8 @@ class UiV27Test(TestCase):
 
     def test_s13a_exports_send_the_session_token(self):
         self.assertNotIn("window.location.href", JS)
-        self.assertEqual(JS.count("download("), 6)  # 1 definicion + 5 usos
+        # S-18 suma dos descargas de log del inspector (txt y csv).
+        self.assertEqual(JS.count("download("), 8)  # 1 definicion + 7 usos
 
     def test_s15_destructive_actions_use_own_dialog(self):
         self.assertIn('<dialog id="confirm-dialog"', HTML)

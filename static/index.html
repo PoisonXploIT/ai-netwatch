@@ -221,6 +221,11 @@
     </div>
     <p class="hint">Para inspeccionar, apunta el cliente al puerto del proxy (p. ej. SDK/cliente → <span class="mono">http://127.0.0.1:8098</span>). Las llamadas se guardan en <span class="mono">data/llm_calls.db</span> con prompts y respuestas completos: no expongas ese fichero.</p>
     <p class="hint">Cobertura: chat/completions (incluido tool-calling), embeddings, audio e imágenes; un intento que no conecta queda registrado como fallo.</p>
+    <div class="row">
+      <button id="btn-llm-log-txt">Descargar log legible (txt)</button>
+      <button id="btn-llm-log-csv">Descargar CSV</button>
+      <span class="hint">S-18: el log txt trae cada llamada en un bloque con su prompt y su respuesta; el CSV es para hojas de cálculo. Ambos se descargan desde la base ya descifrada, sin escribir nada nuevo en disco.</span>
+    </div>
     <div id="llm-calls-wrap"><p class="hint state-loading">Cargando…</p></div>
     <div class="row">
       <button id="btn-reset-llmcalls" class="danger">Borrar llamadas registradas</button>

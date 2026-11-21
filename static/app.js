@@ -317,6 +317,9 @@ function bind() {
         : "Modo completo: Jev recibe proceso, IP, puerto y dominio.", "ok");
     } catch (e) { toast(e.message, "err"); }
   });
+  // S-18: export de las llamadas del inspector como log legible (txt) o CSV.
+  $("btn-llm-log-txt").addEventListener("click", () => download("/api/llm/calls/export?format=txt&limit=1000"));
+  $("btn-llm-log-csv").addEventListener("click", () => download("/api/llm/calls/export?format=csv&limit=1000"));
   $("btn-reset-llmcalls").addEventListener("click", async () => {
     if (!(await askConfirm("Se borran todas las llamadas LLM registradas (prompts y respuestas). No se puede deshacer."))) return;
     try {

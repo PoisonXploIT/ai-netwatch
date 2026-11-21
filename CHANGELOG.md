@@ -4,10 +4,22 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
 ## Proximo
 
-- Pendiente del humano: S-16 (limpieza de `data/`), S-17 (servidor con el Python del `.venv` y
-  `--no-server-header`), S-18 (monitor en pausa, inspector LLM parado, re-registro elevado de
-  `AI-NETWATCH-NetBytes`).
+- Pendiente del humano: re-registro con disparador de la tarea `AI-NETWATCH-NetBytes`
+  (`setup_netbytes_task.ps1`, requiere administrador) y decidir la retencion/uso del contenido
+  guardado de las llamadas LLM (S-18: se mantiene activado por ser objeto de estudio).
 - Medir el efecto del modo `jev_minimal` (S-07) sobre la concordancia Jev/LAYA.
+
+## Cierre operativo (2026-11-21) — S-16, S-17 y S-18
+
+- S-17: `services-up.ps1` arranca el panel con `--no-server-header`; ya no responde
+  `server: uvicorn` (la copia de seguridad esta en `C:\Users\Sammi\scripts\services-up.ps1.bak-20261121`).
+- S-16: logs y `compare_*` viejos, `config.json.bak-...` y `_verify_laya` movidos a
+  `backups/2026-11-21-limpieza/`; las tres notas (`RECOMENDACION-typed-decisions.md`,
+  `diagnostico-techo-ab.md`, `jev_probe_schema.md`) al vault. Borrado solo `data/nul` (0 bytes).
+- S-18: el inspector LLM exporta sus llamadas como log legible (`/api/llm/calls/export?format=txt`),
+  CSV o JSONL, con botones en la tarjeta. La casilla de guardar contenido sigue activada.
+- `mypy.ini` excluye tambien `backups/` (son copias antiguas, no producto).
+
 
 ## v2.9 (2026-11-21) — Segunda pasada estética
 
