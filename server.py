@@ -78,8 +78,9 @@ def _asset_stamp() -> str:
     fuerza la recarga.
     """
     try:
-        mt = sum((STATIC_DIR / f).stat().st_mtime
-                 for f in ("app.js", "styles.css", "theme.js"))
+        files = [STATIC_DIR / f for f in ("app.js", "styles.css", "theme.js")]
+        files += sorted((STATIC_DIR / "js").glob("*.js"))
+        mt = sum(p.stat().st_mtime for p in files)
     except OSError:
         mt = 0
     return f"v{VERSION}-{int(mt)}"
