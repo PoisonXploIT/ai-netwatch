@@ -2052,6 +2052,28 @@ def list_llm_calls(limit: int = 100):
     return {"calls": _calls_payload(calls)}
 
 
+# X-01: una celda de CSV que empiece por = + - @ (o tabulador / retorno) se abre
+# como formula en Excel y similares. Los prompts y los nombres de proceso vienen de
+# fuera, asi que se antepone un apostrofo para que se lean como texto.
+_CSV_RISKY = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: object) -> object:
+    if isinstance(value, str) and value.startswith(_CSV_RISKY):
+        return "'" + value
+    return value
+
+
+class _SafeCsv:
+    """csv.writer que neutraliza las celdas que una hoja de calculo ejecutaria."""
+
+    def __init__(self, buf: io.StringIO) -> None:
+        self._w = csv.writer(buf)
+
+    def writerow(self, row: list) -> None:
+        self._w.writerow([_csv_safe(v) for v in row])
+
+
 @app.get("/api/llm/calls/export")
 def export_llm_calls(format: str = "txt", limit: int = 500):
     """S-18: exportar las llamadas del inspector como log legible.
@@ -2069,7 +2091,7 @@ def export_llm_calls(format: str = "txt", limit: int = 500):
     name = f"ai-netwatch-llm-{stamp.replace(' ', '-').replace(':', '')}"
     if fmt == "csv":
         buf = io.StringIO()
-        w = csv.writer(buf)
+        w = _SafeCsv(buf)
         w.writerow(["id", "ts", "method", "path", "model", "status", "streaming",
                     "latency_ms", "prompt_chars", "prompt_tokens",
                     "response_chars", "completion_tokens", "request_bytes",
@@ -2734,7 +2756,7 @@ def export_pdf():
 def export_csv():
     events = _req_store().list_events(limit=1000)
     buf = io.StringIO()
-    w = csv.writer(buf)
+    w = _SafeCsv(buf)
     w.writerow(["ts", "process", "image", "protocol", "dest_ip", "dest_port",
                 "dest_host", "sni_domain", "catalog_domain", "seen_count",
                 "first_seen", "last_seen"])

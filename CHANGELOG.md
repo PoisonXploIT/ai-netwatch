@@ -7,6 +7,10 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 - Contenido de las llamadas LLM: se mantiene guardado (cifrado con DPAPI) por ser objeto de estudio; revisar la retención si deja de usarse.
 - Medir el efecto del modo `jev_minimal` (S-07) sobre la concordancia Jev/LAYA.
 
+## v2.9.2 (2026-11-21) — CSV sin fórmulas y textos de cifrado
+
+- X-01: los dos CSV (eventos y llamadas LLM) neutralizan las celdas que Excel abriria como formula.
+
 ## v2.9.1 (2026-11-21) — Cierre operativo: S-16, S-17 y S-18
 
 - S-17: `services-up.ps1` arranca el panel con `--no-server-header`; ya no responde
