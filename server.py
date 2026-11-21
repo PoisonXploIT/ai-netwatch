@@ -65,7 +65,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONFIG_PATH = DATA_DIR / "config.json"
 # Fuente unica de version (U-02): la consola, los exports JSON/PDF/STIX y
 # /api/health la leen de aqui. Prohibido hardcodearla en el HTML.
-VERSION = "2.9"
+VERSION = "2.9.1"
 
 
 def _asset_stamp() -> str:

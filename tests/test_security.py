@@ -475,7 +475,8 @@ class TestVersionSingleSource(SecurityBase):
 
     def test_version_is_not_the_alpha_placeholder(self):
         self.assertNotEqual(server.VERSION, "2.0-alpha")
-        self.assertRegex(server.VERSION, r"^\d+\.\d+$")
+        # Permite version de tres partes (2.9.1) además de las de dos.
+        self.assertRegex(server.VERSION, r"^\d+\.\d+(\.\d+)?$")
 
     def test_console_renders_the_server_version(self):
         html = server.index().body.decode("utf-8")

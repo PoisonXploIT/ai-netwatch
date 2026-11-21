@@ -4,12 +4,10 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 
 ## Proximo
 
-- Pendiente del humano: re-registro con disparador de la tarea `AI-NETWATCH-NetBytes`
-  (`setup_netbytes_task.ps1`, requiere administrador) y decidir la retencion/uso del contenido
-  guardado de las llamadas LLM (S-18: se mantiene activado por ser objeto de estudio).
+- Contenido de las llamadas LLM: se mantiene guardado (cifrado con DPAPI) por ser objeto de estudio; revisar la retención si deja de usarse.
 - Medir el efecto del modo `jev_minimal` (S-07) sobre la concordancia Jev/LAYA.
 
-## Cierre operativo (2026-11-21) — S-16, S-17 y S-18
+## v2.9.1 (2026-11-21) — Cierre operativo: S-16, S-17 y S-18
 
 - S-17: `services-up.ps1` arranca el panel con `--no-server-header`; ya no responde
   `server: uvicorn` (la copia de seguridad esta en `C:\Users\Sammi\scripts\services-up.ps1.bak-20261121`).
