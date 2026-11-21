@@ -58,3 +58,11 @@ class UiV28Test(TestCase):
 
     def test_v01_triage_tables_start_with_ten_rows(self):
         self.assertIn("const TRIAGE_ROWS = 10;", JS)
+
+    def test_s20_no_dynamic_code_or_inline_handlers(self):
+        import re
+        for p in js_paths() + [ROOT / "static" / "theme.js"]:
+            text = p.read_text(encoding="utf-8")
+            for pattern in (r"\beval\(", r"new Function\(", r"document\.write",
+                            r"javascript:", r'\son[a-z]+="'):
+                self.assertIsNone(re.search(pattern, text), f"{p.name}: {pattern}")
