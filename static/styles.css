@@ -546,3 +546,6 @@ tbody button.small:not(.primary):hover, tbody button.small:not(.primary):focus-v
 .subtabs { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .ttab.active, .subtab.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 .card[hidden] { display: none; }
+
+/* E-07: las acciones de la fila de hallazgo van en una sola línea. */
+tr.finding-row > td:last-child { white-space: nowrap; }

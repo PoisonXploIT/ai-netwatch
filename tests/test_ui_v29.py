@@ -45,3 +45,6 @@ class UiV29Test(TestCase):
             self.assertIn(f'id="{target}"', HTML)
         self.assertIn("function wireSubtabs()", JS)
         self.assertIn("  wireSubtabs();", JS)
+
+    def test_e07_finding_actions_on_one_line(self):
+        self.assertIn("tr.finding-row > td:last-child { white-space: nowrap; }", CSS)
