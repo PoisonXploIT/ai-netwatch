@@ -9,7 +9,7 @@ function ttabShow(which) {
   document.querySelectorAll(".ttab").forEach((b) => b.classList.toggle("active", b.dataset.tt === which));
 }
 
-const TRIAGE_ROWS = 25;  // Filas visibles por tabla de triaje; el resto, desplegable.
+const TRIAGE_ROWS = 10;  // Filas visibles por tabla de triaje; el resto, desplegable.
 
 function vsCell(aVerdict, bVerdict) {
   if (aVerdict == null || bVerdict == null) return `<td class="vs">sin dato</td>`;

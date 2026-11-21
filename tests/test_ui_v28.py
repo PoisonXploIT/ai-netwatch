@@ -55,3 +55,6 @@ class UiV28Test(TestCase):
         app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
         self.assertIn("const REFRESH_JOBS = [", app)
         self.assertIn('document.addEventListener("DOMContentLoaded"', app)
+
+    def test_v01_triage_tables_start_with_ten_rows(self):
+        self.assertIn("const TRIAGE_ROWS = 10;", JS)
