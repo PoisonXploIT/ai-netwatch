@@ -18,6 +18,8 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 - C-01: el humo comprueba que se sirven todos los scripts
 - C-02: CHANGELOG de la v2.8
 - S-20: test de higiene de todo el JavaScript
+- S-21: el humo avisa si el servidor se anuncia
+
 
 
 ## v2.7 (2026-11-21) — UI profesional, seguridad de lecturas y accesibilidad

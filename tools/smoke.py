@@ -30,6 +30,8 @@ def main() -> int:
     for name in NEED:
         if name not in headers:
             bad.append(f"falta cabecera {name}")
+    if "server" in headers:
+        print("AVISO cabecera server:", headers["server"], "(S-17 pendiente; no es un fallo)")
     if "unsafe-inline" in headers.get("content-security-policy", ""):
         bad.append("CSP con unsafe-inline")
     page = get("/")[2].decode("utf-8", "replace")
