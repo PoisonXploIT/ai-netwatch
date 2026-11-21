@@ -9,7 +9,7 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
   `AI-NETWATCH-NetBytes`).
 - Medir el efecto del modo `jev_minimal` (S-07) sobre la concordancia Jev/LAYA.
 
-## v2.8 — JavaScript repartido en scripts pequeños
+## v2.8 (2026-11-21) — JavaScript repartido en scripts pequeños
 
 - A-01: los tests de UI leen todo el JavaScript en orden de carga
 - A-02: el sello de assets cubre static/js
