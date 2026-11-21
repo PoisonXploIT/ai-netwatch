@@ -73,9 +73,9 @@
     <h2>Exportar</h2>
     <p class="hint">Generado en memoria desde los datos vivos (eventos + último triaje). Sin secretos: ninguna API key aparece en ningún export.</p>
     <div class="row">
-      <button id="btn-exp-json" class="primary">JSON</button>
-      <button id="btn-exp-csv" class="primary">CSV</button>
-      <button id="btn-exp-pdf" class="primary">PDF (informe)</button>
+      <button id="btn-exp-json">JSON</button>
+      <button id="btn-exp-csv">CSV</button>
+      <button id="btn-exp-pdf">PDF (informe)</button>
     </div>
     <p class="hint">Evidencia (v2.3): cadena de hashes sobre los eventos de la ventana (si se altera una fila se rompe el resto; verificable offline) y bundle STIX 2.1 para SIEM/CTI.</p>
     <div class="row">
@@ -83,8 +83,8 @@
         <option>1</option><option selected>7</option><option>30</option><option>90</option>
       </select>
       <span class="hint">dias</span>
-      <button id="btn-ev-chain" class="primary">Cadena de hashes (JSONL)</button>
-      <button id="btn-ev-stix" class="primary">STIX 2.1 (JSON)</button>
+      <button id="btn-ev-chain">Cadena de hashes (JSONL)</button>
+      <button id="btn-ev-stix">STIX 2.1 (JSON)</button>
     </div>
     </section>
   </div>
@@ -179,15 +179,15 @@
     <h2>Revisi&oacute;n LLM local (batch)</h2>
     <p class="hint">El LLM local opina uno a uno sobre un conjunto de eventos (tope por petici&oacute;n: <span class="mono">llm_review_max</span>, config). Asesoría display-only: no re-punt&uacute;a, no aprueba ni ejecuta nada; Jev sigue siendo el juez. El resultado se guarda en el hist&oacute;rico de revisiones.</p>
     <div class="row">
-      <button id="btn-rev-aut" class="primary">Revisar: aut&oacute;nomos</button>
-      <button id="btn-rev-unapproved" class="primary">Revisar: no aprobados</button>
-      <button id="btn-rev-flagged" class="primary">Revisar: marcados (triage)</button>
-      <button id="btn-rev-untriaged" class="primary">Revisar: sin triar</button>
-      <button id="btn-rev-quarantine" class="primary">Revisar: cuarentena</button>
+      <button id="btn-rev-aut">Revisar: aut&oacute;nomos</button>
+      <button id="btn-rev-unapproved">Revisar: no aprobados</button>
+      <button id="btn-rev-flagged">Revisar: marcados (triage)</button>
+      <button id="btn-rev-untriaged">Revisar: sin triar</button>
+      <button id="btn-rev-quarantine">Revisar: cuarentena</button>
     </div>
     <p class="hint">O bien marca eventos con la casilla de la tabla de arriba y:</p>
     <div class="row">
-      <button id="btn-review-selected" class="primary">Revisar selecci&oacute;n</button>
+      <button id="btn-review-selected">Revisar selecci&oacute;n</button>
       <span id="review-status" class="hint"></span>
     </div>
     <div id="review-results"></div>

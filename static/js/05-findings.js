@@ -101,7 +101,7 @@ function findingsHtml(findings, suppressed, blacklisted) {
     quarantineSection = `<details><summary>Cuarentena (${blacklisted.length})</summary>
       <p class="hint">En lista negra: aislados a la espera de revisión LLM. Los eventos siguen en la base de datos.</p>
       <table><thead>${head}</thead><tbody>${qrows}</tbody></table>
-      <div class="row"><button class="primary review-quarantine">Revisar toda la cuarentena (LLM local)</button></div></details>`;
+      <div class="row"><button class="review-quarantine">Revisar toda la cuarentena (LLM local)</button></div></details>`;
   }
   const main = findings.length
     ? `<table><thead>${head}</thead><tbody>${activeRows}</tbody></table>`

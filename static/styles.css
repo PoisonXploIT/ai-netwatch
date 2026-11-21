@@ -537,3 +537,7 @@ thead th { white-space: nowrap; }
 :root { color-scheme: light; }
 html[data-theme="dark"] { color-scheme: dark; }
 * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+/* E-04: una sola acción principal por tarjeta; las acciones de fila son discretas. */
+tbody button.small:not(.primary) { background: transparent; border-color: transparent; color: var(--muted); padding: 2px var(--sp-2); }
+tbody button.small:not(.primary):hover, tbody button.small:not(.primary):focus-visible { border-color: var(--border); color: var(--text); }

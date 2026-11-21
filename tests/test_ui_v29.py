@@ -26,3 +26,8 @@ class UiV29Test(TestCase):
         self.assertIn("function mergeRows(events)", JS)
         self.assertIn('id="ev-org" checked', HTML)
         self.assertIn('$("ev-org").checked = true;', JS)
+
+    def test_e04_one_primary_action_per_card(self):
+        self.assertEqual(HTML.count('class="primary"'), 2)
+        self.assertNotIn('class="primary review-quarantine"', JS)
+        self.assertIn("tbody button.small:not(.primary) {", CSS)
