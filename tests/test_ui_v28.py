@@ -39,3 +39,19 @@ class UiV28Test(TestCase):
             finally:
                 server.STATIC_DIR = old
         self.assertNotEqual(first, second)
+
+    def test_a03_console_js_is_split_in_classic_scripts(self):
+        names = [p.name for p in js_paths()]
+        self.assertEqual(len(names), 12, names)
+        self.assertEqual(names[0], "01-base.js")
+        self.assertEqual(names[-1], "app.js")
+        on_disk = sorted(p.name for p in (ROOT / "static" / "js").glob("*.js"))
+        self.assertEqual(on_disk, names[:-1])
+        for p in js_paths():
+            self.assertLessEqual(p.read_text(encoding="utf-8").count("\n"), 500, p.name)
+        self.assertNotIn('type="module"', HTML)
+
+    def test_a03_refresh_jobs_live_in_the_last_script(self):
+        app = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const REFRESH_JOBS = [", app)
+        self.assertIn('document.addEventListener("DOMContentLoaded"', app)
