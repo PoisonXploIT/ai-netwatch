@@ -35,3 +35,13 @@ class UiV29Test(TestCase):
     def test_e05_active_subtab_is_visible(self):
         self.assertIn(".ttab.active, .subtab.active {", CSS)
         self.assertIn(".card[hidden] { display: none; }", CSS)
+
+    def test_e06_subtabs_in_three_panels(self):
+        import re
+        self.assertEqual(HTML.count('<nav class="subtabs"'), 3)
+        targets = re.findall(r'data-sub="([a-z-]+)"', HTML)
+        self.assertEqual(len(targets), 8)
+        for target in targets:
+            self.assertIn(f'id="{target}"', HTML)
+        self.assertIn("function wireSubtabs()", JS)
+        self.assertIn("  wireSubtabs();", JS)

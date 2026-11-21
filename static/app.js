@@ -113,8 +113,28 @@ async function refreshHealth() {
   }
 }
 
+// E-06: sub-pestañas dentro de un panel. Solo muestran u ocultan tarjetas;
+// el refresco sigue ligado a la pestaña principal.
+function wireSubtabs() {
+  document.querySelectorAll("nav.subtabs").forEach((nav) => {
+    const btns = [...nav.querySelectorAll("button[data-sub]")];
+    const show = (id) => {
+      btns.forEach((b) => {
+        const on = b.dataset.sub === id;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", String(on));
+        const card = document.getElementById(b.dataset.sub);
+        if (card) card.hidden = !on;
+      });
+    };
+    btns.forEach((b) => b.addEventListener("click", () => show(b.dataset.sub)));
+    if (btns.length) show(btns[0].dataset.sub);
+  });
+}
+
 function bind() {
   const $ = (id) => document.getElementById(id);
+  wireSubtabs();
 
   // Las pestanas de triaje se generan en HTML dinamic: la CSP (script-src
   // 'self') bloquea los onclick inline, asi que se atan por delegacion.

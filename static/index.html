@@ -89,6 +89,11 @@
     </section>
   </div>
   <div class="tab-panel" id="panel-hallazgos" role="tabpanel" aria-labelledby="tab-hallazgos" data-tab="hallazgos">
+    <nav class="subtabs" aria-label="Secciones de Hallazgos">
+      <button class="subtab" data-sub="findings-card" aria-pressed="false">Hallazgos</button>
+      <button class="subtab" data-sub="shadow-card" aria-pressed="false">Shadow AI</button>
+      <button class="subtab" data-sub="baseline-card" aria-pressed="false">Baseline</button>
+    </nav>
     <section class="card wide" id="findings-card">
     <h2>Hallazgos</h2>
     <p class="hint">Una línea por (proceso, proveedor) con un <b>score combinado 0-100</b> (anomalía determinista + criticidad Jev + autonomía + beaconing + no aprobado). Clic en la fila para el detalle. Display-only.</p>
@@ -117,6 +122,10 @@
     </section>
   </div>
   <div class="tab-panel" id="panel-eventos" role="tabpanel" aria-labelledby="tab-eventos" data-tab="eventos">
+    <nav class="subtabs" aria-label="Secciones de Eventos">
+      <button class="subtab" data-sub="events-card" aria-pressed="false">Eventos</button>
+      <button class="subtab" data-sub="autonomy-card" aria-pressed="false">Autonomía</button>
+    </nav>
     <section class="card wide" id="events-card">
     <h2>Eventos (conexiones a destinos IA)</h2>
     <p class="hint">Proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo (TCP/QUIC) + periodicidad. Columnas: SNI = dominio real del handshake TLS/QUIC (tshark); Catálogo = match por resolución activa; provider+kind (API/web/CDN). Filtros y agrupación por proveedor (v2.3).</p>
@@ -169,6 +178,11 @@
     </section>
   </div>
   <div class="tab-panel" id="panel-ia" role="tabpanel" aria-labelledby="tab-ia" data-tab="ia">
+    <nav class="subtabs" aria-label="Secciones de IA">
+      <button class="subtab" data-sub="triage-card" aria-pressed="false">Triaje con Jev</button>
+      <button class="subtab" data-sub="review-card" aria-pressed="false">Revisión LLM local</button>
+      <button class="subtab" data-sub="llm-inspector-card" aria-pressed="false">LLM Inspector</button>
+    </nav>
     <section class="card wide" id="triage-card">
     <h2>Triaje con Jev</h2>
     <button id="btn-triage" class="primary">Triar eventos con Jev</button>
