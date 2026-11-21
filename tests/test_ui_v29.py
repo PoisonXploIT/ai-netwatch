@@ -20,3 +20,9 @@ class UiV29Test(TestCase):
     def test_e02_native_controls_follow_the_theme(self):
         self.assertIn('html[data-theme="dark"] { color-scheme: dark; }', CSS)
         self.assertIn("scrollbar-color: var(--border) transparent;", CSS)
+
+    def test_e03_rows_merge_by_organization(self):
+        self.assertIn("function orgOf(host)", JS)
+        self.assertIn("function mergeRows(events)", JS)
+        self.assertIn('id="ev-org" checked', HTML)
+        self.assertIn('$("ev-org").checked = true;', JS)

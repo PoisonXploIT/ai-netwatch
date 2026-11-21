@@ -340,7 +340,7 @@ function bind() {
   });
 
   const evRefresh = () => refreshEvents();
-  ["ev-group", "ev-layer", "ev-verdict", "ev-shadow", "ev-hide-cdn"].forEach((id) => {
+  ["ev-group", "ev-org", "ev-layer", "ev-verdict", "ev-shadow", "ev-hide-cdn"].forEach((id) => {
     const el = $(id);
     if (el) el.addEventListener("change", evRefresh);
   });
@@ -356,6 +356,7 @@ function bind() {
   $("btn-ev-clear").addEventListener("click", () => {
     $("ev-search").value = "";
     $("ev-group").checked = true;
+    $("ev-org").checked = true;
     $("ev-layer").value = "";
     $("ev-verdict").value = "";
     $("ev-shadow").checked = false;

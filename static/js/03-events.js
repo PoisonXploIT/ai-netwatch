@@ -80,6 +80,7 @@ function groupDetailHtml(g) {
     : "";
   const head = detailDl([
     ["proceso", g.process], ["imagen", g.image], ["proveedor", g.provider],
+    ["destinos", (g.hosts || []).join(", ")], ["PID", (g.pids || []).join(", ")],
     ["capa IA", g.ai_layer], ["veredicto", g.autonomy_verdict], ["score", g.autonomy_score],
     ["sesiones", g.sessions], ["polls", g.seen_count], ["#IPs", g.ip_count],
     ["primera vez", g.first_seen], ["última vez", g.last_seen],
@@ -91,14 +92,57 @@ function groupDetailHtml(g) {
   return head + table;
 }
 
+// E-03: une filas del mismo proceso y la misma organización (display-only).
+// api.x.com y www.x.com van a x.com; los procesos sin nombre (pid:NNN) van juntos.
+const ORG_SLD = ["co", "com", "org", "net", "ac", "gov", "edu"];
+
+function orgOf(host) {
+  const h = String(host || "").toLowerCase();
+  if (!h || /^[\d.:]+$/.test(h)) return h;
+  const p = h.split(".");
+  if (p.length <= 2) return h;
+  const two = p[p.length - 1].length === 2 && ORG_SLD.includes(p[p.length - 2]);
+  return p.slice(two ? -3 : -2).join(".");
+}
+
+const LAYER_RANK = { catalog: 0, heuristic: 1, llm: 2, unlisted: 3 };
+
+function mergeRows(events) {
+  const byKey = new Map();
+  for (const e of events) {
+    const pid = /^pid:\d+$/.test(e.process || "");
+    const proc = pid ? "sin nombre" : e.process;
+    const org = orgOf(e.provider);
+    const k = proc + "|" + org;
+    const g = byKey.get(k);
+    if (!g) {
+      byKey.set(k, { ...e, process: proc, provider: org, hosts: [e.provider], pids: pid ? [e.process] : [] });
+      continue;
+    }
+    if (!g.hosts.includes(e.provider)) g.hosts.push(e.provider);
+    if (pid && !g.pids.includes(e.process)) g.pids.push(e.process);
+    for (const f of ["sessions", "seen_count", "ip_count", "member_total"]) g[f] = (g[f] || 0) + (e[f] || 0);
+    g.members = (g.members || []).concat(e.members || []);
+    if ((e.last_seen || "") > (g.last_seen || "")) g.last_seen = e.last_seen;
+    if (e.first_seen && (!g.first_seen || e.first_seen < g.first_seen)) g.first_seen = e.first_seen;
+    if ((LAYER_RANK[e.ai_layer] ?? 9) < (LAYER_RANK[g.ai_layer] ?? 9)) g.ai_layer = e.ai_layer;
+    if (e.autonomy_verdict === "autonomous") {
+      g.autonomy_verdict = e.autonomy_verdict;
+      g.autonomy_score = Math.max(g.autonomy_score || 0, e.autonomy_score || 0);
+    }
+    if (g.image !== e.image) g.image = "";
+  }
+  return [...byKey.values()];
+}
+
 // U-03: filas pintadas en la tabla de eventos; el detalle se genera al abrirlo.
 let EVENT_ROWS = [];
 
 function groupedEventsTableHtml(events) {
   if (!events.length) return `<div class="hint">Sin eventos con los filtros actuales.</div>`;
   const rows = events.map((e, i) => `<tr>
-    <td>${esc(e.process)}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}</td>
-    <td class="mono">${esc(e.provider || "-")}${kindBadge(e.kind)}</td>
+    <td>${esc(e.process)}${e.pids && e.pids.length > 1 ? ` <span class="hint">· ${e.pids.length} PID</span>` : ""}${e.image ? `<div class="small mono" title="${esc(e.image)}">${esc(e.image)}</div>` : ""}</td>
+    <td class="mono">${esc(e.provider || "-")}${kindBadge(e.kind)}${e.hosts && e.hosts.length > 1 ? ` <span class="hint">· ${e.hosts.length} destinos</span>` : ""}</td>
     <td>${aiLayerHtml(e.ai_layer)}</td>
     <td>${autonomyBadge(e.autonomy_verdict, e.autonomy_score)}</td>
     <td class="num">${e.sessions ?? 0}${beaconBadge(e)}</td>
@@ -185,12 +229,14 @@ async function refreshEvents() {
 function renderEvents() {
   const wrap = document.getElementById("events-wrap");
   if (!wrap) return;
-  const list = EVENTS.events.slice(0, eventsShown);
-  const more = EVENTS.events.length > list.length
-    ? `<div class="row"><button class="linkbtn" id="btn-events-more">Mostrar ${EVENTS.events.length - list.length} más (${EVENTS.events.length} en total)</button></div>`
+  const orgBox = document.getElementById("ev-org");
+  const all = EVENTS.grouped && orgBox && orgBox.checked ? mergeRows(EVENTS.events) : EVENTS.events;
+  const list = all.slice(0, eventsShown);
+  const more = all.length > list.length
+    ? `<div class="row"><button class="linkbtn" id="btn-events-more">Mostrar ${all.length - list.length} más (${all.length} en total)</button></div>`
     : "";
   wrap.innerHTML = eventsTableHtml(list, EVENTS.grouped) + more;
-  setTabCount("eventos", EVENTS.events.length);
+  setTabCount("eventos", all.length);
   wireInvestigate(wrap);
   wireEventDetail(wrap);
   const mb = document.getElementById("btn-events-more");
