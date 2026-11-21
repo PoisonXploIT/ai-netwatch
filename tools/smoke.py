@@ -1,5 +1,6 @@
 """Humo contra el servidor vivo (solo stdlib). Uso: python tools/smoke.py"""
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -31,6 +32,15 @@ def main() -> int:
             bad.append(f"falta cabecera {name}")
     if "unsafe-inline" in headers.get("content-security-policy", ""):
         bad.append("CSP con unsafe-inline")
+    page = get("/")[2].decode("utf-8", "replace")
+    scripts = re.findall(r'<script src="(/static/[^"]+)"', page)
+    print("scripts", len(scripts))
+    if len(scripts) < 2:
+        bad.append(f"index con {len(scripts)} scripts")
+    for src in scripts:
+        code = get(src)[0]
+        if code != 200:
+            bad.append(f"{src} -> {code}")
     for path in ("/api/llm/calls", "/api/export/json", "/api/evidence/chain"):
         code = get(path)[0]
         if code != 403:
