@@ -129,7 +129,7 @@
     <section class="card wide" id="events-card">
     <h2>Eventos (conexiones a destinos IA)</h2>
     <p class="hint">Proceso (+ruta completa con Sysmon) + destino IP/puerto + protocolo (TCP/QUIC) + periodicidad. Columnas: SNI = dominio real del handshake TLS/QUIC (tshark); Catálogo = match por resolución activa; provider+kind (API/web/CDN). Filtros y agrupación por proveedor (v2.3).</p>
-    <div class="row" id="events-filters">
+    <div class="filters" id="events-filters">
       <input type="text" id="ev-search" aria-label="Buscar destino por dominio o IP" placeholder="Buscar destino (dominio o IP)…">
       <label class="check"><input type="checkbox" id="ev-group" checked> Agrupar por proveedor</label>
       <label class="check" title="Une api.x.com y www.x.com en x.com, y los procesos sin nombre (pid) en una fila"><input type="checkbox" id="ev-org" checked> Juntar por organización</label>
@@ -159,7 +159,7 @@
     <section class="card wide" id="autonomy-card">
     <h2>Autonom&iacute;a (R2)</h2>
     <p class="hint">Qu&eacute;n decide la salida a IA: <b>usuario</b>, <b>aut&oacute;nomo</b> o <b>programado</b>. Se&ntilde;ales: sesi&oacute;n bloqueada, inactividad, foreground y linaje (EID 1). Una salida aut&oacute;noma/programada alerta <span class="mono">autonomous_ai_call</span>.</p>
-    <div class="row" id="aut-filters">
+    <div class="filters" id="aut-filters">
       <label>Veredicto</label>
       <select id="aut-verdict" aria-label="Filtrar autonomía por veredicto">
         <option value="">Todas</option>

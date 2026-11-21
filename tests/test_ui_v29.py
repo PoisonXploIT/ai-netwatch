@@ -51,3 +51,7 @@ class UiV29Test(TestCase):
 
     def test_e08_headers_wrap_on_narrow_screens(self):
         self.assertIn("@media (max-width: 1100px) { thead th { white-space: normal; } }", CSS)
+
+    def test_e09_filter_bars_share_one_style(self):
+        self.assertIn('<div class="filters" id="events-filters">', HTML)
+        self.assertIn('<div class="filters" id="aut-filters">', HTML)
