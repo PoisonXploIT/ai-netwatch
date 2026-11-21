@@ -10,6 +10,7 @@ Resumido; lo detallado esta en el historial de git y en las notas del vault.
 ## v2.9.2 (2026-11-21) — CSV sin fórmulas y textos de cifrado
 
 - X-01: los dos CSV (eventos y llamadas LLM) neutralizan las celdas que Excel abriria como formula.
+- X-02: la consola ya no dice "en claro" del contenido guardado: va cifrado con DPAPI.
 
 ## v2.9.1 (2026-11-21) — Cierre operativo: S-16, S-17 y S-18
 

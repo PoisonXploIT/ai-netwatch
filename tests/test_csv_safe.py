@@ -21,3 +21,7 @@ class CsvSafeTest(TestCase):
         src = (ROOT / "server.py").read_text(encoding="utf-8")
         self.assertEqual(src.count("_SafeCsv(buf)"), 2)
         self.assertEqual(src.count("csv.writer(buf)"), 1)
+
+    def test_x02_console_does_not_say_stored_content_is_plain(self):
+        self.assertNotIn("(en claro). Apagado", HTML)
+        self.assertIn("(cifrado con DPAPI en este equipo)", HTML)

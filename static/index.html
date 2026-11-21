@@ -275,7 +275,7 @@
       <button id="btn-test-llm">Probar</button>
     </div>
     <div class="row">
-      <label class="check"><input type="checkbox" id="llm-content-store"> Guardar contenido de prompts/respuestas LLM (en claro). Apagado: solo metadatos y bytes.</label>
+      <label class="check"><input type="checkbox" id="llm-content-store"> Guardar contenido de prompts/respuestas LLM (cifrado con DPAPI en este equipo). Apagado: solo metadatos y bytes.</label>
     </div>
     </div>
     <div class="cfg-group">
@@ -312,7 +312,7 @@
       <label>LLM calls (d&iacute;as)</label>
       <input id="retention-llm-days" aria-label="Retención de llamadas LLM en días" type="number" min="1" max="3650">
       <button id="btn-save-retention">Guardar</button>
-      <span class="hint">Eventos/triajes y llamadas LLM m&aacute;s antiguos que esto se borran (VACUUM incluido). LLM calls llevan vida m&aacute;s corta: guardan contenido en claro. El hist&oacute;rico diario de estad&iacute;sticas se conserva.</span>
+      <span class="hint">Eventos/triajes y llamadas LLM m&aacute;s antiguos que esto se borran (VACUUM incluido). LLM calls llevan vida m&aacute;s corta: guardan el contenido (cifrado con DPAPI). El hist&oacute;rico diario de estad&iacute;sticas se conserva.</span>
     </div>
     </div>
     </section>
@@ -387,7 +387,7 @@
         <li><b>Auto-observación</b>: si la URL del LLM local apunta al mismo upstream que el target del proxy, las llamadas propias de NetWatch (explicador y test) también pasan por el proxy y quedan registradas. La config no se reescribe; el proxy nunca apunta a sí mismo.</li>
         <li><b>Enlace local</b>: cada llamada intenta enlazarse con el evento de red del mismo destino, proceso y ventana temporal (120 s), si ese destino está siendo vigilado.</li>
         <li><b>Límite honesto</b>: solo cubre el LLM local. Un proveedor remoto (TLS) no se puede descifrar pasivamente; de él se ve la conexión (eventos de red) pero no el contenido.</li>
-        <li><b>Privacidad</b>: prompts y respuestas quedan en claro en <span class="mono">data/llm_calls.db</span>. Si un prompt lleva una API key o datos sensibles, esa información queda en ese fichero: borra las llamadas cuando termines (botón de la tarjeta).</li>
+        <li><b>Privacidad</b>: prompts y respuestas quedan cifrados con DPAPI en <span class="mono">data/llm_calls.db</span> (solo los lee tu usuario de Windows); al descargarlos con los botones de la tarjeta salen en claro. Si un prompt lleva una API key o datos sensibles, esa información queda en ese fichero: borra las llamadas cuando termines (botón de la tarjeta).</li>
       </ul>
     </details>
 
