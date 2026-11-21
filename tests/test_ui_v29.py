@@ -16,3 +16,7 @@ class UiV29Test(TestCase):
     def test_e01_process_path_does_not_widen_tables(self):
         self.assertIn("td > div.small.mono { max-width: 36ch; overflow: hidden;", CSS)
         self.assertIn("thead th { white-space: nowrap; }", CSS)
+
+    def test_e02_native_controls_follow_the_theme(self):
+        self.assertIn('html[data-theme="dark"] { color-scheme: dark; }', CSS)
+        self.assertIn("scrollbar-color: var(--border) transparent;", CSS)
